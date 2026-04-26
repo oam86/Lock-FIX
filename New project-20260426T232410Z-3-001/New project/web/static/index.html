@@ -1,0 +1,679 @@
+﻿<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LOCK-FIX PoC</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <section class="login-screen" id="loginScreen">
+      <div class="login-shell">
+        <form class="login-card" id="loginForm">
+          <div class="login-brand">
+            <img src="/static/oam-logo.png" alt="OAM IT Solution Company" />
+            <h1><span>LOCK-</span><em>FIX</em></h1>
+            <p>Air-Gap Protection</p>
+          </div>
+          <div class="password-login" id="passwordLogin">
+            <label>
+              <span>Email</span>
+              <input id="loginEmail" type="text" autocomplete="username" value="admin" placeholder="Email" />
+            </label>
+            <label>
+              <span>Password</span>
+              <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Password" />
+            </label>
+            <p class="login-error" id="loginError"></p>
+            <button class="login-submit" type="submit">LOGIN</button>
+          </div>
+          <div class="qr-login-view qr-hidden" id="qrLoginView">
+            <strong>Please scan the QR code.</strong>
+            <button class="qr-code-box" id="qrCodeBox" type="button" aria-label="Confirm QR login"></button>
+            <b id="qrTimer">04:59</b>
+          </div>
+          <button class="qr-submit" id="qrLoginButton" type="button">QR CODE LOGIN</button>
+          <div class="login-copy">
+            <span>Don't have an account?</span>
+            <button type="button">Register account</button>
+          </div>
+          <div class="license-switch login-license">
+            <span>Switch License</span>
+            <strong>Currently : oam</strong>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="login-splash hidden" id="loginSplash" aria-live="polite">
+      <img class="splash-image" src="/static/lockfix-splash.png" alt="LOCK-FIX secure cloud lock" />
+    </section>
+
+    <main class="app app-locked app-shell" id="appRoot">
+      <aside class="sidebar">
+        <div class="sidebar-logo">
+          <img src="/static/oam-logo.png" alt="OAM" />
+        </div>
+        <nav class="side-nav" aria-label="Main navigation">
+          <button class="side-item active" data-view="monitoring"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="3" height="8" rx="1"></rect><rect x="10.5" y="6" width="3" height="12" rx="1"></rect><rect x="17" y="3" width="3" height="15" rx="1"></rect></svg></span><span data-i18n="nav.monitoring">Monitoring</span></button>
+          <button class="side-item" data-view="dashboard"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"></rect><rect x="13" y="4" width="7" height="7" rx="1.5"></rect><rect x="4" y="13" width="7" height="7" rx="1.5"></rect><rect x="13" y="13" width="7" height="7" rx="1.5"></rect></svg></span><span data-i18n="nav.dashboard">Dashboard</span></button>
+          <button class="side-item" data-view="detect2"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="m16 16 4 4"></path></svg></span><span data-i18n="nav.detect">Detect</span></button>
+          <button class="side-item" data-view="notification2"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20a2.3 2.3 0 0 0 2.2-1.6H9.8A2.3 2.3 0 0 0 12 20Z"></path><path d="M18 16H6l1.2-2V10a4.8 4.8 0 0 1 9.6 0v4L18 16Z"></path></svg></span><span data-i18n="nav.notification">Notification</span></button>
+          <button class="side-item" data-view="logs2"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h12"></path><path d="M6 10h12"></path><path d="M6 15h8"></path><path d="M4 3h16v18H4Z"></path></svg></span><span data-i18n="nav.logs">Logs</span></button>
+          <button class="side-item" data-view="contact"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 5.5 10 8l-2 2.4a10.5 10.5 0 0 0 5.6 5.6L16 14l2.5 2.5c.5.5.5 1.3 0 1.8l-1 1c-.7.7-1.7.9-2.6.6A17.2 17.2 0 0 1 4.1 9.1c-.3-.9-.1-1.9.6-2.6l1-1c.5-.5 1.3-.5 1.8 0Z"></path></svg></span><span data-i18n="nav.contact">Contact Service</span></button>
+          <button class="side-item" data-view="license2"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 7v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7Z"></path><path d="m9 12 2 2 4-5"></path></svg></span><span data-i18n="nav.license">License</span></button>
+          <button class="side-item" data-view="network2"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8c2.5-2.4 5.5-2.4 8 0s5.5 2.4 8 0"></path><path d="M4 14c2.5-2.4 5.5-2.4 8 0s5.5 2.4 8 0"></path><path d="M4 20c2.5-2.4 5.5-2.4 8 0s5.5 2.4 8 0"></path></svg></span><span data-i18n="nav.network">Network Status</span></button>
+          <button class="side-item" data-view="report"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6Z"></path><path d="M15 3v4h4"></path><path d="M9 13h6"></path><path d="M9 17h4"></path><path d="M9 9h2"></path></svg></span><span data-i18n="nav.report">Report</span></button>
+          <button class="side-item airgap-side" data-view="sources"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path><path d="M12 14v2"></path></svg></span><span data-i18n="nav.airgap">Air-Gap</span></button>
+          <button class="side-item" data-view="settings"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"></path><path d="M4 12h2"></path><path d="M18 12h2"></path><path d="m6.6 6.6 1.4 1.4"></path><path d="m16 16 1.4 1.4"></path><path d="m17.4 6.6-1.4 1.4"></path><path d="m8 16-1.4 1.4"></path></svg></span><span data-i18n="nav.settings">Settings</span></button>
+          <button class="side-item logout-side" id="logoutSideButton" data-view="logout"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6H6v12h4"></path><path d="M13 8l4 4-4 4"></path><path d="M17 12H9"></path></svg></span><span data-i18n="nav.logout">Logout</span></button>
+        </nav>
+      </aside>
+
+      <div class="content-area">
+      <section class="view view-active monitoring-view" id="monitoringView">
+        <div class="monitoring-header">
+          <div>
+            <h1 data-i18n="monitoring.title">Monitoring</h1>
+            <p data-i18n="monitoring.subtitle">Hardware usage status is updated every 5 seconds.</p>
+          </div>
+          <div class="date-range">
+            <label><span data-i18n="monitoring.startDate">Start Date</span><input id="monitoringStart" type="date" /></label>
+            <label><span data-i18n="monitoring.endDate">End Date</span><input id="monitoringEnd" type="date" /></label>
+            <button type="button" class="date-apply-button" id="monitoringRangeApply" data-i18n="monitoring.applyRange">Apply</button>
+            <button type="button" class="date-download-button" id="monitoringRangeDownload" title="Download CSV" aria-label="Download monitoring CSV">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10"></path><path d="m8 10 4 4 4-4"></path><path d="M5 20h14"></path></svg>
+            </button>
+          </div>
+        </div>
+
+        <section class="monitoring-panel">
+          <div class="monitoring-title-row">
+            <h2 id="monitoringTitle">OAM Lock-FIX Usage Monitoring</h2>
+            <div class="chart-tools">
+              <button type="button" id="chartZoomInButton" title="확대">+</button>
+              <button type="button" id="chartZoomOutButton" title="축소">-</button>
+              <button type="button" id="chartMenuButton" title="다운로드">☰</button>
+              <div class="download-menu" id="downloadMenu">
+                <a href="/api/monitoring.csv">Download SVG</a>
+                <a href="/api/monitoring.csv">Download PNG</a>
+                <a href="/api/monitoring.csv">Download CSV</a>
+              </div>
+            </div>
+          </div>
+          <div class="legend metric-filter" role="group" aria-label="Monitoring metric filter"><button type="button" class="metric-filter-button active" data-metric="cpu"><i class="cpu-dot"></i>CPU</button><button type="button" class="metric-filter-button" data-metric="memory"><i class="memory-dot"></i>Memory</button><button type="button" class="metric-filter-button" data-metric="disk"><i class="disk-dot"></i>Disk</button><button type="button" class="metric-filter-button" data-metric="network"><i class="network-dot"></i>Network</button><button type="button" class="metric-filter-button" data-metric="interface"><i class="interface-dot"></i>Interface</button></div>
+          <svg class="line-chart" id="monitoringChart" viewBox="0 0 920 320" role="img" aria-label="hardware usage chart"></svg>
+          <div class="current-divider">현재 상태</div>
+          <div class="gauge-grid">
+            <div class="gauge-card" id="cpuGauge"></div>
+            <div class="gauge-card" id="memoryGauge"></div>
+            <div class="gauge-card" id="diskGauge"></div>
+            <div class="gauge-card" id="networkGauge"></div>
+            <div class="gauge-card" id="interfaceGauge"></div>
+          </div>
+        </section>
+      </section>
+
+      <section class="view report-view" id="reportView">
+        <div class="monitoring-header">
+          <div>
+            <h1 data-i18n="report.title">Report</h1>
+            <p data-i18n="report.subtitle">Analyzed report for current CPU, memory, disk, and network resource usage.</p>
+          </div>
+          <div class="report-export-actions">
+            <a href="/api/report.docx" data-i18n="report.exportWord">Word</a>
+            <a href="/api/report.csv">CSV</a>
+            <a href="/api/report.xlsx" data-i18n="report.exportExcel">Excel</a>
+          </div>
+        </div>
+        <section class="report-summary-panel">
+          <div>
+            <span data-i18n="report.overallStatus">Overall Status</span>
+            <strong id="reportOverallStatus">-</strong>
+          </div>
+          <p id="reportAnalysis">-</p>
+          <em id="reportGeneratedAt">-</em>
+        </section>
+        <div class="report-form-grid">
+          <section class="report-table-panel">
+            <div class="report-table-head">
+              <h2 data-i18n="report.customerInfo">Customer / Inspection Information</h2>
+            </div>
+            <div class="report-table-wrap">
+              <table class="report-info-table">
+                <tbody id="reportCustomerTable"></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="report-table-panel">
+            <div class="report-table-head">
+              <h2 data-i18n="report.serverInfo">Server Basic Information</h2>
+            </div>
+            <div class="report-table-wrap">
+              <table class="report-info-table">
+                <tbody id="reportServerTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+        <div class="report-card-grid" id="reportCards"></div>
+        <section class="report-table-panel">
+          <div class="report-table-head">
+            <h2 data-i18n="report.usageDetails">Resource Usage Details</h2>
+            <span id="reportRange">-</span>
+          </div>
+          <div class="report-table-wrap">
+            <table class="report-table">
+              <thead>
+                <tr>
+                  <th data-i18n="report.metric">Metric</th>
+                  <th data-i18n="report.current">Current</th>
+                  <th data-i18n="report.average">Average</th>
+                  <th data-i18n="report.peak">Peak</th>
+                  <th data-i18n="report.threshold">Threshold</th>
+                  <th data-i18n="report.status">Status</th>
+                  <th data-i18n="report.recommendation">Recommendation</th>
+                </tr>
+              </thead>
+              <tbody id="reportTable"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="report-table-panel">
+          <div class="report-table-head">
+            <h2 data-i18n="report.checklist">Server Inspection Checklist</h2>
+            <span data-i18n="report.checklistDesc">Generated in the same structure as the attached inspection report</span>
+          </div>
+          <div class="report-table-wrap">
+            <table class="report-table">
+              <thead>
+                <tr>
+                  <th data-i18n="report.category">Category</th>
+                  <th data-i18n="report.inspectionItem">Inspection Item</th>
+                  <th data-i18n="report.details">Details</th>
+                  <th data-i18n="report.criteria">Criteria</th>
+                  <th data-i18n="report.metric">Metric</th>
+                  <th data-i18n="report.result">Result</th>
+                </tr>
+              </thead>
+              <tbody id="reportInspectionTable"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="report-table-panel report-opinion-panel">
+          <div class="report-table-head">
+            <h2 data-i18n="report.engineerOpinion">Engineer Opinion</h2>
+            <span data-i18n="report.engineerOpinionDesc">Inspection comments and electronic signatures</span>
+          </div>
+          <div class="report-opinion-body">
+            <label class="engineer-opinion-field">
+              <span data-i18n="report.opinionContent">Opinion Content</span>
+              <textarea id="engineerOpinionInput" placeholder="점검 의견을 입력하세요."></textarea>
+            </label>
+            <div class="signature-grid">
+              <article class="signature-card">
+                <div class="signature-card-head">
+                  <strong data-i18n="report.engineerSignature">Engineer Signature</strong>
+                  <div class="signature-actions">
+                    <label class="signature-attach-button">
+                      <span data-i18n="report.attachSignature">Attach</span>
+                      <input type="file" accept="image/*" data-signature-upload="engineerSignaturePad" />
+                    </label>
+                    <button type="button" class="signature-clear-button" data-signature-clear="engineerSignaturePad" data-i18n="report.clearSignature">Clear</button>
+                  </div>
+                </div>
+                <canvas id="engineerSignaturePad" class="signature-pad" width="560" height="180" aria-label="Engineer signature pad"></canvas>
+              </article>
+              <article class="signature-card">
+                <div class="signature-card-head">
+                  <strong data-i18n="report.managerSignature">Manager Signature</strong>
+                  <div class="signature-actions">
+                    <label class="signature-attach-button">
+                      <span data-i18n="report.attachSignature">Attach</span>
+                      <input type="file" accept="image/*" data-signature-upload="managerSignaturePad" />
+                    </label>
+                    <button type="button" class="signature-clear-button" data-signature-clear="managerSignaturePad" data-i18n="report.clearSignature">Clear</button>
+                  </div>
+                </div>
+                <canvas id="managerSignaturePad" class="signature-pad" width="560" height="180" aria-label="Manager signature pad"></canvas>
+              </article>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section class="view dashboard-view" id="dashboardView">
+        <div class="dashboard-summary" id="dashboardCards"></div>
+
+        <section class="dashboard-panel">
+          <h2 data-i18n="dashboard.notification">Notification</h2>
+          <div class="dashboard-table-wrap">
+            <table class="dashboard-table">
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>SMTP Status</th>
+                  <th>Network Connection</th>
+                  <th>Last Login</th>
+                </tr>
+              </thead>
+              <tbody id="dashboardNotificationTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="dashboard-panel">
+          <div class="dashboard-panel-head">
+            <h2 data-i18n="dashboard.logs">Logs</h2>
+            <span id="dashboardTotalLogs">Total: 0 logs</span>
+          </div>
+          <div class="dashboard-table-wrap">
+            <table class="dashboard-table logs-table">
+              <thead>
+                <tr>
+                  <th data-i18n="dashboard.type">Type</th>
+                  <th data-i18n="dashboard.date">Date</th>
+                  <th data-i18n="dashboard.logs">Logs</th>
+                </tr>
+              </thead>
+              <tbody id="dashboardLogsTable"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="view legacy-dashboard-view" id="legacyView">
+      <header class="topbar">
+        <div>
+          <div class="header-brand">
+            <img src="/static/oam-logo.png" alt="OAM" />
+            <h1>LOCK-FIX</h1>
+          </div>
+          <p>DataCenter + Hardware Web Solution Integrated PoC</p>
+        </div>
+        <div class="top-actions">
+          <div class="mode" id="modeBadge">Mock</div>
+          <button class="logout-button" id="logoutButton">Logout</button>
+        </div>
+      </header>
+
+      <section class="panel integrated-panel">
+        <div class="panel-head">
+          <div>
+            <h2 id="integratedTitle">통합 운영 대시보드</h2>
+            <p id="integratedSubtitle">DataCenter와 Hardware Web Solution 통합 상태</p>
+          </div>
+          <span class="muted" id="integratedUpdated">-</span>
+        </div>
+
+        <div class="system-strip" id="systemStrip"></div>
+        <div class="metric-strip" id="metricStrip"></div>
+
+        <div class="integrated-grid">
+          <div>
+            <h3>Solution Modules</h3>
+            <div class="module-list" id="moduleList"></div>
+          </div>
+          <div>
+            <h3>Detect / Notification</h3>
+            <div class="event-list" id="detectList"></div>
+            <div class="notice-list" id="noticeList"></div>
+          </div>
+          <div>
+            <h3>Network / License</h3>
+            <div class="network-list" id="networkList"></div>
+            <div class="license-box" id="licenseBox"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="status-grid">
+        <article class="panel primary-panel">
+          <div class="panel-head">
+            <div>
+              <h2>디스크 슬롯</h2>
+              <p id="configPath">config loading</p>
+            </div>
+            <button class="icon-button" id="refreshButton" title="새로고침" aria-label="새로고침">↻</button>
+          </div>
+          <div id="slotList" class="slot-list"></div>
+        </article>
+
+        <article class="panel">
+          <h2>격리 절차</h2>
+          <ol class="flow">
+            <li>백업 완료</li>
+            <li>Flush</li>
+            <li>I/O 종료 확인</li>
+            <li>Unmount</li>
+            <li>Relay/MOSFET 전원 OFF</li>
+          </ol>
+        </article>
+
+        <article class="panel">
+          <h2>재연결 검증</h2>
+          <ol class="flow">
+            <li>전원 ON</li>
+            <li>UID 검증</li>
+            <li>Read-Only Mount</li>
+            <li>Hash 검증</li>
+            <li>Online Read-Write</li>
+          </ol>
+        </article>
+      </section>
+
+      <section class="panel audit-panel">
+        <div class="panel-head">
+          <div>
+            <h2>감사 로그</h2>
+            <p id="auditPath">audit loading</p>
+          </div>
+          <span class="muted" id="lastUpdated">-</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>시간</th>
+                <th>이벤트</th>
+                <th>슬롯</th>
+                <th>상태/결과</th>
+              </tr>
+            </thead>
+            <tbody id="auditTable"></tbody>
+          </table>
+        </div>
+      </section>
+      </section>
+
+      <section class="view placeholder-view" id="detectView"><h1>Detect</h1><p>하드웨어 변경과 초과 사용 이상 로그를 확인하는 화면입니다.</p></section>
+      <section class="view placeholder-view" id="notificationView"><h1>Notification</h1><p>관리자 계정, SMTP, 네트워크 상태와 마지막 로그인 시간을 확인하는 화면입니다.</p></section>
+      <section class="view placeholder-view" id="logsView"><h1>Logs</h1><p>탐지 내역과 서버 전체 로그를 확인하는 화면입니다.</p></section>
+      <section class="view placeholder-view" id="contactView"><h1>Contact Service</h1><p>우암전자 고객 센터와 원격지원 접속 정보를 확인하는 화면입니다.</p></section>
+      <section class="view placeholder-view" id="licenseView"><h1>License</h1><p>라이선스 코드와 만료 상태를 확인합니다.</p></section>
+      <section class="view placeholder-view" id="networkView"><h1>Network Status</h1><p>IP별 누적 트래픽과 송수신 정보를 확인하는 화면입니다.</p></section>
+      <section class="view detect-view" id="detect2View">
+        <div class="detect-range">
+          <label>Start Date<strong id="detectStart">-</strong></label>
+          <label>End Date<strong id="detectEnd">-</strong></label>
+        </div>
+
+        <div class="detect-summary" id="detectCards"></div>
+
+        <div class="detect-grid">
+          <section class="detect-panel">
+            <h2>Detect</h2>
+            <div class="detect-table-wrap">
+              <table class="detect-table">
+                <thead><tr><th>Date</th><th>Event</th></tr></thead>
+                <tbody id="detectDetectTable"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="detect-panel">
+            <h2>Warning</h2>
+            <div class="detect-table-wrap">
+              <table class="detect-table">
+                <thead><tr><th>Date</th><th>Event</th></tr></thead>
+                <tbody id="detectWarningTable"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="detect-panel">
+            <h2>Logs</h2>
+            <div class="detect-table-wrap">
+              <table class="detect-table">
+                <thead><tr><th>Date</th><th>Event</th></tr></thead>
+                <tbody id="detectLogsTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view logs-view" id="logs2View">
+        <div class="logs-range">
+          <label><span>Start Date</span><input id="logsStart" type="date" /></label>
+          <label><span>End Date</span><input id="logsEnd" type="date" /></label>
+          <button type="button" class="logs-apply-button" id="logsRangeApply">적용</button>
+        </div>
+
+        <section class="logs-panel">
+          <div class="logs-panel-head">
+            <h1>Logs</h1>
+            <span id="logsTotal">Total: 0 logs</span>
+          </div>
+          <div class="logs-table-wrap">
+            <table class="logs-history-table">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Date</th>
+                  <th>Source</th>
+                  <th>Severity</th>
+                  <th>Logs</th>
+                </tr>
+              </thead>
+              <tbody id="logsHistoryTable"></tbody>
+            </table>
+          </div>
+          <div class="logs-pagination" id="logsPagination" aria-label="Logs pages"></div>
+        </section>
+      </section>
+
+      <section class="view license-status-view" id="license2View">
+        <section class="license-status-panel">
+          <h1>라이선스 상태</h1>
+          <table class="license-status-table">
+            <tbody id="licenseStatusTable"></tbody>
+          </table>
+        </section>
+      </section>
+
+      <section class="view network-status-view" id="network2View">
+        <section class="network-chart-panel">
+          <h1 id="networkStatusTitle">실시간 IP 별 누적 트래픽</h1>
+          <div class="network-live-grid">
+            <article class="network-live-card network-live-tx">
+              <div class="network-live-head">
+                <span>송신</span>
+                <strong id="networkTxRate">- Mbps</strong>
+              </div>
+              <div class="network-flow-track"><i></i><i></i><i></i></div>
+              <svg class="network-flow-chart" id="networkTxFlow" viewBox="0 0 360 110" role="img" aria-label="tx realtime flow"></svg>
+              <p>누적 송신 <b id="networkTxTotal">- GB</b></p>
+            </article>
+
+            <article class="network-live-card network-live-rx">
+              <div class="network-live-head">
+                <span>수신</span>
+                <strong id="networkRxRate">- Mbps</strong>
+              </div>
+              <div class="network-flow-track"><i></i><i></i><i></i></div>
+              <svg class="network-flow-chart" id="networkRxFlow" viewBox="0 0 360 110" role="img" aria-label="rx realtime flow"></svg>
+              <p>누적 수신 <b id="networkRxTotal">- GB</b></p>
+            </article>
+          </div>
+          <div class="network-legend">
+            <span><i class="tx-dot"></i>송신 (GB)</span>
+            <span><i class="rx-dot"></i>수신 (GB)</span>
+          </div>
+          <svg class="network-bar-chart" id="networkStatusChart" viewBox="0 0 980 360" role="img" aria-label="network traffic chart"></svg>
+        </section>
+      </section>
+
+      <section class="view notification-view" id="notification2View">
+        <section class="notification-panel">
+          <h1>Notification</h1>
+          <div class="notification-kpi-row">
+            <article class="security-kpi notification-access-kpi">
+              <i class="security-icon security-icon-user security-tone-dark" aria-hidden="true"></i>
+              <div>
+                <span>비인가 접근 시도</span>
+                <strong class="security-value-dark">0건</strong>
+                <em>최근 24시간</em>
+              </div>
+            </article>
+          </div>
+          <div class="notification-table-wrap">
+            <table class="notification-table">
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>SMTP Status</th>
+                  <th>Network Connection</th>
+                  <th>Last Login</th>
+                </tr>
+              </thead>
+              <tbody id="notificationTable"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+      <section class="view source-view" id="sourcesView">
+        <div class="monitoring-header">
+          <div>
+            <h1 data-i18n="airgap.title">Air-Gap</h1>
+            <p data-i18n="airgap.subtitle">Monitor physical power cut-off, solenoid lock, and integrity verification status in real time.</p>
+          </div>
+        </div>
+        <div class="source-root" id="sourceRoot">-</div>
+        <div class="source-list" id="sourceList"></div>
+      </section>
+
+      <section class="view settings-view" id="settingsView">
+        <div class="monitoring-header">
+          <div>
+            <h1 data-i18n="settings.title">Settings</h1>
+            <p data-i18n="settings.subtitle">Configure display language and screen theme.</p>
+          </div>
+        </div>
+        <section class="settings-panel">
+          <article class="settings-card">
+            <div>
+              <h2 data-i18n="settings.languageTitle">Language</h2>
+              <p data-i18n="settings.languageDesc">Choose the UI language for menus and labels.</p>
+            </div>
+            <select id="languageSelect" aria-label="Language">
+              <option value="en">English</option>
+              <option value="ko">한국어</option>
+            </select>
+          </article>
+          <article class="settings-card">
+            <div>
+              <h2 data-i18n="settings.themeTitle">Theme</h2>
+              <p data-i18n="settings.themeDesc">Switch between white and black backgrounds.</p>
+            </div>
+            <select id="themeSelect" aria-label="Theme">
+              <option value="light" data-i18n="settings.themeLight">White</option>
+              <option value="dark" data-i18n="settings.themeDark">Black</option>
+            </select>
+          </article>
+          <article class="settings-card">
+            <div>
+              <h2 data-i18n="settings.logRetentionTitle">Log Retention</h2>
+              <p data-i18n="settings.logRetentionDesc">Choose how many days logs are retained.</p>
+            </div>
+            <select id="logRetentionSelect" aria-label="Log retention">
+              <option value="30">30일</option>
+              <option value="60">60일</option>
+              <option value="90">90일</option>
+              <option value="100">최대 100일</option>
+            </select>
+          </article>
+          <div class="settings-actions">
+            <button type="button" id="settingsApplyButton" data-i18n="settings.apply">Apply</button>
+            <span id="settingsApplyStatus" data-i18n="settings.pending">Select options, then click Apply.</span>
+          </div>
+        </section>
+      </section>
+      </div>
+    </main>
+
+    <section class="license-modal hidden" id="licenseModal" role="dialog" aria-modal="true" aria-labelledby="licenseModalTitle">
+      <form class="license-modal-card" id="licenseForm">
+        <h1 id="licenseModalTitle">라이선스 키 입력</h1>
+        <p id="licenseModalReason">라이선스가 필요합니다.</p>
+        <div class="license-device-box">
+          <span>라이선스 기준</span><strong id="licenseIp">고객사 + Support Code</strong>
+          <span>장비 변경</span><strong id="licenseMac">IP/MAC 변경 영향 없음</strong>
+          <span>발급 샘플 키</span><code id="licenseSampleKey">-</code>
+        </div>
+        <label>고객사 정보<input id="licenseCustomer" type="text" value="OAM-CUSTOMER" /></label>
+        <label>라이선스 키(Support Code)<input id="licenseSupportCode" type="text" value="OAM" /></label>
+        <label>라이선스 키<input id="licenseKeyInput" type="text" autocomplete="off" placeholder="LF-XXXX-XXXX-XXXX-XXXX-XXXX" /></label>
+        <p class="license-error" id="licenseError"></p>
+        <button type="submit">라이선스 등록</button>
+      </form>
+    </section>
+
+    <template id="slotTemplate">
+      <div class="slot-card">
+        <div class="slot-main">
+          <div>
+            <div class="slot-title"></div>
+            <div class="slot-device"></div>
+          </div>
+          <div class="state-pill"></div>
+        </div>
+        <div class="meta-grid">
+          <div>
+            <span>Power</span>
+            <strong class="slot-power"></strong>
+          </div>
+          <div>
+            <span>Mount</span>
+            <strong class="slot-mount"></strong>
+          </div>
+          <div class="wide">
+            <span>UID</span>
+            <strong class="slot-uid"></strong>
+          </div>
+        </div>
+        <div class="disk-usage">
+          <div class="usage-head">
+            <div>
+              <span>Disk Mount</span>
+              <strong class="mount-status"></strong>
+            </div>
+            <strong class="usage-percent"></strong>
+          </div>
+          <div class="usage-bar" aria-label="disk usage">
+            <div class="usage-fill"></div>
+          </div>
+          <div class="usage-stats">
+            <span class="usage-used"></span>
+            <span class="usage-free"></span>
+            <span class="usage-total"></span>
+          </div>
+          <div class="usage-note"></div>
+        </div>
+        <div class="actions">
+          <button class="danger isolate-button">전원 차단 격리</button>
+          <button class="success reconnect-button">검증 후 재연결</button>
+        </div>
+      </div>
+    </template>
+
+    <template id="systemTemplate">
+      <div class="system-card">
+        <div>
+          <strong class="system-name"></strong>
+          <span class="system-role"></span>
+        </div>
+        <span class="system-status"></span>
+        <p class="system-endpoint"></p>
+        <div class="system-features"></div>
+      </div>
+    </template>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
+
+
+
+
+

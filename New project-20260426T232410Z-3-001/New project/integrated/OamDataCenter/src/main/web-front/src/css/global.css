@@ -1,0 +1,94 @@
+/*body {*/
+/*    box-sizing: border-box;*/
+/*    background-color: white;*/
+/*}*/
+
+.center-text {
+    text-align: center;
+}
+
+/* App.css */
+
+@keyframes content-component-animation {
+    0% {
+        opacity: 0;
+        transform: translateY(3px); /* 아래에서 시작 */
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0); /* 원래 위치 */
+    }
+}
+
+.content-component {
+    animation: content-component-animation 0.5s ease-in-out forwards;
+    max-width: 1400px;
+    width: 100%;
+    height: 800px;
+    padding: 2% 3% 3% 3%;
+    margin: 0 auto; /* 가운데 정렬 */
+    text-align: center;
+}
+
+.page-content {
+    max-width: 1400px;
+    width: 100%;
+    height: 800px;
+    padding: 5% 3% 3% 3%;
+    margin: 0 auto; /* 가운데 정렬 */
+}
+
+.info {
+    align-content: center;
+    text-align: center;
+}
+
+.info h1, .info h2, .info h3 {
+    font-weight: 700; /* Bold */
+    margin: 0;
+    color: rgb(22 24 32);
+}
+
+.info h1 {
+    font-size: 64px;
+}
+
+.info h2 {
+    font-size: 45px;
+}
+
+.info h3 {
+    font-size: 35px;
+}
+
+.info p {
+    font-size: 28px;
+    font-weight: 600; /* Regular */
+    margin: 0;
+}
+
+.info-detail p {
+    font-size: 20px;
+    font-weight: 600; /* Regular */
+    margin: 0;
+}
+
+
+.info-detail h1, .info-detail h2, .info-detail h3 {
+    font-weight: 700; /* Bold */
+    margin: 0;
+    color: rgb(22 24 32);
+    padding-bottom: 15px;
+}
+
+.info-detail h1 {
+    font-size: 45px;
+}
+
+.info-detail h2 {
+    font-size: 23px;
+}
+
+.info-detail h3 {
+    font-size: 20px;
+}

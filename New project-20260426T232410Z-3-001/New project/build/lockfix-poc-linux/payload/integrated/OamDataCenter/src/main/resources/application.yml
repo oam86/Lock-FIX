@@ -1,0 +1,29 @@
+spring:
+  datasource:
+#    url: jdbc:postgresql://116.46.219.95:5432/postgres
+    url: jdbc:postgresql://127.0.0.1:5432/postgres
+    username: postgres
+    password: 153456
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+
+  mail:
+    host: smtp.oam.co.kr
+    port: 587
+    username: rich.kim@oam.co.kr
+    password: ${OAM_SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+springdoc:
+  api-docs:
+    enabled: true        # OpenAPI 문서 활성화
+  swagger-ui:
+    enabled: true        # Swagger UI 활성화
+    path: /swagger-ui.html # Swagger UI 접근 경로 설정
