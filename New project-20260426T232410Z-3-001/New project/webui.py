@@ -24,6 +24,7 @@ from lockfix.controller import LockFixController
 from lockfix.identity import slot_uid
 from lockfix.integrated import integrated_solution_summary
 from lockfix.source_inventory import integrated_source_inventory
+from lockfix.veeam import VeeamApiClient
 
 
 ROOT = Path(__file__).resolve().parent
@@ -468,6 +469,24 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
 
     def air_gap_summary(self) -> dict:
         summary = self.summary()
+        veeam = VeeamApiClient(self.context.config.veeam).summary()
+        backup_monitor = veeam.get("backup_monitor", {})
+        backup_state = backup_monitor.get("state", "WAITING")
+        backup_result = backup_monitor.get("result", "Unknown")
+        backup_ready = bool(backup_monitor.get("completed") and veeam.get("interlock_ready"))
+        if backup_state == "RUNNING":
+            veeam_timeline_state = "RUNNING"
+            veeam_timeline_status = "Running"
+        elif backup_state == "ERROR" or backup_result in {"Failed", "Forbidden", "Error"}:
+            veeam_timeline_state = "ERROR"
+            veeam_timeline_status = "Permission Required" if backup_result == "Forbidden" else "Failed"
+        elif backup_ready:
+            veeam_timeline_state = "DONE"
+            veeam_timeline_status = "Complete"
+        else:
+            veeam_timeline_state = "WAITING"
+            veeam_timeline_status = "Waiting"
+        downstream_state = "DONE" if backup_ready else "WAITING"
         tick = int(time.time() / 5)
         bays = []
         for index, slot in enumerate(summary["slots"], start=1):
@@ -523,11 +542,17 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 },
             ],
             "timeline": [
-                {"step": 1, "title": "Veeam backup completion signal received", "state": "DONE"},
-                {"step": 2, "title": "Drive hard power-off executed", "state": "DONE"},
-                {"step": 3, "title": "Solenoid lock engaged", "state": "DONE"},
-                {"step": 4, "title": "Air-Gap isolation active", "state": "ACTIVE"},
+                {
+                    "step": 1,
+                    "title": "Veeam backup completion signal received",
+                    "state": veeam_timeline_state,
+                    "status": veeam_timeline_status,
+                },
+                {"step": 2, "title": "Drive hard power-off executed", "state": downstream_state, "status": "Complete" if backup_ready else "Waiting"},
+                {"step": 3, "title": "Solenoid lock engaged", "state": downstream_state, "status": "Complete" if backup_ready else "Waiting"},
+                {"step": 4, "title": "Air-Gap isolation active", "state": "ACTIVE" if backup_ready else "WAITING", "status": "Safe state active" if backup_ready else "Waiting"},
             ],
+            "veeam": veeam,
             "bays": bays,
             "integrity_history": [
                 {"time": "2026-04-25 22:40:13", "target": "Backup Cycle #1042", "uid": "MATCH", "hash": "VALID"},

@@ -1125,6 +1125,509 @@ button {
   background: #f1fff8;
 }
 
+.airgap-step-done {
+  border-color: #24c782;
+  background: #f7fffb;
+}
+
+.airgap-step-done span,
+.airgap-step-active span {
+  color: #12935f;
+}
+
+.airgap-step-running {
+  border-color: #f0b84d;
+  background: #fffaf0;
+}
+
+.airgap-step-running span {
+  color: #b76b00;
+}
+
+.airgap-step-error {
+  border-color: #ee9c96;
+  background: #fff6f5;
+}
+
+.airgap-step-error b {
+  background: #cc3b35;
+}
+
+.airgap-step-error span {
+  color: #cc3b35;
+}
+
+.airgap-step-waiting span {
+  color: #687b88;
+}
+
+.veeam-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.veeam-monitor-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(220px, 0.75fr) minmax(220px, 0.75fr) minmax(220px, 0.75fr);
+  gap: 12px;
+}
+
+.veeam-monitor-hero article {
+  min-width: 0;
+  border: 1px solid #dce5ed;
+  border-radius: 8px;
+  padding: 16px;
+  background: linear-gradient(135deg, #fbfdff, #ffffff);
+}
+
+.veeam-monitor-hero span,
+.veeam-monitor-primary b {
+  display: block;
+  color: #687b88;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.veeam-monitor-hero strong {
+  display: block;
+  margin-top: 8px;
+  color: #17212b;
+  font-size: 18px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.veeam-monitor-primary em {
+  display: inline-grid;
+  margin-top: 12px;
+  border-radius: 999px;
+  background: #eef8f3;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.veeam-progress {
+  height: 16px;
+  margin-top: 16px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e7eef5;
+}
+
+.veeam-progress i {
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #1b7fff, #24c782);
+  transition: width 240ms ease;
+}
+
+.veeam-monitor-primary p {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 10px 0 0;
+}
+
+.veeam-monitor-primary p strong {
+  margin: 0;
+  color: #1b7fff;
+  font-size: 13px;
+}
+
+.veeam-monitor-gate p {
+  margin: 12px 0 0;
+  color: #5a6c78;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.veeam-monitor-time {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.veeam-monitor-time strong {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.veeam-monitor-results div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.veeam-monitor-results strong,
+.veeam-monitor-results small {
+  display: block;
+  text-align: center;
+}
+
+.veeam-monitor-results strong {
+  margin: 0;
+  font-size: 24px;
+}
+
+.veeam-monitor-results small {
+  color: #687b88;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.veeam-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.veeam-summary-grid article {
+  min-width: 0;
+  border: 1px solid #dce5ed;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfdff;
+}
+
+.veeam-summary-grid span {
+  color: #687b88;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.veeam-summary-grid strong {
+  display: block;
+  margin-top: 8px;
+  color: #17212b;
+  font-size: 15px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.veeam-summary-grid p {
+  margin: 8px 0 0;
+  color: #5a6c78;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.veeam-status-live {
+  color: #12935f !important;
+}
+
+.veeam-status-wait {
+  color: #b76b00 !important;
+}
+
+.veeam-status-error {
+  color: #cc3b35 !important;
+}
+
+.veeam-status-mock {
+  color: #1b7fff !important;
+}
+
+.veeam-session-table-wrap {
+  overflow-x: auto;
+}
+
+.veeam-session-table-wrap h3 {
+  margin: 18px 0 10px;
+  color: #162633;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.veeam-session-table-wrap h3:first-child {
+  margin-top: 0;
+}
+
+.veeam-section-note {
+  margin: -4px 0 10px;
+  color: #5a6c78;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.veeam-policy-summary,
+.veeam-repository-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.veeam-policy-summary article,
+.veeam-repository-summary article {
+  min-width: 0;
+  border: 1px solid #dce5ed;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfdff;
+}
+
+.veeam-policy-summary span,
+.veeam-repository-summary span {
+  color: #687b88;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.veeam-policy-summary strong,
+.veeam-repository-summary strong {
+  display: block;
+  margin-top: 6px;
+  color: #17212b;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.veeam-policy-summary p,
+.veeam-repository-summary p {
+  margin: 6px 0 0;
+  color: #5a6c78;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.veeam-repository-console {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid #d6dfe7;
+  border-radius: 8px;
+  background: #ffffff;
+  margin-bottom: 18px;
+}
+
+.veeam-repository-tree {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  border-right: 1px solid #d6dfe7;
+  background: #f5f7fa;
+  padding: 12px;
+}
+
+.veeam-repository-tree strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #2d3d48;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.veeam-repository-tree button {
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #344854;
+  padding: 7px 8px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.veeam-repository-tree button.active,
+.veeam-repository-tree button:hover {
+  background: #dfeaf6;
+  color: #0b2e79;
+}
+
+.veeam-repository-tree button span {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #6ca8e8, #1b7fff);
+}
+
+.veeam-repository-tree button b {
+  color: #667986;
+  font-size: 11px;
+}
+
+.veeam-repository-grid {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  background: #ffffff;
+}
+
+.veeam-repository-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  border-bottom: 1px solid #d6dfe7;
+  background: #fbfcfe;
+  padding: 12px 14px;
+}
+
+.veeam-repository-toolbar strong {
+  display: block;
+  color: #182934;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.veeam-repository-toolbar span {
+  color: #667986;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.repository-total-meter {
+  min-width: 260px;
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 4px 10px;
+  align-items: center;
+}
+
+.repository-total-meter b {
+  color: #17212b;
+  font-size: 13px;
+  text-align: right;
+}
+
+.repository-total-meter i {
+  grid-column: 1 / -1;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e7eef5;
+}
+
+.repository-total-meter em {
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: #1b7fff;
+}
+
+.veeam-session-table {
+  min-width: 640px;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.veeam-session-table th,
+.veeam-session-table td {
+  border-top: 1px solid #e3eaf0;
+  padding: 10px 8px;
+  color: #263843;
+  text-align: left;
+  font-size: 12px;
+}
+
+.veeam-session-table th {
+  color: #687b88;
+  font-weight: 900;
+}
+
+.veeam-repository-table {
+  min-width: 1080px;
+  margin-bottom: 0;
+}
+
+.veeam-policy-table {
+  min-width: 980px;
+  margin-bottom: 18px;
+}
+
+.veeam-recent-session-table {
+  min-width: 760px;
+}
+
+.repository-usage {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) 48px;
+  gap: 8px;
+  align-items: center;
+}
+
+.repository-usage span {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e7eef5;
+}
+
+.repository-usage i {
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #1b7fff, #24c782);
+}
+
+.repository-usage b {
+  color: #263843;
+  font-size: 12px;
+  text-align: right;
+}
+
+.repository-name-cell {
+  display: inline-grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 7px;
+  align-items: center;
+  font-weight: 900;
+}
+
+.repository-name-cell i {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #5ba5ee, #1b7fff);
+}
+
+.repository-status {
+  display: inline-grid;
+  min-width: 62px;
+  place-items: center;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.repository-online {
+  background: #eaf8f1;
+  color: #12935f;
+}
+
+.repository-offline {
+  background: #fff3ef;
+  color: #cc3b35;
+}
+
+.veeam-repository-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 14px;
+  border-top: 1px solid #d6dfe7;
+  background: #fbfcfe;
+  padding: 10px 14px;
+  color: #667986;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.veeam-repository-footer b {
+  color: #17212b;
+}
+
 .airgap-bay-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3153,6 +3656,11 @@ td {
   .airgap-hero,
   .airgap-kpi-grid,
   .airgap-timeline,
+  .veeam-monitor-hero,
+  .veeam-summary-grid,
+  .veeam-policy-summary,
+  .veeam-repository-summary,
+  .veeam-repository-console,
   .airgap-bay-grid,
   .airgap-bottom-grid,
   .integrity-summary {
@@ -3202,6 +3710,23 @@ td {
   border-color: var(--line);
   color: var(--ink);
   box-shadow: var(--shadow);
+}
+
+:root[data-theme="dark"] .veeam-summary-grid article,
+:root[data-theme="dark"] .veeam-policy-summary article,
+:root[data-theme="dark"] .veeam-repository-summary article,
+:root[data-theme="dark"] .veeam-repository-console,
+:root[data-theme="dark"] .veeam-repository-tree,
+:root[data-theme="dark"] .veeam-repository-grid,
+:root[data-theme="dark"] .veeam-repository-toolbar,
+:root[data-theme="dark"] .veeam-repository-footer {
+  background: var(--surface-muted);
+  border-color: var(--line);
+}
+
+:root[data-theme="dark"] .veeam-session-table th,
+:root[data-theme="dark"] .veeam-session-table td {
+  border-color: var(--line);
 }
 
 :root[data-theme="dark"] .sidebar {
@@ -3979,18 +4504,18 @@ td {
 }
 
 .flow-step .security-icon-io-check::before {
-  left: 20px;
-  top: 20px;
-  width: 20px;
-  height: 20px;
-  border-radius: 2px;
-  background: currentColor;
-  transform: rotate(-34deg);
-  transform-origin: center;
+  display: none;
 }
 
 .flow-step .security-icon-io-check::after {
   display: none;
+}
+
+.flow-step .security-icon-io-check {
+  border: 0;
+  border-radius: 50%;
+  background: url("flow-io-check.png") center / contain no-repeat;
+  box-shadow: 0 12px 22px rgba(8, 54, 92, 0.08);
 }
 
 .flow-step .security-icon-power-off::before {

@@ -4,6 +4,16 @@
   "audit_log_path": "runtime/audit.jsonl",
   "io_quiet_seconds": 30,
   "disk_wait_seconds": 60,
+  "veeam": {
+    "enabled": true,
+    "host": "192.168.219.230",
+    "port": 9419,
+    "api_version": "1.2-rev1",
+    "verify_tls": false,
+    "username_env": "LOCKFIX_VEEAM_USERNAME",
+    "password_env": "LOCKFIX_VEEAM_PASSWORD",
+    "timeout_seconds": 5
+  },
   "slots": [
     {
       "slot_id": "BAY-01",

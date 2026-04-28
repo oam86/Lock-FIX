@@ -25,6 +25,18 @@ class SlotConfig:
 
 
 @dataclass(frozen=True)
+class VeeamConfig:
+    enabled: bool
+    host: str
+    port: int
+    api_version: str
+    verify_tls: bool
+    username_env: str
+    password_env: str
+    timeout_seconds: int
+
+
+@dataclass(frozen=True)
 class LockFixConfig:
     dry_run: bool
     state_path: Path
@@ -32,6 +44,7 @@ class LockFixConfig:
     io_quiet_seconds: int
     disk_wait_seconds: int
     slots: dict[str, SlotConfig]
+    veeam: VeeamConfig
 
     def slot(self, slot_id: str) -> SlotConfig:
         try:
@@ -66,6 +79,18 @@ def load_config(path) -> LockFixConfig:
         )
         slots[slot.slot_id] = slot
 
+    veeam_raw = raw.get("veeam", {})
+    veeam = VeeamConfig(
+        enabled=bool(veeam_raw.get("enabled", False)),
+        host=str(veeam_raw.get("host", "")),
+        port=int(veeam_raw.get("port", 9419)),
+        api_version=str(veeam_raw.get("api_version", "1.3-rev1")),
+        verify_tls=bool(veeam_raw.get("verify_tls", True)),
+        username_env=str(veeam_raw.get("username_env", "LOCKFIX_VEEAM_USERNAME")),
+        password_env=str(veeam_raw.get("password_env", "LOCKFIX_VEEAM_PASSWORD")),
+        timeout_seconds=int(veeam_raw.get("timeout_seconds", 5)),
+    )
+
     return LockFixConfig(
         dry_run=bool(raw.get("dry_run", True)),
         state_path=resolve_path(raw.get("state_path", "runtime/state.json")),
@@ -73,4 +98,5 @@ def load_config(path) -> LockFixConfig:
         io_quiet_seconds=int(raw.get("io_quiet_seconds", 30)),
         disk_wait_seconds=int(raw.get("disk_wait_seconds", 60)),
         slots=slots,
+        veeam=veeam,
     )

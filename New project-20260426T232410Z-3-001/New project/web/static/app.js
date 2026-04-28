@@ -113,6 +113,7 @@ let latestMonitoringData = null;
 let latestReportData = null;
 let latestSourcesData = null;
 let latestDashboardData = null;
+let latestLicenseData = null;
 let activeMonitoringMetric = "cpu";
 let monitoringRange = {
   start: "",
@@ -145,6 +146,25 @@ const translations = {
     "nav.airgap": "Air-Gap",
     "nav.settings": "Settings",
     "nav.logout": "Logout",
+    "license.statusTitle": "License Status",
+    "license.customerInfo": "Customer Information",
+    "license.supportCode": "License Key (Support Code)",
+    "license.status": "License Status",
+    "license.firstUsedAt": "First Used At",
+    "license.expiresAt": "Expiration Date",
+    "license.daysLeft": "Days Left",
+    "license.updatedAt": "Updated At",
+    "license.contact": "License Contact",
+    "license.permanent": "Permanent License",
+    "license.daysUnit": "{count} days",
+    "license.reason.notRegistered": "A license key must be registered to use the Web UI.",
+    "license.reason.expired": "The 365-day license period has expired. Please enter a new license key.",
+    "license.reason.invalidKey": "The stored license key needs to be checked.",
+    "license.reason.invalidExpiry": "The license expiration date needs to be checked.",
+    "license.reason.default": "License verification is required.",
+    "license.deviceBasis": "Customer + Support Code",
+    "license.hardwareChange": "No impact from IP/MAC changes",
+    "license.registerFailed": "License registration failed.",
     "settings.title": "Settings",
     "settings.subtitle": "Configure display language and screen theme.",
     "settings.languageTitle": "Language",
@@ -243,6 +263,25 @@ const translations = {
     "nav.airgap": "에어갭",
     "nav.settings": "설정",
     "nav.logout": "로그아웃",
+    "license.statusTitle": "라이선스 상태",
+    "license.customerInfo": "고객사 정보",
+    "license.supportCode": "라이선스 키(Support Code)",
+    "license.status": "라이선스 상태",
+    "license.firstUsedAt": "최초 사용 일자",
+    "license.expiresAt": "만료 일자",
+    "license.daysLeft": "남은 일자",
+    "license.updatedAt": "갱신 일자",
+    "license.contact": "라이선스 문의",
+    "license.permanent": "Permanent License",
+    "license.daysUnit": "{count}일",
+    "license.reason.notRegistered": "라이선스 키를 등록해야 Web UI를 사용할 수 있습니다.",
+    "license.reason.expired": "라이선스 사용 기간 365일이 만료되었습니다. 새 라이선스 키를 입력해 주세요.",
+    "license.reason.invalidKey": "저장된 라이선스 키 확인이 필요합니다.",
+    "license.reason.invalidExpiry": "라이선스 만료 일자 확인이 필요합니다.",
+    "license.reason.default": "라이선스 확인이 필요합니다.",
+    "license.deviceBasis": "고객사 + Support Code",
+    "license.hardwareChange": "IP/MAC 변경 영향 없음",
+    "license.registerFailed": "라이선스 등록에 실패했습니다.",
     "settings.title": "설정",
     "settings.subtitle": "표시 언어와 화면 테마를 설정합니다.",
     "settings.languageTitle": "언어",
@@ -404,6 +443,77 @@ const airgapKo = {
   "Real-time Interlock Process": "실시간 인터록 프로세스",
   "Power cut-off and lock sequence": "전원 차단 및 잠금 연동 순서",
   "Veeam backup completion signal received": "Veeam 백업 종료 신호 수신",
+  "Permission Required": "권한 필요",
+  Waiting: "대기",
+  Running: "진행 중",
+  Failed: "실패",
+  "Veeam API Integration": "Veeam API 연동",
+  "Backup completion signal and session status from VBR REST API": "VBR REST API 백업 종료 신호 및 세션 상태",
+  "Backup Completion Monitor": "백업 완료 모니터",
+  "Progress and isolation readiness are refreshed every 5 seconds.": "진행률과 격리 준비 상태가 5초마다 갱신됩니다.",
+  "Connection": "연결",
+  "Endpoint": "엔드포인트",
+  "API Version": "API 버전",
+  "Server Time": "서버 시간",
+  "Last Backup Session": "마지막 백업 세션",
+  "Backup Progress": "백업 진행률",
+  "Started": "시작",
+  "Ended": "종료",
+  "Backup Completed": "백업 완료",
+  "Backup Not Completed": "백업 미완료",
+  "Live Veeam credentials required": "실시간 Veeam 계정 정보 필요",
+  "Backup Policy Status": "백업 정책 상태",
+  "Veeam Job States compatible policy result view": "Veeam Job States 호환 정책 결과 화면",
+  "Policies": "정책",
+  "Success": "성공",
+  "Warning": "경고",
+  "Failed": "실패",
+  "Running": "실행 중",
+  "Policy Name": "정책명",
+  "Last Result": "마지막 결과",
+  "Last Run": "마지막 실행",
+  "Next Run": "다음 실행",
+  "Enabled": "활성",
+  "Disabled": "비활성",
+  "No backup policy data": "백업 정책 데이터 없음",
+  "No session data": "세션 데이터 없음",
+  "Backup Result History": "백업 성공/실패 이력",
+  "Last 24 hours compatible Veeam session result view": "최근 24시간 Veeam 세션 결과 호환 화면",
+  "Latest Veeam REST sessions ordered by poll result": "Veeam REST 조회 기준 최신 세션 목록",
+  "Job Name": "작업명",
+  "Session Type": "세션 유형",
+  "Start Time": "시작 시간",
+  "End Time": "종료 시간",
+  "LOCK-FIX Interlock": "LOCK-FIX 인터록",
+  "Isolation Ready": "격리 준비 완료",
+  "Hold Isolation": "격리 보류",
+  "Recent Veeam Sessions": "최근 Veeam 세션",
+  "Repository Capacity": "Repository 용량",
+  "Backup Repositories": "백업 Repository",
+  Repository: "Repository",
+  "Repository capacity and free space from VBR REST API": "VBR REST API 기반 Repository 용량 및 여유 공간",
+  "Scale-out Repositories": "Scale-out Repository",
+  "Object Storage": "오브젝트 스토리지",
+  "Repositories": "Repository",
+  "Online": "온라인",
+  "Status": "상태",
+  "Total Capacity": "총 용량",
+  "Used Space": "사용 용량",
+  "Free Space": "여유 공간",
+  "Usage": "사용률",
+  "Capacity": "용량",
+  "Used": "사용",
+  "Free": "여유",
+  "Host": "호스트",
+  "Path": "경로",
+  "Type": "유형",
+  "State": "상태",
+  "No repository data": "Repository 데이터 없음",
+  "Session": "세션",
+  "State": "상태",
+  "Result": "결과",
+  "Progress": "진행률",
+  Name: "이름",
   "Drive hard power-off executed": "드라이브 물리 전원 차단 실행",
   "Solenoid lock engaged": "솔레노이드 잠금 체결 완료",
   "Air-Gap isolation active": "에어갭 격리 활성화",
@@ -499,6 +609,41 @@ function localizedLogContent(content) {
     .replace("rich.kim@oam.co.kr 계정 회원가입 완료", "rich.kim@oam.co.kr 계정 회원가입 완료");
 }
 
+function veeamStatusClass(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "connected" || normalized === "live" || normalized === "success") return "veeam-status-live";
+  if (normalized === "warning") return "veeam-status-wait";
+  if (normalized === "failed") return "veeam-status-error";
+  if (normalized === "disabled" || normalized === "waiting_for_credentials" || normalized === "not_configured") {
+    return "veeam-status-wait";
+  }
+  if (normalized === "error") return "veeam-status-error";
+  return "veeam-status-mock";
+}
+
+function veeamMonitorClass(monitor) {
+  const state = String(monitor?.state || "").toLowerCase();
+  if (state === "completed") return "veeam-status-live";
+  if (state === "running" || state === "completed_waiting") return "veeam-status-wait";
+  if (state === "attention") return "veeam-status-error";
+  return "veeam-status-mock";
+}
+
+function airgapStepClass(state) {
+  const normalized = String(state || "").toLowerCase();
+  if (normalized === "active") return "airgap-step-active";
+  if (normalized === "done") return "airgap-step-done";
+  if (normalized === "running") return "airgap-step-running";
+  if (normalized === "error") return "airgap-step-error";
+  return "airgap-step-waiting";
+}
+
+function formatGb(value) {
+  const number = Number(value || 0);
+  if (number >= 1024) return `${(number / 1024).toFixed(2)} TB`;
+  return `${number.toFixed(1)} GB`;
+}
+
 function dashboardCopy() {
   if (uiSettings.language !== "ko") {
     return {
@@ -528,6 +673,11 @@ function dashboardCopy() {
       backupRunning: "Backup running",
       backupEnd: "Backup completed",
       flush: "Flush verified",
+      flowBackupComplete: ["Backup", "complete"],
+      flowFlushRun: ["Flush", "run"],
+      flowIoCheck: ["I/O closed", "verified"],
+      flowPowerOff: ["Power", "OFF"],
+      flowAirgapActive: ["Air-Gap", "active"],
       isolated: "Storage safe isolation",
       airgapActive: "Air-Gap activated",
       locked: "Locked",
@@ -567,6 +717,11 @@ function dashboardCopy() {
     backupRunning: "백업 진행",
     backupEnd: "백업 종료",
     flush: "Flush 확인",
+    flowBackupComplete: ["백업", "완료"],
+    flowFlushRun: ["Flush", "실행"],
+    flowIoCheck: ["I/O 종료", "확인"],
+    flowPowerOff: ["전원", "OFF"],
+    flowAirgapActive: ["Air-Gap", "활성"],
     isolated: "저장장치 안전 분리",
     airgapActive: "Air-Gap 활성화",
     locked: "잠김",
@@ -785,6 +940,9 @@ function applyPendingUiSettings() {
   }
   if (latestDashboardData) {
     renderDashboard(latestDashboardData);
+  }
+  if (latestLicenseData) {
+    updateLicenseGate(latestLicenseData);
   }
   reloadLogs().catch((error) => console.warn("Unable to reload logs after retention change", error));
 }
@@ -1153,11 +1311,11 @@ function renderDashboard(data) {
           <p>${copy.protectedMessage.replace("전원이 차단", "<b>전원이 차단</b>").replace("Power is cut off", "<b>power is cut off</b>")}</p>
           <div class="security-flow">
             ${[
-              ["backup-complete", ["백업", "완료"]],
-              ["flush-run", ["Flush", "실행"]],
-              ["io-check", ["I/O 종료", "확인"]],
-              ["power-off", ["전원", "OFF"]],
-              ["airgap-logo", ["Air-Gap", "활성"]],
+              ["backup-complete", copy.flowBackupComplete],
+              ["flush-run", copy.flowFlushRun],
+              ["io-check", copy.flowIoCheck],
+              ["power-off", copy.flowPowerOff],
+              ["airgap-logo", copy.flowAirgapActive],
             ].map(([icon, lines], index, arr) => `
               <div class="flow-step ${index === arr.length - 1 ? "flow-step-active" : ""}">
                 <i class="security-icon security-icon-${icon}" aria-hidden="true"></i>
@@ -1418,17 +1576,29 @@ function renderLogsPagination(data) {
 
 function renderLicenseStatus(license) {
   if (!licenseStatusTable) return;
-  const state = license.valid ? "Permanent License" : license.reason;
+  latestLicenseData = license;
+  const state = license.valid ? t("license.permanent") : licenseReasonText(license.reason);
+  const daysLeft = license.valid ? t("license.daysUnit").replace("{count}", license.days_left) : "-";
   licenseStatusTable.innerHTML = `
-    <tr><th>고객사 정보</th><td>${license.customer || "-"}</td></tr>
-    <tr><th>라이선스 키(Support Code)</th><td>${license.support_code || "-"}</td></tr>
-    <tr><th>라이선스 상태</th><td class="${license.valid ? "license-ok" : "license-bad"}">${state}</td></tr>
-    <tr><th>최초 사용 일자</th><td>${license.issued_at || "-"}</td></tr>
-    <tr><th>만료 일자</th><td class="${license.days_left <= 30 ? "license-bad" : ""}">${license.expires_at || "-"}</td></tr>
-    <tr><th>남은 일자</th><td>${license.valid ? `${license.days_left}일` : "-"}</td></tr>
-    <tr><th>갱신 일자</th><td>${license.updated_at || "-"}</td></tr>
-    <tr class="license-contact-row"><th>라이선스 문의</th><td><a href="https://www.oam.co.kr" target="_blank" rel="noreferrer">www.oam.co.kr</a><strong>| 1666 - 3736</strong></td></tr>
+    <tr><th>${t("license.customerInfo")}</th><td>${license.customer || "-"}</td></tr>
+    <tr><th>${t("license.supportCode")}</th><td>${license.support_code || "-"}</td></tr>
+    <tr><th>${t("license.status")}</th><td class="${license.valid ? "license-ok" : "license-bad"}">${state}</td></tr>
+    <tr><th>${t("license.firstUsedAt")}</th><td>${license.issued_at || "-"}</td></tr>
+    <tr><th>${t("license.expiresAt")}</th><td class="${license.days_left <= 30 ? "license-bad" : ""}">${license.expires_at || "-"}</td></tr>
+    <tr><th>${t("license.daysLeft")}</th><td>${daysLeft}</td></tr>
+    <tr><th>${t("license.updatedAt")}</th><td>${license.updated_at || "-"}</td></tr>
+    <tr class="license-contact-row"><th>${t("license.contact")}</th><td><a href="https://www.oam.co.kr" target="_blank" rel="noreferrer">www.oam.co.kr</a><strong>| 1666 - 3736</strong></td></tr>
   `;
+}
+
+function licenseReasonText(reason) {
+  const reasonKeys = {
+    not_registered: "license.reason.notRegistered",
+    expired: "license.reason.expired",
+    invalid_key: "license.reason.invalidKey",
+    invalid_expiry: "license.reason.invalidExpiry",
+  };
+  return reasonKeys[reason] ? t(reasonKeys[reason]) : t("license.reason.default");
 }
 
 function updateLicenseGate(license) {
@@ -1436,15 +1606,9 @@ function updateLicenseGate(license) {
   const locked = !license.valid;
   licenseModal.classList.toggle("hidden", !locked);
   if (!locked) return;
-  const reasonText = {
-    not_registered: "라이선스 키를 등록해야 Web UI를 사용할 수 있습니다.",
-    expired: "라이선스 사용 기간 365일이 만료되었습니다. 새 라이선스 키를 입력해 주세요.",
-    invalid_key: "저장된 라이선스 키 확인이 필요합니다.",
-    invalid_expiry: "라이선스 만료 일자 확인이 필요합니다.",
-  };
-  licenseModalReason.textContent = reasonText[license.reason] || "라이선스 확인이 필요합니다.";
-  licenseIp.textContent = "고객사 + Support Code";
-  licenseMac.textContent = "IP/MAC 변경 영향 없음";
+  licenseModalReason.textContent = licenseReasonText(license.reason);
+  licenseIp.textContent = t("license.deviceBasis");
+  licenseMac.textContent = t("license.hardwareChange");
   licenseSampleKey.textContent = license.sample_key || "-";
   licenseKeyInput.value = "";
   licenseError.textContent = "";
@@ -1463,7 +1627,7 @@ async function registerLicense(event) {
     }),
   });
   if (!payload.ok) {
-    licenseError.textContent = payload.error || "라이선스 등록에 실패했습니다.";
+    licenseError.textContent = payload.error || t("license.registerFailed");
     if (payload.expected_sample) {
       licenseSampleKey.textContent = payload.expected_sample;
     }
@@ -1663,15 +1827,212 @@ function renderSources(data) {
     </div>
     <div class="airgap-timeline">
       ${airGap.timeline.map((item) => `
-        <article class="airgap-step ${item.state === "ACTIVE" ? "airgap-step-active" : ""}">
+        <article class="airgap-step ${airgapStepClass(item.state)}">
           <b>${item.step}</b>
           <strong>${airgapText(item.title)}</strong>
-          <span>${item.state === "ACTIVE" ? airgapText("Safe state active") : airgapText("Complete")}</span>
+          <span>${airgapText(item.status || (item.state === "ACTIVE" ? "Safe state active" : "Complete"))}</span>
         </article>
       `).join("")}
     </div>
   `;
   sourceList.appendChild(timeline);
+
+  if (airGap.veeam) {
+    const veeam = airGap.veeam;
+    const lastBackup = veeam.last_backup || {};
+    const monitor = veeam.backup_monitor || {};
+    const sessionResultMonitor = veeam.session_result_monitor || {};
+    const policyMonitor = veeam.policy_monitor || {};
+    const policies = policyMonitor.policies || [];
+    const repositoryMonitor = veeam.repository_monitor || {};
+    const repositories = repositoryMonitor.repositories || [];
+    const progress = Math.max(0, Math.min(100, Number(monitor.progress || lastBackup.progress || 0)));
+    const veeamPanel = document.createElement("section");
+    veeamPanel.className = "airgap-panel veeam-panel";
+    veeamPanel.innerHTML = `
+      <div class="airgap-panel-head">
+        <h2>${airgapText("Backup Completion Monitor")}</h2>
+        <span>${airgapText("Progress and isolation readiness are refreshed every 5 seconds.")}</span>
+      </div>
+      <div class="veeam-monitor-hero">
+        <article class="veeam-monitor-primary">
+          <span>${airgapText("Last Backup Session")}</span>
+          <strong>${escapeHtml(lastBackup.name || "-")}</strong>
+          <em class="${veeamMonitorClass(monitor)}">${airgapText(monitor.completed ? "Backup Completed" : "Backup Not Completed")}</em>
+          <div class="veeam-progress" aria-label="${airgapText("Backup Progress")}">
+            <i style="width: ${progress}%"></i>
+          </div>
+          <p><b>${airgapText("Backup Progress")}</b><strong>${progress}%</strong></p>
+        </article>
+        <article class="veeam-monitor-gate">
+          <span>${airgapText("LOCK-FIX Interlock")}</span>
+          <strong class="${veeam.interlock_ready ? "veeam-status-live" : "veeam-status-wait"}">${airgapText(veeam.interlock_ready ? "Isolation Ready" : "Hold Isolation")}</strong>
+          <p>${escapeHtml(veeam.interlock_policy || "-")}</p>
+        </article>
+        <article class="veeam-monitor-time">
+          <span>${airgapText("Started")}</span>
+          <strong>${escapeHtml(monitor.started_at || lastBackup.creation_time || "-")}</strong>
+          <span>${airgapText("Ended")}</span>
+          <strong>${escapeHtml(monitor.ended_at || lastBackup.end_time || "-")}</strong>
+        </article>
+        <article class="veeam-monitor-results">
+          <span>${airgapText("Backup Result History")}</span>
+          <div>
+            <strong class="veeam-status-live">${sessionResultMonitor.success_count || 0}</strong><small>${airgapText("Success")}</small>
+            <strong class="veeam-status-error">${sessionResultMonitor.failed_count || 0}</strong><small>${airgapText("Failed")}</small>
+            <strong class="veeam-status-wait">${sessionResultMonitor.running_count || 0}</strong><small>${airgapText("Running")}</small>
+          </div>
+        </article>
+      </div>
+      <div class="veeam-summary-grid">
+        <article>
+          <span>${airgapText("Connection")}</span>
+          <strong class="${veeamStatusClass(veeam.status)}">${escapeHtml(veeam.status || "-")}</strong>
+          <p>${escapeHtml(veeam.message || "-")}</p>
+        </article>
+        <article>
+          <span>${airgapText("Endpoint")}</span>
+          <strong>${escapeHtml(veeam.endpoint || "-")}</strong>
+          <p>${airgapText("API Version")}: ${escapeHtml(veeam.api_version || "-")}</p>
+        </article>
+        <article>
+          <span>${airgapText("Result")}</span>
+          <strong class="${veeamMonitorClass(monitor)}">${escapeHtml(monitor.result || lastBackup.result || "-")}</strong>
+          <p>${escapeHtml(airgapText(monitor.title || "-"))}</p>
+        </article>
+      </div>
+      <div class="veeam-session-table-wrap">
+        <h3>${airgapText("Backup Policy Status")}</h3>
+        <p class="veeam-section-note">${airgapText("Veeam Job States compatible policy result view")}</p>
+        <div class="veeam-policy-summary">
+          <article><span>${airgapText("Policies")}</span><strong>${policyMonitor.policy_count || 0}</strong><p>${airgapText("Running")}: ${policyMonitor.running_count || 0}</p></article>
+          <article><span>${airgapText("Success")}</span><strong class="veeam-status-live">${policyMonitor.success_count || 0}</strong><p>${airgapText("Warning")}: ${policyMonitor.warning_count || 0}</p></article>
+          <article><span>${airgapText("Failed")}</span><strong class="veeam-status-error">${policyMonitor.failed_count || 0}</strong><p>${escapeHtml(policyMonitor.message || "-")}</p></article>
+        </div>
+        <table class="veeam-session-table veeam-policy-table">
+          <thead>
+            <tr><th>${airgapText("Policy Name")}</th><th>${airgapText("Type")}</th><th>${airgapText("State")}</th><th>${airgapText("Last Result")}</th><th>${airgapText("Last Run")}</th><th>${airgapText("Next Run")}</th><th>${airgapText("Enabled")}</th></tr>
+          </thead>
+          <tbody>
+            ${policies.length ? policies.map((item) => `
+              <tr>
+                <td>${escapeHtml(item.name || "-")}</td>
+                <td>${escapeHtml(item.type || "-")}</td>
+                <td>${escapeHtml(item.status || "-")}</td>
+                <td><strong class="${veeamStatusClass(item.last_result)}">${escapeHtml(item.last_result || "-")}</strong></td>
+                <td>${escapeHtml(item.last_run || "-")}</td>
+                <td>${escapeHtml(item.next_run || "-")}</td>
+                <td>${airgapText(item.is_enabled ? "Enabled" : "Disabled")}</td>
+              </tr>
+            `).join("") : `<tr><td colspan="7">${airgapText("No backup policy data")}</td></tr>`}
+          </tbody>
+        </table>
+        <h3>${airgapText("Repository Capacity")}</h3>
+        <p class="veeam-section-note">${airgapText("Repository capacity and free space from VBR REST API")}</p>
+        <div class="veeam-repository-console">
+          <aside class="veeam-repository-tree" aria-label="${airgapText("Backup Repositories")}">
+            <strong>${airgapText("Backup Infrastructure")}</strong>
+            <button type="button" class="active"><span></span>${airgapText("Backup Repositories")} <b>${repositoryMonitor.repository_count || 0}</b></button>
+            <button type="button"><span></span>${airgapText("Scale-out Repositories")} <b>0</b></button>
+            <button type="button"><span></span>${airgapText("Object Storage")} <b>0</b></button>
+          </aside>
+          <section class="veeam-repository-grid">
+            <div class="veeam-repository-toolbar">
+              <div>
+                <strong>${airgapText("Backup Repositories")}</strong>
+                <span>${airgapText("Online")}: ${repositoryMonitor.online_count || 0} / ${repositoryMonitor.repository_count || 0}</span>
+              </div>
+              <div class="repository-total-meter">
+                <span>${airgapText("Total Capacity")}</span>
+                <b>${formatGb(repositoryMonitor.total_capacity_gb)}</b>
+                <i><em style="width: ${Math.max(0, Math.min(100, Number(repositoryMonitor.usage_percent || 0)))}%"></em></i>
+              </div>
+            </div>
+            <table class="veeam-session-table veeam-repository-table">
+              <thead>
+                <tr>
+                  <th>${airgapText("Name")}</th>
+                  <th>${airgapText("Status")}</th>
+                  <th>${airgapText("Type")}</th>
+                  <th>${airgapText("Host")}</th>
+                  <th>${airgapText("Path")}</th>
+                  <th>${airgapText("Capacity")}</th>
+                  <th>${airgapText("Free")}</th>
+                  <th>${airgapText("Used")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${repositories.length ? repositories.map((item) => `
+                  <tr>
+                    <td><span class="repository-name-cell"><i></i>${escapeHtml(item.name || "-")}</span></td>
+                    <td><span class="repository-status ${item.is_online ? "repository-online" : "repository-offline"}">${escapeHtml(item.is_online ? "Online" : "Offline")}</span></td>
+                    <td>${escapeHtml(item.type || "-")}</td>
+                    <td>${escapeHtml(item.host || "-")}</td>
+                    <td>${escapeHtml(item.path || "-")}</td>
+                    <td>${formatGb(item.capacity_gb)}</td>
+                    <td>${formatGb(item.free_gb)}</td>
+                    <td>
+                      <div class="repository-usage">
+                        <span><i style="width: ${Math.max(0, Math.min(100, Number(item.usage_percent || 0)))}%"></i></span>
+                        <b>${escapeHtml(String(item.usage_percent ?? 0))}%</b>
+                      </div>
+                    </td>
+                  </tr>
+                `).join("") : `<tr><td colspan="8">${airgapText("No repository data")}</td></tr>`}
+              </tbody>
+            </table>
+            <div class="veeam-repository-footer">
+              <span>${airgapText("Used Space")}: <b>${formatGb(repositoryMonitor.total_used_gb)}</b></span>
+              <span>${airgapText("Free Space")}: <b>${formatGb(repositoryMonitor.total_free_gb)}</b></span>
+              <span>${airgapText("Usage")}: <b>${repositoryMonitor.usage_percent || 0}%</b></span>
+            </div>
+          </section>
+        </div>
+        <h3>${airgapText("Backup Result History")}</h3>
+        <p class="veeam-section-note">${airgapText("Last 24 hours compatible Veeam session result view")}</p>
+        <table class="veeam-session-table">
+          <thead>
+            <tr><th>${airgapText("Job Name")}</th><th>${airgapText("Session Type")}</th><th>${airgapText("Status")}</th><th>${airgapText("Start Time")}</th><th>${airgapText("End Time")}</th></tr>
+          </thead>
+          <tbody>
+            ${(veeam.sessions || []).length ? (veeam.sessions || []).map((item) => `
+              <tr>
+                <td>${escapeHtml(item.name || "-")}</td>
+                <td>${escapeHtml(item.session_type || "-")}</td>
+                <td><strong class="${veeamStatusClass(item.result)}">${escapeHtml(item.result || item.state || "-")}</strong></td>
+                <td>${escapeHtml(item.creation_time || "-")}</td>
+                <td>${escapeHtml(item.end_time || "-")}</td>
+              </tr>
+            `).join("") : `<tr><td colspan="5">${airgapText("No session data")}</td></tr>`}
+          </tbody>
+        </table>
+        <h3>${airgapText("Recent Veeam Sessions")}</h3>
+        <p class="veeam-section-note">${airgapText("Latest Veeam REST sessions ordered by poll result")}</p>
+        <table class="veeam-session-table veeam-recent-session-table">
+          <thead>
+            <tr><th>${airgapText("Session")}</th><th>${airgapText("Session Type")}</th><th>${airgapText("State")}</th><th>${airgapText("Result")}</th><th>${airgapText("Progress")}</th></tr>
+          </thead>
+          <tbody>
+            ${(veeam.sessions || []).length ? (veeam.sessions || []).map((item) => `
+              <tr>
+                <td>${escapeHtml(item.name || "-")}</td>
+                <td>${escapeHtml(item.session_type || "-")}</td>
+                <td>${escapeHtml(item.state || "-")}</td>
+                <td><strong class="${veeamStatusClass(item.result)}">${escapeHtml(item.result || "-")}</strong></td>
+                <td>
+                  <div class="repository-usage">
+                    <span><i style="width: ${Math.max(0, Math.min(100, Number(item.progress || 0)))}%"></i></span>
+                    <b>${escapeHtml(String(item.progress ?? "-"))}${item.progress === undefined ? "" : "%"}</b>
+                  </div>
+                </td>
+              </tr>
+            `).join("") : `<tr><td colspan="5">${airgapText("No session data")}</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    `;
+    sourceList.appendChild(veeamPanel);
+  }
 
   const bayMap = document.createElement("section");
   bayMap.className = "airgap-panel";

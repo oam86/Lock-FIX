@@ -52,6 +52,14 @@ class LockFixTests(unittest.TestCase):
             compute_uid("S1", "M1", "W1", "BAY-01"),
         )
 
+    def test_veeam_config_defaults_to_disabled(self) -> None:
+        tmp_path = self.make_workspace()
+        config = load_config(write_config(tmp_path))
+
+        self.assertFalse(config.veeam.enabled)
+        self.assertEqual(config.veeam.port, 9419)
+        self.assertEqual(config.veeam.api_version, "1.3-rev1")
+
     def test_isolate_reaches_isolated(self) -> None:
         tmp_path = self.make_workspace()
         controller = LockFixController(load_config(write_config(tmp_path)))
