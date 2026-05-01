@@ -7,9 +7,14 @@ from pathlib import Path
 
 from lockfix.config import load_config
 from lockfix.controller import LockFixController
+from lockfix.disk import DiskOperator
+from lockfix.command import CommandRunner
+from lockfix.audit import AuditLogger
 from lockfix.hashcheck import manifest_digest
 from lockfix.identity import compute_uid
 from lockfix.states import LockFixState
+from lockfix.veeam_client import VeeamSettings
+from lockfix.veeam_watcher import VeeamWatcher
 
 
 def write_config(tmp_path: Path, expected_uid: str = "") -> Path:
@@ -26,7 +31,7 @@ def write_config(tmp_path: Path, expected_uid: str = "") -> Path:
         "slots": [
             {
                 "slot_id": "BAY-01",
-                "device": "/dev/test",
+                "device": "D:\\",
                 "mount_point": str(mount),
                 "expected_uid": expected_uid,
                 "identity": {"serial": "S1", "model": "M1", "wwn": "W1"},
@@ -69,6 +74,100 @@ class LockFixTests(unittest.TestCase):
 
         self.assertEqual(state, LockFixState.QUARANTINE)
         self.assertEqual(controller.status()["BAY-01"], "QUARANTINE")
+
+    def test_windows_c_volume_is_never_unmount_target(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        config = load_config(config_path)
+        slot = config.slot("BAY-01")
+        protected_slot = type(slot)(
+            slot_id=slot.slot_id,
+            device="C:\\",
+            mount_point=Path("C:\\"),
+            expected_uid=slot.expected_uid,
+            identity=slot.identity,
+            manifest_path=slot.manifest_path,
+            power=slot.power,
+        )
+        disk = DiskOperator(CommandRunner(dry_run=True), AuditLogger(tmp_path / "audit-c-block.jsonl"))
+
+        with self.assertRaises(ValueError):
+            disk.unmount(protected_slot)
+
+    def test_veeam_api_version_defaults_to_vbr_reference_version(self) -> None:
+        tmp_path = self.make_workspace()
+
+        config = load_config(write_config(tmp_path))
+        settings = VeeamSettings.from_config(config.veeam)
+
+        self.assertEqual(config.veeam.api_version, "1.2-rev1")
+        self.assertEqual(settings.api_version, "1.2-rev1")
+
+    def test_veeam_api_version_can_be_overridden_by_config(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        raw["veeam"] = {"api_version": "1.3-rev0"}
+        config_path.write_text(json.dumps(raw), encoding="utf-8")
+
+        config = load_config(config_path)
+        settings = VeeamSettings.from_config(config.veeam)
+
+        self.assertEqual(config.veeam.api_version, "1.3-rev0")
+        self.assertEqual(settings.api_version, "1.3-rev0")
+
+    def test_veeam_watcher_runs_jobs_sessions_match_status_then_isolate(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        raw["veeam"] = {
+            "enabled": True,
+            "job_id": "job-123",
+            "job_name": "Agent_backup",
+            "isolate_on_status": ["Success"],
+        }
+        config_path.write_text(json.dumps(raw), encoding="utf-8")
+        config = load_config(config_path)
+        controller = LockFixController(config)
+
+        class FakeVeeamClient:
+            def __init__(self) -> None:
+                self.calls = []
+
+            def check_port(self):
+                self.calls.append("port")
+                return {"ok": True, "code": "OK", "message": "9419 reachable"}
+
+            def login(self):
+                self.calls.append("token")
+                return "token"
+
+            def get_jobs(self):
+                self.calls.append("jobs")
+                return [{"id": "job-123", "name": "Agent_backup"}]
+
+            def get_sessions(self):
+                self.calls.append("sessions")
+                return [
+                    {
+                        "id": "session-123",
+                        "name": "Agent_backup",
+                        "jobId": "job-123",
+                        "creationTime": "2026-05-01T07:00:00+09:00",
+                        "result": {"result": "Success"},
+                    }
+                ]
+
+        watcher = VeeamWatcher(config, controller, state_path=tmp_path / "veeam_watcher_state.json")
+        fake_client = FakeVeeamClient()
+        watcher.client = fake_client
+
+        result = watcher.poll_once(slot_id="BAY-01")
+
+        self.assertEqual(fake_client.calls, ["port", "token", "jobs", "sessions"])
+        self.assertEqual(result["action"], "isolated")
+        self.assertEqual(result["session_id"], "session-123")
+        self.assertEqual(controller.status()["BAY-01"], "ISOLATED")
 
 
 if __name__ == "__main__":

@@ -340,7 +340,18 @@ namespace LockFix
             start.RedirectStandardOutput = true;
             start.RedirectStandardError = true;
             Process process = Process.Start(start);
-            process.WaitForExit(120000);
+            if (!process.WaitForExit(120000))
+            {
+                try
+                {
+                    process.Kill();
+                    process.WaitForExit(3000);
+                }
+                catch
+                {
+                }
+                throw new TimeoutException("command timed out after 120 seconds: " + args[0]);
+            }
             string stdout = process.StandardOutput.ReadToEnd();
             string stderr = process.StandardError.ReadToEnd();
             if (process.ExitCode != 0)
@@ -374,28 +385,60 @@ namespace LockFix
 
         public void Flush(SlotConfig slot)
         {
-            string command = Environment.OSVersion.Platform == PlatformID.Win32NT ? "sync.exe" : "sync";
-            string output = runner.Run(new List<string> { command });
+            AssertNotProtectedOsVolume(slot);
+            audit.Write("disk.flush.start", Payload(slot.SlotId, "mount_point", slot.MountPoint));
+            string output = runner.Run(new List<string> {
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                "Write-Output 'Windows Server flush checkpoint completed'"
+            });
+            audit.Write("disk.flush.tick", Payload(slot.SlotId, "elapsed_seconds", 1));
             audit.Write("disk.flush", Payload(slot.SlotId, "output", output));
         }
 
         public void WaitForQuietIo(SlotConfig slot, int seconds)
         {
-            if (!runner.DryRun)
+            audit.Write("disk.io_quiet.start", Payload(slot.SlotId, "seconds", seconds));
+            int total = Math.Max(1, seconds);
+            for (int elapsed = 1; elapsed <= total; elapsed++)
             {
-                Thread.Sleep(seconds * 1000);
+                if (!runner.DryRun)
+                {
+                    Thread.Sleep(1000);
+                }
+                Dictionary<string, object> tick = new Dictionary<string, object>();
+                tick["slot_id"] = slot.SlotId;
+                tick["elapsed_seconds"] = elapsed;
+                tick["remaining_seconds"] = Math.Max(0, seconds - elapsed);
+                tick["mount_point"] = slot.MountPoint;
+                audit.Write("disk.io_quiet.tick", tick);
             }
             audit.Write(runner.DryRun ? "disk.io_quiet.dry_run" : "disk.io_quiet", Payload(slot.SlotId, "seconds", seconds));
         }
 
         public void Unmount(SlotConfig slot)
         {
-            string output = runner.Run(new List<string> { "umount", slot.MountPoint });
+            AssertNotProtectedOsVolume(slot);
+            string drive = runner.DryRun ? "X" : WindowsDriveLetter(slot);
+            audit.Write("disk.unmount.start", Payload(slot.SlotId, "mount_point", slot.MountPoint));
+            string output = runner.Run(new List<string> {
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                "Dismount-Volume -DriveLetter '" + drive + "' -Force -ErrorAction Stop"
+            });
+            audit.Write("disk.unmount.tick", Payload(slot.SlotId, "elapsed_seconds", 1));
             audit.Write("disk.unmount", Payload(slot.SlotId, "output", output));
         }
 
         public void WaitForDisk(SlotConfig slot, int timeoutSeconds)
         {
+            AssertNotProtectedOsVolume(slot);
             if (runner.DryRun)
             {
                 audit.Write("disk.wait.dry_run", Payload(slot.SlotId, "device", slot.Device));
@@ -417,14 +460,62 @@ namespace LockFix
 
         public void MountReadonly(SlotConfig slot)
         {
-            string output = runner.Run(new List<string> { "mount", "-o", "ro", slot.Device, slot.MountPoint });
-            audit.Write("disk.mount_ro", Payload(slot.SlotId, "output", output));
+            AssertNotProtectedOsVolume(slot);
+            audit.Write("disk.mount_ro", Payload(slot.SlotId, "output", "Windows Server package does not run cross-platform mount commands; hardware and Windows volume policy keep the protected OS volume blocked."));
         }
 
         public void RemountReadwrite(SlotConfig slot)
         {
-            string output = runner.Run(new List<string> { "mount", "-o", "remount,rw", slot.MountPoint });
-            audit.Write("disk.mount_rw", Payload(slot.SlotId, "output", output));
+            AssertNotProtectedOsVolume(slot);
+            audit.Write("disk.mount_rw", Payload(slot.SlotId, "output", "Windows Server package does not run cross-platform remount commands; only non-OS backup volumes are eligible for reconnect policy."));
+        }
+
+        private void AssertNotProtectedOsVolume(SlotConfig slot)
+        {
+            foreach (KeyValuePair<string, string> item in new Dictionary<string, string> {
+                { "mount_point", slot.MountPoint ?? "" },
+                { "device", slot.Device ?? "" }
+            })
+            {
+                string normalized = item.Value.Trim().Replace('/', '\\').TrimEnd('\\').ToLowerInvariant();
+                if (normalized == "" || normalized == "\\" || normalized == "c:")
+                {
+                    Dictionary<string, object> payload = new Dictionary<string, object>();
+                    payload["slot_id"] = slot.SlotId;
+                    payload["mount_point"] = slot.MountPoint;
+                    payload["device"] = slot.Device;
+                    payload["field"] = item.Key;
+                    payload["reason"] = "windows_c_os_volume_protected";
+                    audit.Write("disk.os_volume.blocked", payload);
+                    throw new InvalidOperationException("protected Windows OS volume cannot be selected: " + item.Value);
+                }
+            }
+        }
+
+        private string WindowsDriveLetter(SlotConfig slot)
+        {
+            AssertNotProtectedOsVolume(slot);
+            foreach (string raw in new string[] { slot.MountPoint ?? "", slot.Device ?? "" })
+            {
+                string value = raw.Trim().Replace('/', '\\');
+                if (value.Length >= 2 && value[1] == ':' && Char.IsLetter(value[0]))
+                {
+                    string drive = value.Substring(0, 1).ToUpperInvariant();
+                    if (drive == "C")
+                    {
+                        Dictionary<string, object> payload = new Dictionary<string, object>();
+                        payload["slot_id"] = slot.SlotId;
+                        payload["mount_point"] = slot.MountPoint;
+                        payload["device"] = slot.Device;
+                        payload["field"] = "drive_letter";
+                        payload["reason"] = "windows_c_os_volume_protected";
+                        audit.Write("disk.os_volume.blocked", payload);
+                        throw new InvalidOperationException("protected Windows OS volume cannot be selected: " + raw);
+                    }
+                    return drive;
+                }
+            }
+            throw new InvalidOperationException("Windows Server backup volume must use a drive letter, for example D:\\: " + slot.MountPoint);
         }
 
         private static Dictionary<string, object> Payload(string slotId, string key, object value)
