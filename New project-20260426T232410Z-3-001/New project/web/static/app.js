@@ -149,7 +149,8 @@ let uiSettings = {
   theme: localStorage.getItem("lockfix.theme") || "light",
 };
 let pendingUiSettings = { ...uiSettings };
-let sidebarCollapsed = localStorage.getItem("lockfix.sidebarCollapsed") !== "false";
+let sidebarCollapsed = false;
+localStorage.setItem("lockfix.sidebarCollapsed", "false");
 
 const translations = {
   en: {
@@ -2039,7 +2040,7 @@ function renderSources(data) {
   const stepLogs = Array.isArray(airGap.step_logs) && airGap.step_logs.length ? airGap.step_logs : fallbackAirGapSummary().step_logs;
   const apiSynced = isVeeamSynced(veeam);
   const backupProgress = apiSynced ? Math.max(0, Math.min(100, Number(veeam.progress_percent || 0))) : 0;
-  const apiPercent = apiSynced ? Math.max(0, Math.min(100, Number(veeam.api_verification_percent ?? 100))) : 0;
+  const apiPercent = backupProgress;
   const veeamSessionLogs = Array.isArray(airGap.session_logs) && airGap.session_logs.length
     ? airGap.session_logs
     : [{

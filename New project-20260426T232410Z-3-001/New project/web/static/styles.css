@@ -453,8 +453,8 @@ button {
 }
 
 .sidebar-logo img {
-  width: 58px;
-  max-height: 72px;
+  width: 66px;
+  max-height: 76px;
   height: auto;
   object-fit: contain;
   transition: width 180ms ease;
@@ -469,7 +469,7 @@ button {
 }
 
 .sidebar-collapsed .sidebar-logo-mark {
-  width: 24px;
+  width: 28px;
   height: auto;
   display: block;
 }
@@ -1977,6 +1977,10 @@ button {
   height: 30px;
   flex-basis: 30px;
   font-size: 13px;
+}
+
+.airgap-procedure-steps .veeam-step-card:first-child b {
+  transform: translateX(-7px);
 }
 
 .airgap-procedure-steps .veeam-step-copy {
