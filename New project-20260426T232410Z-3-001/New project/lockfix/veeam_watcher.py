@@ -7,18 +7,7 @@ from typing import Any
 
 from .config import LockFixConfig
 from .controller import LockFixController
-from .veeam_client import (
-    VeeamClient,
-    VeeamError,
-    VeeamSettings,
-    is_success_status,
-    match_sessions,
-    session_id,
-    session_job_id,
-    session_name,
-    session_sort_key,
-    session_status,
-)
+from .veeam_diagnostics import run_veeam_diagnostics
 
 
 class VeeamWatcher:
@@ -30,97 +19,93 @@ class VeeamWatcher:
     ) -> None:
         self.config = config
         self.controller = controller
-        self.settings = VeeamSettings.from_config(config.veeam)
-        self.client = VeeamClient(self.settings)
         self.state_path = state_path or config.state_path.parent / "veeam_watcher_state.json"
 
     def poll_once(self, slot_id: str | None = None) -> dict[str, Any]:
+        diagnostics = run_veeam_diagnostics(self.config, self.controller)
         if not self.config.veeam.enabled:
-            result = {"ok": False, "action": "disabled", "message": "Veeam watcher is disabled in config.veeam.enabled."}
+            result = {
+                "ok": False,
+                "action": "disabled",
+                "diagnostics": diagnostics,
+                "message": "Veeam watcher is disabled in config.veeam.enabled.",
+            }
             self.controller.audit.write("veeam.watch.disabled", **result)
             return result
 
-        port_check = self.client.check_port()
-        if not port_check["ok"]:
-            self.controller.audit.write("veeam.watch.error", **port_check)
-            return {"ok": False, "action": "wait", "error_type": "ConnectionError", "checks": {"port": port_check}}
-
-        try:
-            self.client.login()
-            jobs = self.client.get_jobs()
-            sessions = self.client.get_sessions()
-            match = match_sessions(sessions, self.settings.job_name, self.settings.job_id)
-            session = sorted(match["matches"], key=session_sort_key, reverse=True)[0] if match["matches"] else None
-        except VeeamError as exc:
+        condition = diagnostics.get("isolate_condition") if isinstance(diagnostics.get("isolate_condition"), dict) else {}
+        pre_checks = diagnostics.get("pre_isolate_checks") if isinstance(diagnostics.get("pre_isolate_checks"), dict) else {}
+        if diagnostics.get("error"):
             result = {
                 "ok": False,
                 "action": "wait",
-                "error_type": getattr(exc, "code", exc.__class__.__name__),
-                "message": str(exc),
+                "error_type": diagnostics.get("error_type"),
+                "message": diagnostics.get("error"),
+                "diagnostics": diagnostics,
             }
             self.controller.audit.write("veeam.watch.error", **result)
             return result
-
-        if not session:
+        if condition.get("already_processed"):
             result = {
                 "ok": True,
-                "action": "wait",
-                "message": "No Veeam session found for configured job.",
-                "job_name": self.settings.job_name,
-                "job_id": self.settings.job_id,
-                "jobs_count": len(jobs),
-                "sessions_count": len(sessions),
-                "match_strategy": match["strategy"],
-                "similar_candidates": match["candidates"],
+                "action": "already_isolated",
+                "session_id": condition.get("session_id", ""),
+                "job_name": condition.get("job_name", ""),
+                "job_id": condition.get("job_id", ""),
+                "status": condition.get("status", ""),
+                "diagnostics": diagnostics,
             }
-            self.controller.audit.write("veeam.watch.no_session", **result)
+            self.controller.audit.write("veeam.watch.duplicate_skip", **result)
             return result
-
-        current_session_id = session_id(session)
-        current_status = session_status(session)
-        current_name = session_name(session)
-        current_job_id = session_job_id(session)
-        if not is_success_status(current_status, self.config.veeam.isolate_on_status):
+        if not condition.get("would_call_isolate"):
             result = {
                 "ok": True,
                 "action": "wait",
-                "session_id": current_session_id,
-                "job_name": current_name,
-                "job_id": current_job_id,
-                "status": current_status,
-                "message": "Latest Veeam session is not in isolate_on_status.",
+                "session_id": condition.get("session_id", ""),
+                "job_name": condition.get("job_name", self.config.veeam.job_name),
+                "job_id": condition.get("job_id", self.config.veeam.job_id),
+                "status": condition.get("status", ""),
+                "match_strategy": (diagnostics.get("matching") or {}).get("strategy"),
+                "pre_isolate_checks": pre_checks,
+                "message": "Veeam session is not ready for isolate. job_id matching, Success status, post-success delay, I/O quiet policy, and repository resync checks must all pass.",
+                "diagnostics": diagnostics,
             }
             self.controller.audit.write("veeam.watch.session_wait", **result)
             return result
 
+        latest_session = diagnostics.get("latest_configured_session") if isinstance(diagnostics.get("latest_configured_session"), dict) else {}
+        restore_scope = latest_session.get("restore_point_scope") if isinstance(latest_session.get("restore_point_scope"), dict) else {}
+        repository_path = str(
+            latest_session.get("repository_path")
+            or restore_scope.get("repository_path")
+            or self.config.veeam.target_repository_path
+            or ""
+        )
+        target_slot_id = slot_id or next(iter(self.config.slots))
+        isolated_state = self.controller.isolate(target_slot_id, repository_path=repository_path)
         state = self.read_state()
         processed_session_ids = set(state.get("processed_session_ids") or [])
-        if state.get("last_isolated_session_id") == current_session_id or current_session_id in processed_session_ids:
-            result = {
-                "ok": True,
-                "action": "already_isolated",
-                "session_id": current_session_id,
-                "job_name": current_name,
-                "job_id": current_job_id,
-                "status": current_status,
-            }
-            self.controller.audit.write("veeam.watch.duplicate_skip", **result)
-            return result
-
-        target_slot_id = slot_id or next(iter(self.config.slots))
-        isolated_state = self.controller.isolate(target_slot_id)
+        current_session_id = str(condition.get("session_id") or "")
         record = {
             "last_isolated_session_id": current_session_id,
             "processed_session_ids": sorted(processed_session_ids | {current_session_id}),
             "slot_id": target_slot_id,
-            "job_name": current_name,
-            "job_id": current_job_id,
-            "status": current_status,
+            "job_name": condition.get("job_name", ""),
+            "job_id": condition.get("job_id", ""),
+            "status": condition.get("status", ""),
+            "repository_path": repository_path,
             "lockfix_state": isolated_state.value,
             "isolated_at_epoch": time.time(),
+            "pre_isolate_checks": pre_checks,
         }
         self.write_state(record)
-        result = {"ok": True, "action": "isolated", "session_id": current_session_id, **record}
+        result = {
+            "ok": True,
+            "action": "isolated",
+            "session_id": current_session_id,
+            "diagnostics": diagnostics,
+            **record,
+        }
         self.controller.audit.write("veeam.watch.isolated", **result)
         return result
 

@@ -7,8 +7,9 @@ import socket
 import ssl
 import time
 from base64 import b64encode
-from dataclasses import dataclass
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from difflib import get_close_matches
 from typing import Any
 from urllib import error as urlerror
@@ -17,6 +18,7 @@ from urllib.parse import urlencode, urlparse
 from xml.etree import ElementTree
 
 from .config import VeeamConfig
+from .veeam_console_logs import latest_backup_copy_console_log_summary
 
 
 SUCCESS_STATES = {"SUCCESS", "SUCCEEDED", "COMPLETED", "SUCCESSWARNING", "SUCCESS_WITH_WARNING"}
@@ -48,33 +50,186 @@ class VeeamSslError(VeeamError):
     code = "SSLError"
 
 
+def veeam_base_url_candidates(settings: "VeeamSettings") -> list[str]:
+    urls: list[str] = []
+
+    def add(value: str) -> None:
+        text = (value or "").strip().rstrip("/")
+        if not text:
+            return
+        if not text.startswith(("http://", "https://")):
+            text = f"https://{text}"
+        if ":" not in text.rsplit("/", 1)[-1]:
+            text = f"{text}:9419"
+        if text not in urls:
+            urls.append(text)
+
+    add(os.environ.get("LOCKFIX_VEEAM_BASE_URL", ""))
+    for item in (settings.discovery_candidates or []):
+        add(item)
+    for item in os.environ.get("LOCKFIX_VEEAM_CANDIDATES", "").split(","):
+        add(item)
+    add(settings.base_url)
+    add("https://127.0.0.1:9419")
+    add("https://localhost:9419")
+    if settings.discovery_scan_local_subnet:
+        for host in local_ipv4_subnet_hosts():
+            add(f"https://{host}:9419")
+    return urls
+
+
+def local_ipv4_subnet_hosts() -> list[str]:
+    hosts: list[str] = []
+    seen: set[str] = set()
+    try:
+        hostname = socket.gethostname()
+        addresses = socket.gethostbyname_ex(hostname)[2]
+    except OSError:
+        addresses = []
+    for address in addresses:
+        if address.startswith(("127.", "169.254.")):
+            continue
+        parts = address.split(".")
+        if len(parts) != 4:
+            continue
+        prefix = ".".join(parts[:3])
+        for index in range(1, 255):
+            candidate = f"{prefix}.{index}"
+            if candidate == address or candidate in seen:
+                continue
+            seen.add(candidate)
+            hosts.append(candidate)
+    return hosts
+
+
+def discover_veeam_base_url(settings: "VeeamSettings", candidates: list[str]) -> tuple[str, list[dict[str, Any]]]:
+    attempts: list[dict[str, Any]] = []
+    context = ssl.create_default_context() if settings.verify_ssl else ssl._create_unverified_context()
+    preferred = candidates[:4]
+    scanned = candidates[4:]
+    for url in preferred:
+        ok, detail = probe_veeam_candidate(url, settings, context)
+        attempts.append(detail)
+        if ok:
+            return url, attempts
+    if not scanned:
+        return "", attempts
+    max_workers = min(32, max(1, len(scanned)))
+    executor = ThreadPoolExecutor(max_workers=max_workers)
+    try:
+        futures = {executor.submit(probe_veeam_candidate, url, settings, context): url for url in scanned}
+        for future in as_completed(futures):
+            ok, detail = future.result()
+            attempts.append(detail)
+            if ok:
+                for pending in futures:
+                    if pending is not future:
+                        pending.cancel()
+                return futures[future], attempts
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+    return "", attempts
+
+
+def probe_veeam_candidate(url: str, settings: "VeeamSettings", context: ssl.SSLContext) -> tuple[bool, dict[str, Any]]:
+    started = time.time()
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    port = parsed.port or 9419
+    detail: dict[str, Any] = {"base_url": url, "host": host, "port": port, "ok": False}
+    try:
+        with socket.create_connection((host, port), timeout=settings.discovery_timeout_seconds):
+            pass
+        body = urlencode(
+            {
+                "grant_type": "password",
+                "username": settings.username,
+                "password": settings.password,
+            }
+        ).encode("utf-8")
+        request = urlrequest.Request(
+            f"{url.rstrip('/')}/api/oauth2/token",
+            data=body,
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "x-api-version": settings.api_version,
+            },
+            method="POST",
+        )
+        with urlrequest.urlopen(request, timeout=settings.discovery_timeout_seconds, context=context) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+        token = (json.loads(raw) if raw else {}).get("access_token", "")
+        detail.update({"ok": bool(token), "code": "OK" if token else "NO_TOKEN"})
+        return bool(token), detail
+    except urlerror.HTTPError as exc:
+        detail.update({"code": str(exc.code), "message": "HTTP response from candidate."})
+        return False, detail
+    except ssl.SSLError as exc:
+        detail.update({"code": "SSLError", "message": str(exc)})
+        return False, detail
+    except OSError as exc:
+        detail.update({"code": "ConnectionError", "message": str(exc)})
+        return False, detail
+    finally:
+        detail["elapsed_ms"] = int((time.time() - started) * 1000)
+
+
 @dataclass(frozen=True)
 class VeeamSettings:
     base_url: str = "https://127.0.0.1:9419"
     enterprise_manager_url: str = "https://127.0.0.1:9398"
+    auto_discover: bool = True
+    discovery_candidates: list[str] | None = None
+    discovery_scan_local_subnet: bool = True
+    discovery_timeout_seconds: float = 0.35
     api_version: str = "1.2-rev1"
     username: str = ""
+    username_env: str = "LOCKFIX_VEEAM_USER"
     password: str = ""
     password_env: str = "LOCKFIX_VEEAM_PASSWORD"
     verify_ssl: bool = False
     job_name: str = ""
     job_id: str = ""
+    require_backup_copy: bool = True
+    target_repository_id: str = ""
+    target_repository_name: str = ""
+    target_repository_path: str = ""
+    exclude_os_repository: bool = True
+    console_log_fallback_enabled: bool = True
+    console_log_root: str = "C:\\ProgramData\\Veeam\\Backup"
     poll_interval_seconds: int = 1
     isolate_on_status: list[str] | None = None
     timeout_seconds: float = 5.0
 
     @classmethod
     def from_config(cls, config: VeeamConfig) -> "VeeamSettings":
+        username_env = config.username_env or "LOCKFIX_VEEAM_USER"
+        password_env = config.password_env or "LOCKFIX_VEEAM_PASSWORD"
+        username = config.username or os.environ.get(username_env, "")
+        password = os.environ.get(password_env, "")
         return cls(
             base_url=os.environ.get("LOCKFIX_VEEAM_BASE_URL", config.base_url),
             enterprise_manager_url=os.environ.get("LOCKFIX_VEEAM_EM_BASE_URL", config.enterprise_manager_url),
+            auto_discover=config.auto_discover,
+            discovery_candidates=config.discovery_candidates,
+            discovery_scan_local_subnet=config.discovery_scan_local_subnet,
+            discovery_timeout_seconds=config.discovery_timeout_seconds,
             api_version=os.environ.get("LOCKFIX_VEEAM_API_VERSION", config.api_version),
-            username=os.environ.get("LOCKFIX_VEEAM_USER", config.username),
-            password=os.environ.get(config.password_env, ""),
-            password_env=config.password_env,
+            username=username,
+            username_env=username_env,
+            password=password,
+            password_env=password_env,
             verify_ssl=config.verify_ssl,
             job_name=os.environ.get("LOCKFIX_VEEAM_JOB_NAME", config.job_name),
             job_id=normalized_job_id(os.environ.get("LOCKFIX_VEEAM_JOB_ID", config.job_id)),
+            require_backup_copy=config.require_backup_copy,
+            target_repository_id=os.environ.get("LOCKFIX_VEEAM_REPOSITORY_ID", config.target_repository_id),
+            target_repository_name=os.environ.get("LOCKFIX_VEEAM_REPOSITORY_NAME", config.target_repository_name),
+            target_repository_path=os.environ.get("LOCKFIX_VEEAM_REPOSITORY_PATH", config.target_repository_path),
+            exclude_os_repository=config.exclude_os_repository,
+            console_log_fallback_enabled=config.console_log_fallback_enabled,
+            console_log_root=os.environ.get("LOCKFIX_VEEAM_CONSOLE_LOG_ROOT", config.console_log_root),
             poll_interval_seconds=config.poll_interval_seconds,
             isolate_on_status=config.isolate_on_status,
         )
@@ -102,14 +257,26 @@ class VeeamClient:
         self._access_token = ""
         self._token_expires_at = 0.0
         self._ssl_context = ssl.create_default_context() if settings.verify_ssl else ssl._create_unverified_context()
+        self.discovery_result: dict[str, Any] = {"enabled": settings.auto_discover, "selected": settings.base_url}
+        self._discovery_done = False
+
+    @classmethod
+    def from_config(cls, config: VeeamConfig) -> "VeeamClient":
+        return cls(VeeamSettings.from_config(config))
+
+    def get_backup_status(self) -> dict[str, Any]:
+        return self.latest_session_summary(self.settings.job_name, self.settings.job_id)
 
     def login(self) -> str:
+        if not self.settings.username:
+            raise VeeamAuthenticationError("401: Veeam username is not configured.")
+        if not self.settings.password:
+            raise VeeamAuthenticationError(
+                f"401: Veeam password environment variable is not set: {self.settings.password_env}"
+            )
+        self.ensure_discovered_base_url()
         if self._access_token and time.time() < self._token_expires_at - 60:
             return self._access_token
-        if not (self.settings.username and self.settings.password):
-            raise VeeamAuthenticationError(
-                f"401: Veeam username and environment password are required. Password env: {self.settings.password_env}"
-            )
 
         body = urlencode(
             {
@@ -131,6 +298,33 @@ class VeeamClient:
         self._access_token = token
         self._token_expires_at = time.time() + expires_in
         return token
+
+    def ensure_discovered_base_url(self) -> None:
+        if self._discovery_done:
+            return
+        self._discovery_done = True
+        if not self.settings.username or not self.settings.password:
+            self.discovery_result = {
+                "enabled": self.settings.auto_discover,
+                "selected": self.settings.base_url,
+                "skipped": "username or password is not configured",
+            }
+            return
+        if not self.settings.auto_discover:
+            self.discovery_result = {"enabled": False, "selected": self.settings.base_url}
+            return
+        candidates = veeam_base_url_candidates(self.settings)
+        selected, attempts = discover_veeam_base_url(self.settings, candidates)
+        self.discovery_result = {
+            "enabled": True,
+            "selected": selected or self.settings.base_url,
+            "attempts": attempts,
+            "candidate_count": len(candidates),
+        }
+        if selected and selected.rstrip("/") != self.settings.base_url.rstrip("/"):
+            self.settings = replace(self.settings, base_url=selected.rstrip("/"))
+            self._access_token = ""
+            self._token_expires_at = 0.0
 
     def get_jobs(self) -> list[dict[str, Any]]:
         data = self._request_json(f"{self.settings.api_base}/jobs", "GET")
@@ -163,18 +357,78 @@ class VeeamClient:
         data = self._request_json(f"{self.settings.api_base}/taskSessions{query}", "GET")
         return list_items(data)
 
+    def get_backups(self, limit: int = 100) -> list[dict[str, Any]]:
+        query = f"?limit={int(limit)}" if limit else ""
+        data = self._request_json(f"{self.settings.api_base}/backups{query}", "GET")
+        return list_items(data)
+
+    def get_repositories(self, limit: int = 100) -> list[dict[str, Any]]:
+        query = f"?limit={int(limit)}" if limit else ""
+        data = self._request_json(f"{self.settings.api_base}/backupInfrastructure/repositories{query}", "GET")
+        return list_items(data)
+
+    def get_backup_objects(self, backup_id: str) -> list[dict[str, Any]]:
+        data = self._request_json(f"{self.settings.api_base}/backups/{backup_id}/objects", "GET")
+        return list_items(data)
+
+    def get_restore_points(self, backup_object_id: str) -> list[dict[str, Any]]:
+        data = self._request_json(f"{self.settings.api_base}/backupObjects/{backup_object_id}/restorePoints", "GET")
+        return list_items(data)
+
+    def latest_backup_restore_point(self, job_name: str = "", job_id: str = "") -> dict[str, Any] | None:
+        backups = self.get_backups()
+        repositories = self.get_repositories()
+        eligible_repositories = filter_target_repositories(
+            repositories,
+            self.settings.target_repository_id,
+            self.settings.target_repository_name,
+            self.settings.target_repository_path,
+            self.settings.exclude_os_repository,
+        )
+        match = match_backups(
+            backups,
+            job_name or self.settings.job_name,
+            job_id or self.settings.job_id,
+            eligible_repositories=eligible_repositories,
+            require_backup_copy=self.settings.require_backup_copy,
+        )
+        if not match["matches"]:
+            return None
+        restore_points: list[dict[str, Any]] = []
+        for backup in match["matches"]:
+            backup_id = item_id(backup)
+            if not backup_id:
+                continue
+            for backup_object in self.get_backup_objects(backup_id):
+                for restore_point in self.get_restore_points(item_id(backup_object)):
+                    restore_point = dict(restore_point)
+                    restore_point["_backup"] = backup
+                    restore_point["_backup_object"] = backup_object
+                    restore_point["_repository"] = repository_for_backup(backup, eligible_repositories)
+                    restore_point["_configured_job_name"] = (job_name or self.settings.job_name).strip()
+                    restore_point["_configured_job_id"] = normalized_job_id(job_id or self.settings.job_id)
+                    restore_point["_backup_match_strategy"] = match["strategy"]
+                    restore_point["_backup_match_candidates"] = match["candidates"]
+                    restore_points.append(restore_point)
+        if not restore_points:
+            return None
+        return sorted(restore_points, key=restore_point_sort_key, reverse=True)[0]
+
     def latest_session_summary(self, job_name: str = "", job_id: str = "") -> dict[str, Any]:
+        self.ensure_discovered_base_url()
         checks: dict[str, Any] = {
             "port_9419": self.check_port(),
+            "discovery": self.discovery_result,
             "token": {"ok": False, "message": "/api/oauth2/token was not requested yet."},
             "sessions": {"ok": False, "message": "/api/v1/sessions was not queried yet."},
         }
         if not checks["port_9419"]["ok"]:
-            return {"api_synced": False, "checks": checks}
+            return {"api_synced": False, "source": "python_veeam_client", "checks": checks}
         try:
             self.login()
             checks["token"] = {"ok": True, "message": "/api/oauth2/token issued an access token."}
             sessions = self.get_sessions()
+            checks["backups"] = {"ok": False, "message": "/api/v1/backups was not queried yet."}
             match = match_sessions(
                 sessions,
                 (job_name or self.settings.job_name).strip(),
@@ -185,8 +439,41 @@ class VeeamClient:
         except VeeamError as exc:
             key = "token" if getattr(exc, "code", "") == "401" else "sessions"
             checks[key] = {"ok": False, "code": getattr(exc, "code", exc.__class__.__name__), "message": str(exc)}
-            return {"api_synced": False, "checks": checks}
+            return {"api_synced": False, "source": "python_veeam_client", "checks": checks}
         if not session:
+            try:
+                restore_point = self.latest_backup_restore_point(job_name, job_id)
+                checks["backups"] = {
+                    "ok": True,
+                    "message": "/api/v1/backups, repositories, and restore points query succeeded.",
+                    "require_backup_copy": self.settings.require_backup_copy,
+                    "target_repository_id": self.settings.target_repository_id,
+                    "target_repository_name": self.settings.target_repository_name,
+                    "target_repository_path": self.settings.target_repository_path,
+                    "exclude_os_repository": self.settings.exclude_os_repository,
+                }
+            except VeeamError as exc:
+                restore_point = None
+                checks["backups"] = {"ok": False, "code": getattr(exc, "code", exc.__class__.__name__), "message": str(exc)}
+            if restore_point:
+                summary = restore_point_summary(restore_point)
+                restore_session_id = str(restore_point.get("sessionId") or "").strip()
+                if restore_session_id:
+                    try:
+                        logs = self.get_session_logs(restore_session_id)
+                        tasks = self.get_session_task_sessions(restore_session_id)
+                        summary = enrich_summary_with_logs(summary, logs, tasks)
+                    except VeeamError as exc:
+                        summary["session_logs"][0]["actions"].append(
+                            f"WAIT - Restore point session detail logs could not be loaded: {exc}"
+                        )
+                summary = self.prefer_newer_console_log_summary(summary)
+                summary["api_synced"] = True
+                summary["source"] = "python_veeam_client"
+                summary["session_match"] = True
+                summary["match_strategy"] = summary.get("backup_match_strategy", "backup_restore_point")
+                summary["checks"] = checks
+                return summary
             target = (job_name or normalized_job_id(job_id) or self.settings.job_name or self.settings.job_id or "configured Veeam job").strip()
             checks["sessions"] = {
                 "ok": True,
@@ -196,6 +483,7 @@ class VeeamClient:
             }
             return {
                 "api_synced": True,
+                "source": "python_veeam_client",
                 "session_match": False,
                 "state_source": "veeam_rest_api",
                 "name": target,
@@ -226,10 +514,41 @@ class VeeamClient:
         tasks = self.get_session_task_sessions(session_id(session))
         summary = enrich_summary_with_logs(summary, logs, tasks)
         summary["api_synced"] = True
+        summary["source"] = "python_veeam_client"
         summary["session_match"] = True
         summary["match_strategy"] = match["strategy"]
         summary["checks"] = checks
         return summary
+
+    def prefer_newer_console_log_summary(self, summary: dict[str, Any]) -> dict[str, Any]:
+        if not self.settings.console_log_fallback_enabled:
+            return summary
+        scope = summary.get("restore_point_scope") if isinstance(summary.get("restore_point_scope"), dict) else {}
+        log_summary = latest_backup_copy_console_log_summary(
+            log_root=self.settings.console_log_root,
+            backup_copy_name=str(scope.get("backup_name") or ""),
+            job_name=str(summary.get("name") or self.settings.job_name or ""),
+            target_name=str(summary.get("target") or scope.get("backup_object_name") or ""),
+            policy_job_id=str(summary.get("job_id") or self.settings.job_id or ""),
+            repository_id=str(summary.get("repository_id") or self.settings.target_repository_id or ""),
+            repository_name=str(summary.get("repository_name") or self.settings.target_repository_name or ""),
+            repository_path=str(summary.get("repository_path") or self.settings.target_repository_path or ""),
+        )
+        if not log_summary:
+            return summary
+        current_time = veeam_time_sort_key(summary.get("ended_at"), summary.get("started_at"))
+        log_time = veeam_time_sort_key(log_summary.get("job_finished_at"), log_summary.get("ended_at"))
+        if log_time < current_time:
+            return summary
+        merged = dict(summary)
+        merged.update(log_summary)
+        merged["api_synced"] = summary.get("api_synced", True)
+        merged["source"] = "python_veeam_client"
+        merged["session_match"] = True
+        checks = summary.get("checks")
+        if checks:
+            merged["checks"] = checks
+        return merged
 
     def enterprise_manager_latest_session_summary(self, job_name: str = "", job_id: str = "") -> dict[str, Any]:
         checks: dict[str, Any] = {"enterprise_manager": self.check_enterprise_manager_port()}
@@ -478,6 +797,10 @@ def session_id(session: dict[str, Any]) -> str:
     )
 
 
+def item_id(item: dict[str, Any]) -> str:
+    return str(item.get("id") or item.get("Id") or item.get("uid") or item.get("instanceUid") or "")
+
+
 def session_status(session: dict[str, Any]) -> str:
     result = session.get("result") or session.get("Result")
     if isinstance(result, dict):
@@ -559,15 +882,311 @@ def match_sessions(sessions: list[dict[str, Any]], job_name: str = "", job_id: s
     return {"matches": sessions, "strategy": "latest_session_no_filter", "candidates": []}
 
 
-def session_sort_key(session: dict[str, Any]) -> str:
-    return str(
-        session.get("creationTime")
-        or session.get("startTime")
-        or session.get("endTime")
-        or session.get("stopTime")
-        or session.get("id")
-        or ""
+def match_backups(
+    backups: list[dict[str, Any]],
+    job_name: str = "",
+    job_id: str = "",
+    eligible_repositories: list[dict[str, Any]] | None = None,
+    require_backup_copy: bool = True,
+) -> dict[str, Any]:
+    if eligible_repositories is not None:
+        repository_ids = {item_id(repository).lower() for repository in eligible_repositories}
+        backups = [backup for backup in backups if str(backup.get("repositoryId") or "").lower() in repository_ids]
+    if require_backup_copy:
+        backups = [backup for backup in backups if is_backup_copy_backup(backup)]
+    wanted_id = normalized_job_id(job_id).lower()
+    wanted_name = (job_name or "").strip()
+    if wanted_id:
+        matches = [
+            backup
+            for backup in backups
+            if wanted_id in str(backup.get("jobId") or "").lower()
+            or wanted_id in str(backup.get("policyUniqueId") or "").lower()
+            or wanted_id == item_id(backup).lower()
+        ]
+        if matches:
+            return {"matches": matches, "strategy": "backup_job_id", "candidates": []}
+
+    if wanted_name:
+        exact = [backup for backup in backups if wanted_name == session_name(backup)]
+        if exact:
+            return {"matches": exact, "strategy": "backup_name_exact", "candidates": []}
+
+        wanted_lower = wanted_name.lower()
+        contains = [backup for backup in backups if wanted_lower in session_name(backup).lower()]
+        if contains:
+            return {"matches": contains, "strategy": "backup_name_contains", "candidates": []}
+
+        wanted_normalized = normalize_match_name(wanted_name)
+        normalized = [backup for backup in backups if wanted_normalized and wanted_normalized in normalize_match_name(session_name(backup))]
+        if normalized:
+            return {"matches": normalized, "strategy": "backup_name_normalized", "candidates": []}
+
+        names = sorted({session_name(backup) for backup in backups if session_name(backup)})
+        candidates = get_close_matches(wanted_name, names, n=8, cutoff=0.35)
+        if require_backup_copy and eligible_repositories is not None and backups:
+            return {"matches": backups, "strategy": "target_repository_backup_copy", "candidates": candidates}
+        return {"matches": [], "strategy": "no_backup_match", "candidates": candidates}
+
+    return {"matches": backups, "strategy": "latest_backup_no_filter", "candidates": []}
+
+
+def is_backup_copy_backup(backup: dict[str, Any]) -> bool:
+    name = session_name(backup).lower()
+    return "copy" in name or "backup copy" in name
+
+
+def repository_path(repository: dict[str, Any]) -> str:
+    details = repository.get("repository") if isinstance(repository.get("repository"), dict) else {}
+    return str(repository.get("path") or details.get("path") or "")
+
+
+def is_os_repository(repository: dict[str, Any]) -> bool:
+    path = repository_path(repository).strip().replace("/", "\\").lower()
+    return path == "c:" or path.startswith("c:\\")
+
+
+def filter_target_repositories(
+    repositories: list[dict[str, Any]],
+    target_id: str = "",
+    target_name: str = "",
+    target_path: str = "",
+    exclude_os_repository: bool = True,
+) -> list[dict[str, Any]]:
+    filtered = [repository for repository in repositories if not (exclude_os_repository and is_os_repository(repository))]
+    wanted_id = (target_id or "").strip().lower()
+    wanted_name = (target_name or "").strip().lower()
+    wanted_path = (target_path or "").strip().replace("/", "\\").lower()
+    if wanted_id:
+        filtered = [repository for repository in filtered if wanted_id == item_id(repository).lower()]
+    if wanted_name:
+        filtered = [repository for repository in filtered if wanted_name == session_name(repository).lower()]
+    if wanted_path:
+        filtered = [repository for repository in filtered if repository_path(repository).strip().replace("/", "\\").lower() == wanted_path]
+    return filtered
+
+
+def repository_for_backup(backup: dict[str, Any], repositories: list[dict[str, Any]]) -> dict[str, Any]:
+    repository_id = str(backup.get("repositoryId") or "").lower()
+    for repository in repositories:
+        if item_id(repository).lower() == repository_id:
+            return repository
+    return {}
+
+
+def local_timezone():
+    return datetime.now().astimezone().tzinfo or timezone.utc
+
+
+def parse_veeam_time(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text or text == "-":
+        return None
+    korean_match = re.search(
+        r"(\d{4})-(\d{1,2})-(\d{1,2})\s+(오전|오후)\s+(\d{1,2}):(\d{2})(?::(\d{2}))?",
+        text,
     )
+    if korean_match:
+        year, month, day, meridiem, hour, minute, second = korean_match.groups()
+        hour_int = int(hour)
+        if meridiem == "오후" and hour_int != 12:
+            hour_int += 12
+        if meridiem == "오전" and hour_int == 12:
+            hour_int = 0
+        return datetime(
+            int(year),
+            int(month),
+            int(day),
+            hour_int,
+            int(minute),
+            int(second or 0),
+            tzinfo=local_timezone(),
+        )
+    candidates = [text]
+    if text.endswith("Z"):
+        candidates.append(text[:-1] + "+00:00")
+    if " " in text and "T" not in text:
+        candidates.append(text.replace(" ", "T", 1))
+    for candidate in candidates:
+        try:
+            parsed = datetime.fromisoformat(candidate)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=local_timezone())
+            return parsed
+        except ValueError:
+            continue
+    return None
+
+
+def veeam_time_sort_key(*values: Any) -> float:
+    for value in values:
+        parsed = parse_veeam_time(value)
+        if parsed:
+            return parsed.timestamp()
+    return 0.0
+
+
+def display_veeam_time(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text or text == "-":
+        return "-"
+    parsed = parse_veeam_time(text)
+    if not parsed:
+        return text
+    return parsed.astimezone(local_timezone()).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def normalize_embedded_veeam_times(text: str) -> str:
+    def replace_korean(match: re.Match) -> str:
+        return display_veeam_time(match.group(0))
+
+    return re.sub(
+        r"\d{4}-\d{1,2}-\d{1,2}\s+(?:오전|오후)\s+\d{1,2}:\d{2}(?::\d{2})?",
+        replace_korean,
+        text,
+    )
+
+
+def session_sort_key(session: dict[str, Any]) -> float:
+    return veeam_time_sort_key(
+        session.get("creationTime"),
+        session.get("startTime"),
+        session.get("endTime"),
+        session.get("stopTime"),
+        session.get("id"),
+    )
+
+
+def restore_point_sort_key(restore_point: dict[str, Any]) -> float:
+    return veeam_time_sort_key(
+        restore_point.get("creationTime"),
+        restore_point.get("createdTime"),
+        restore_point.get("time"),
+        restore_point.get("startTime"),
+        restore_point.get("endTime"),
+        item_id(restore_point),
+    )
+
+
+def restore_point_summary(restore_point: dict[str, Any]) -> dict[str, Any]:
+    backup = restore_point.get("_backup") if isinstance(restore_point.get("_backup"), dict) else {}
+    backup_object = restore_point.get("_backup_object") if isinstance(restore_point.get("_backup_object"), dict) else {}
+    repository = restore_point.get("_repository") if isinstance(restore_point.get("_repository"), dict) else {}
+    configured_job_name = str(restore_point.get("_configured_job_name") or "").strip()
+    backup_name = configured_job_name or session_name(backup) or session_name(backup_object) or session_name(restore_point)
+    backup_target = session_name(backup_object) or str(backup_object.get("hostName") or backup_object.get("platformName") or "").strip()
+    restore_point_id = item_id(restore_point)
+    restore_session_id = str(restore_point.get("sessionId") or "").strip()
+    current_id = restore_session_id if restore_session_id and restore_session_id != "00000000-0000-0000-0000-000000000000" else restore_point_id
+    created = str(restore_point.get("creationTime") or "-")
+    status = "Success" if restore_point_id else "Waiting"
+    repo_name = session_name(repository) or "-"
+    repo_path = repository_path(repository) or "-"
+    backup_size = transfer_size(restore_point)
+    transferred = transferred_size(restore_point)
+    speed = transfer_speed(restore_point)
+    backup_match_strategy = str(restore_point.get("_backup_match_strategy") or "backup_restore_point")
+    backup_match_candidates = list(restore_point.get("_backup_match_candidates") or [])
+    if backup_size == "-":
+        backup_size = transfer_size(backup_object)
+    if transferred == "-":
+        transferred = backup_size
+    target_suffix = f" - {backup_target}" if backup_target and backup_target != backup_name else ""
+    finished_line = (
+        f"{backup_name}{target_suffix} ({transferred if transferred != '-' else '0 B'}) processing finished at {created}: "
+        f"{transferred if transferred != '-' else '0 B'} transferred"
+        f"{' at ' + speed if speed != '-' else ''}"
+    )
+    summary = {
+        "state_source": "veeam_rest_backup_restore_point",
+        "id": current_id,
+        "session_id": current_id,
+        "name": backup_name,
+        "job": backup_name,
+        "job_id": str(restore_point.get("_configured_job_id") or backup.get("jobId") or backup.get("policyUniqueId") or ""),
+        "target": backup_target,
+        "status": status,
+        "result": status,
+        "session_state": "BACKUP_COMPLETED",
+        "progress_percent": 100 if status == "Success" else 0,
+        "current_step": 2 if status == "Success" else 1,
+        "started_at": created,
+        "ended_at": created,
+        "duration": "-",
+        "backup_size": backup_size,
+        "transferred": transferred,
+        "speed": speed,
+        "repository_id": item_id(repository),
+        "repository_name": repo_name,
+        "repository_path": repo_path,
+        "backup_match_strategy": backup_match_strategy,
+        "backup_match_candidates": backup_match_candidates,
+        "restore_point_scope": {
+            "backup_id": item_id(backup),
+            "backup_name": session_name(backup) or "-",
+            "backup_job_id": str(backup.get("jobId") or ""),
+            "backup_policy_unique_id": str(backup.get("policyUniqueId") or ""),
+            "backup_object_id": item_id(backup_object),
+            "backup_object_name": session_name(backup_object) or backup_target or "-",
+            "restore_point_id": restore_point_id,
+            "restore_point_session_id": restore_session_id,
+            "repository_id": item_id(repository),
+            "repository_name": repo_name,
+            "repository_path": repo_path,
+        },
+        "veeam_console_actions": [
+            f"Backup copy for {backup_name}{target_suffix} started at {display_veeam_time(created)}",
+            (
+                f"{backup_name}{target_suffix} ({transferred if transferred != '-' else '0 B'}) processing finished at "
+                f"{display_veeam_time(created)}: {transferred if transferred != '-' else '0 B'} transferred"
+                f"{' at ' + speed if speed != '-' else ''}"
+            ),
+        ],
+        "session_logs": [
+            {
+                "name": backup_name,
+                "status": status,
+                "actions": [],
+                "duration": "-",
+                "progress_percent": 100 if status == "Success" else 0,
+                "started_at": display_veeam_time(created),
+                "ended_at": display_veeam_time(created),
+                "backup_size": backup_size,
+                "transferred": transferred,
+                "speed": speed,
+            }
+        ],
+    }
+    summary["session_logs"][0]["actions"] = [
+        *summary["veeam_console_actions"],
+        f"Backup Copy match strategy: {backup_match_strategy}.",
+        f"Veeam Backup Copy object matched from /api/v1/backups: {session_name(backup) or backup_name}",
+        f"Target repository confirmed: {repo_name} ({repo_path}).",
+        "C:\\ OS repository guard passed: target repository is not on C:\\.",
+        f"Latest restore point detected at {display_veeam_time(created)}.",
+        f"Restore point id: {restore_point_id}",
+    ]
+    return summary
+
+
+def backup_copy_console_actions(summary: dict[str, Any]) -> list[str]:
+    name = str(summary.get("name") or summary.get("job") or "Veeam Backup").strip()
+    target = str(summary.get("target") or "").strip()
+    target_suffix = f" - {target}" if target and target != name else ""
+    started = display_veeam_time(summary.get("started_at"))
+    ended = display_veeam_time(summary.get("ended_at") or summary.get("started_at"))
+    transferred = str(summary.get("transferred") or "").strip()
+    if not transferred or transferred == "-":
+        transferred = "0 B"
+    speed = str(summary.get("speed") or "").strip()
+    return [
+        f"Backup copy for {name}{target_suffix} started at {started}",
+        (
+            f"{name}{target_suffix} ({transferred}) processing finished at {ended}: "
+            f"{transferred} transferred"
+            f"{' at ' + speed if speed and speed != '-' else ''}"
+        ),
+    ]
 
 
 def select_matching_session(sessions: list[dict[str, Any]], job_name: str = "", job_id: str = "") -> dict[str, Any] | None:
@@ -596,6 +1215,15 @@ def session_summary(session: dict[str, Any]) -> dict[str, Any]:
     started_at = str(session.get("creationTime") or session.get("startTime") or session.get("started_at") or "-")
     ended_at = str(session.get("endTime") or session.get("stopTime") or session.get("ended_at") or "-")
     duration = session_duration(session, started_at, ended_at)
+    backup_size = transfer_size(session)
+    transferred = transferred_size(session)
+    speed = transfer_speed(session)
+    actions = session_actions(session)
+    if backup_size != "-" or transferred != "-" or speed != "-":
+        actions.append(
+            f"Realtime transfer: {transferred if transferred != '-' else '0 B'} / {backup_size if backup_size != '-' else '-'}"
+            f"{' at ' + speed if speed != '-' else ''}"
+        )
     return {
         "state_source": "veeam_rest_api",
         "session_id": session_id(session),
@@ -608,15 +1236,21 @@ def session_summary(session: dict[str, Any]) -> dict[str, Any]:
         "started_at": started_at,
         "ended_at": ended_at,
         "duration": duration,
+        "backup_size": backup_size,
+        "transferred": transferred,
+        "speed": speed,
         "session_logs": [
             {
                 "name": name,
                 "status": normalize_display_status(status),
-                "actions": session_actions(session),
+                "actions": actions,
                 "duration": duration,
                 "progress_percent": progress,
-                "started_at": started_at,
-                "ended_at": ended_at,
+                "started_at": display_veeam_time(started_at),
+                "ended_at": display_veeam_time(ended_at),
+                "backup_size": backup_size,
+                "transferred": transferred,
+                "speed": speed,
             }
         ],
     }
@@ -630,31 +1264,79 @@ def enrich_summary_with_logs(summary: dict[str, Any], logs: list[dict[str, Any]]
             task_name = session_name(task) or str(task.get("objectName") or task.get("displayName") or "")
             task_status = normalize_display_status(session_status(task))
             task_progress = session_progress(task)
+            task_size = transfer_size(task)
+            task_transferred = transferred_size(task)
+            task_speed = transfer_speed(task)
             if task_name:
-                task_actions.append(f"{task_name} - {task_status} - {task_progress}%")
+                task_actions.append(
+                    f"{task_name} - {task_status} - {task_progress}%"
+                    f"{' - ' + task_transferred + ' / ' + task_size if task_size != '-' or task_transferred != '-' else ''}"
+                    f"{' at ' + task_speed if task_speed != '-' else ''}"
+                )
         actions.extend(task_actions)
-    if actions:
-        summary["session_logs"][0]["actions"] = actions
+        task_progress_values = [session_progress(task) for task in tasks]
+        if task_progress_values:
+            progress = max(task_progress_values)
+            if progress > int(summary.get("progress_percent") or 0):
+                summary["progress_percent"] = progress
+                summary["session_logs"][0]["progress_percent"] = progress
+    metrics_source = latest_metric_source([*logs, *tasks])
+    if metrics_source:
+        size = transfer_size(metrics_source)
+        transferred = transferred_size(metrics_source)
+        speed = transfer_speed(metrics_source)
+        if size != "-":
+            summary["backup_size"] = size
+            summary["session_logs"][0]["backup_size"] = size
+        if transferred != "-":
+            summary["transferred"] = transferred
+            summary["session_logs"][0]["transferred"] = transferred
+        if speed != "-":
+            summary["speed"] = speed
+            summary["session_logs"][0]["speed"] = speed
     if logs:
-        first = min(logs, key=lambda item: str(item.get("startTime") or item.get("creationTime") or item.get("time") or ""))
-        last = max(logs, key=lambda item: str(item.get("updateTime") or item.get("endTime") or item.get("time") or ""))
+        first = min(logs, key=lambda item: veeam_time_sort_key(item.get("startTime"), item.get("creationTime"), item.get("time")))
+        last = max(logs, key=lambda item: veeam_time_sort_key(item.get("updateTime"), item.get("endTime"), item.get("time"), item.get("startTime")))
         summary["session_logs"][0]["started_at"] = summary["started_at"] = str(first.get("startTime") or summary.get("started_at") or "-")
         if last.get("updateTime") or last.get("endTime"):
             summary["session_logs"][0]["ended_at"] = summary["ended_at"] = str(last.get("updateTime") or last.get("endTime"))
+        duration = session_duration(summary, str(summary.get("started_at") or "-"), str(summary.get("ended_at") or "-"))
+        summary["duration"] = duration
+        summary["session_logs"][0]["duration"] = duration
+        summary["session_logs"][0]["started_at"] = display_veeam_time(summary.get("started_at"))
+        summary["session_logs"][0]["ended_at"] = display_veeam_time(summary.get("ended_at"))
+    if actions:
+        if summary.get("state_source") == "veeam_rest_backup_restore_point":
+            console_actions = backup_copy_console_actions(summary)
+            summary["veeam_console_actions"] = console_actions
+        else:
+            console_actions = [
+                normalize_embedded_veeam_times(str(item))
+                for item in summary.get("veeam_console_actions", [])
+                if str(item).strip()
+            ]
+        merged_actions = [*console_actions]
+        for action in actions:
+            if action not in merged_actions:
+                merged_actions.append(action)
+        summary["session_logs"][0]["actions"] = merged_actions
     return summary
 
 
 def log_actions(logs: list[dict[str, Any]]) -> list[str]:
     actions: list[str] = []
-    for item in sorted(logs, key=lambda row: str(row.get("startTime") or row.get("time") or row.get("id") or "")):
+    for item in sorted(logs, key=lambda row: veeam_time_sort_key(row.get("startTime"), row.get("time"), row.get("id"))):
         title = item.get("title") or item.get("message") or item.get("description")
         if not title:
             continue
         status = item.get("status") or item.get("state") or ""
         when = item.get("startTime") or item.get("time") or item.get("updateTime") or ""
         prefix = f"{status} - " if status else ""
-        suffix = f" at {when}" if when else ""
-        actions.append(f"{prefix}{title}{suffix}")
+        normalized_title = normalize_embedded_veeam_times(str(title))
+        suffix = ""
+        if when and not re.search(r"\d{4}-\d{1,2}-\d{1,2}", normalized_title):
+            suffix = f" at {display_veeam_time(when)}"
+        actions.append(f"{prefix}{normalized_title}{suffix}")
     return actions
 
 
@@ -728,14 +1410,19 @@ def normalize_display_status(value: str) -> str:
 
 
 def session_progress(session: dict[str, Any]) -> int:
-    raw = str(
-        session.get("progress_percent")
-        or session.get("progressPercent")
-        or session.get("Progress")
-        or session.get("progress")
-        or session.get("percentComplete")
-        or 0
+    raw_value = first_nested_value(
+        session,
+        (
+            "progress_percent",
+            "progressPercent",
+            "Progress",
+            "progress",
+            "percentComplete",
+            "processedPercent",
+            "workloadProgress",
+        ),
     )
+    raw = str(raw_value or 0)
     raw = raw.replace("%", "")
     try:
         return max(0, min(100, int(float(raw))))
@@ -759,11 +1446,180 @@ def session_actions(session: dict[str, Any]) -> list[str]:
     if not actions:
         name = session_name(session) or "Veeam Backup"
         started = str(session.get("creationTime") or session.get("startTime") or "-")
-        actions.append(f"Backup copy for {name} started at {started}")
+        actions.append(f"Backup copy for {name} started at {display_veeam_time(started)}")
         ended = str(session.get("endTime") or session.get("stopTime") or "")
         if ended:
-            actions.append(f"{name} processing finished at {ended}")
+            actions.append(f"{name} processing finished at {display_veeam_time(ended)}")
     return actions
+
+
+def first_nested_value(data: Any, keys: tuple[str, ...]) -> Any:
+    if not isinstance(data, dict):
+        return None
+    for key in keys:
+        value = data.get(key)
+        if value not in (None, ""):
+            return value
+    for value in data.values():
+        if isinstance(value, dict):
+            found = first_nested_value(value, keys)
+            if found not in (None, ""):
+                return found
+        elif isinstance(value, list):
+            for item in value:
+                found = first_nested_value(item, keys)
+                if found not in (None, ""):
+                    return found
+    return None
+
+
+def latest_metric_source(items: list[dict[str, Any]]) -> dict[str, Any]:
+    metric_keys = (
+        "backupSize",
+        "totalSize",
+        "totalBytes",
+        "totalDataSize",
+        "processedSize",
+        "processedDataSize",
+        "sourceSize",
+        "transferred",
+        "transferredSize",
+        "transferredBytes",
+        "processedBytes",
+        "readSize",
+        "readBytes",
+        "speed",
+        "transferSpeed",
+        "processingRate",
+        "readRate",
+        "throughput",
+    )
+    valid = [
+        item for item in items
+        if isinstance(item, dict)
+        and (
+            first_nested_value(item, metric_keys) not in (None, "")
+            or text_size_value(item)
+            or text_transfer_value(item)
+            or text_speed_value(item)
+        )
+    ]
+    if not valid:
+        return {}
+    return max(
+        valid,
+        key=lambda item: veeam_time_sort_key(
+            item.get("updateTime"),
+            item.get("endTime"),
+            item.get("time"),
+            item.get("startTime"),
+        ),
+    )
+
+
+def transfer_size(item: dict[str, Any]) -> str:
+    raw = first_nested_value(
+        item,
+        (
+            "backupSize",
+            "totalSize",
+            "totalBytes",
+            "totalDataSize",
+            "processedSize",
+            "processedDataSize",
+            "sourceSize",
+            "size",
+        ),
+    )
+    if raw in (None, ""):
+        raw = text_size_value(item)
+    return format_size(raw)
+
+
+def transferred_size(item: dict[str, Any]) -> str:
+    raw = first_nested_value(
+        item,
+        (
+            "transferred",
+            "transferredSize",
+            "transferredBytes",
+            "processedBytes",
+            "processedDataSize",
+            "readSize",
+            "readBytes",
+        ),
+    )
+    if raw in (None, ""):
+        raw = text_transfer_value(item)
+    return format_size(raw)
+
+
+def transfer_speed(item: dict[str, Any]) -> str:
+    raw = first_nested_value(item, ("speed", "transferSpeed", "processingRate", "readRate", "throughput"))
+    if raw in (None, ""):
+        raw = text_speed_value(item)
+    if raw in (None, ""):
+        return "-"
+    if isinstance(raw, (int, float)):
+        return f"{format_size(raw)}/s"
+    text = str(raw).strip()
+    return text if text else "-"
+
+
+def text_metric_blob(item: dict[str, Any]) -> str:
+    parts = []
+    for key in ("title", "message", "description", "action", "detail"):
+        value = item.get(key)
+        if value not in (None, ""):
+            parts.append(str(value))
+    return " ".join(parts)
+
+
+def text_size_value(item: dict[str, Any]) -> str:
+    text = text_metric_blob(item)
+    match = re.search(r"(?:total\s+size|backup\s+size|size)\s*:\s*([0-9][0-9.,]*\s*[KMGTPE]?B)", text, re.IGNORECASE)
+    return match.group(1).replace(",", "") if match else ""
+
+
+def text_transfer_value(item: dict[str, Any]) -> str:
+    text = text_metric_blob(item)
+    match = re.search(r"([0-9][0-9.,]*\s*[KMGTPE]?B)\s+transferred", text, re.IGNORECASE)
+    if not match:
+        match = re.search(r"(?:transferred|processed)\s*:\s*([0-9][0-9.,]*\s*[KMGTPE]?B)", text, re.IGNORECASE)
+    return match.group(1).replace(",", "") if match else ""
+
+
+def text_speed_value(item: dict[str, Any]) -> str:
+    text = text_metric_blob(item)
+    match = re.search(r"(?:at|speed\s*:)\s*([0-9][0-9.,]*\s*[KMGTPE]?B/s)", text, re.IGNORECASE)
+    return match.group(1).replace(",", "") if match else ""
+
+
+def format_size(raw: Any) -> str:
+    if raw in (None, ""):
+        return "-"
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return "-"
+        if re.search(r"[a-zA-Z가-힣/]", text):
+            return text
+        try:
+            raw = float(text)
+        except ValueError:
+            return text
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return str(raw)
+    units = ["B", "KB", "MB", "GB", "TB", "PB"]
+    index = 0
+    while value >= 1024 and index < len(units) - 1:
+        value /= 1024
+        index += 1
+    if index == 0:
+        return f"{int(value)} {units[index]}"
+    return f"{value:.1f} {units[index]}"
 
 
 def enterprise_session_id(session: dict[str, Any]) -> str:
@@ -803,13 +1659,15 @@ def link_href(session: dict[str, Any], rel: str = "", contains: str = "") -> str
 
 def session_duration(session: dict[str, Any], started_at: str, ended_at: str) -> str:
     raw = session.get("duration") or session.get("Duration") or session.get("elapsedTime") or session.get("durationText")
-    if raw:
+    if raw and str(raw).strip() != "-":
         return str(raw)
     try:
         if not started_at or not ended_at or started_at == "-" or ended_at == "-":
             return "-"
-        start = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
-        end = datetime.fromisoformat(ended_at.replace("Z", "+00:00"))
+        start = parse_veeam_time(started_at)
+        end = parse_veeam_time(ended_at)
+        if not start or not end:
+            return "-"
         seconds = max(0, int((end - start).total_seconds()))
         return f"{seconds // 60:02d}:{seconds % 60:02d}"
     except ValueError:

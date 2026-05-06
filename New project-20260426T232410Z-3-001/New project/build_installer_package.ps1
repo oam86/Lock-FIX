@@ -19,11 +19,29 @@ function Copy-ItemClean {
     }
 
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
-    & robocopy $Source $Destination /E /NFL /NDL /NJH /NJS /NP | Out-Null
-    if ($LASTEXITCODE -gt 7) {
-        throw "Folder copy failed: $Source -> $Destination (robocopy exit code $LASTEXITCODE)"
+    Get-ChildItem -LiteralPath $Source -Force | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $Destination -Recurse -Force
     }
-    $global:LASTEXITCODE = 0
+}
+
+function Find-PythonRuntime {
+    $candidates = @()
+    if ($env:LOCKFIX_PYTHON_RUNTIME) {
+        $candidates += $env:LOCKFIX_PYTHON_RUNTIME
+    }
+    $candidates += @(
+        (Join-Path $Root "python"),
+        (Join-Path $env:ProgramFiles "LOCK-FIX\python"),
+        (Join-Path ${env:ProgramFiles(x86)} "LOCK-FIX\python")
+    )
+
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path -LiteralPath (Join-Path $candidate "python.exe"))) {
+            return $candidate
+        }
+    }
+
+    return $null
 }
 
 New-Item -ItemType Directory -Force -Path $ReleaseRoot, $StagingRoot, $PackageRoot | Out-Null
@@ -35,12 +53,23 @@ New-Item -ItemType Directory -Force -Path (Join-Path $PackageRoot "dist"), (Join
 Copy-Item -LiteralPath (Join-Path $Root "dist\lockfix-ui.exe") -Destination (Join-Path $PackageRoot "dist\lockfix-ui.exe") -Force
 Copy-Item -LiteralPath (Join-Path $Root "dist\LOCK-FIX Console.exe") -Destination (Join-Path $PackageRoot "LOCK-FIX Console.exe") -Force
 Copy-Item -LiteralPath (Join-Path $Root "dist\LOCK-FIX Console.exe") -Destination (Join-Path $PackageRoot "dist\LOCK-FIX Console.exe") -Force
+Copy-Item -LiteralPath (Join-Path $Root "dist\LOCK-FIX WebUI Service.exe") -Destination (Join-Path $PackageRoot "LOCK-FIX WebUI Service.exe") -Force
+Copy-Item -LiteralPath (Join-Path $Root "dist\LOCK-FIX WebUI Service.exe") -Destination (Join-Path $PackageRoot "dist\LOCK-FIX WebUI Service.exe") -Force
 Copy-Item -LiteralPath (Join-Path $Root "dist\lockfixctl.exe") -Destination (Join-Path $PackageRoot "dist\lockfixctl.exe") -Force
 Copy-Item -LiteralPath (Join-Path $Root "dist\installer\LOCK-FIX Setup Wizard.exe") -Destination (Join-Path $PackageRoot "dist\installer\LOCK-FIX Setup Wizard.exe") -Force
 Copy-ItemClean -Source (Join-Path $Root "config") -Destination (Join-Path $PackageRoot "config")
 Copy-ItemClean -Source (Join-Path $Root "lockfix") -Destination (Join-Path $PackageRoot "lockfix")
 Copy-ItemClean -Source (Join-Path $Root "web") -Destination (Join-Path $PackageRoot "web")
 Copy-ItemClean -Source (Join-Path $Root "tools") -Destination (Join-Path $PackageRoot "tools")
+$PythonRuntime = Find-PythonRuntime
+if (-not $PythonRuntime) {
+    throw "Offline Python runtime was not found. Set LOCKFIX_PYTHON_RUNTIME to a folder that contains python.exe before building the Windows Server offline package."
+}
+Copy-ItemClean -Source $PythonRuntime -Destination (Join-Path $PackageRoot "python")
+foreach ($pattern in @("*.sh", "*.bash", "*.service")) {
+    Get-ChildItem -LiteralPath $PackageRoot -Recurse -File -Filter $pattern -ErrorAction SilentlyContinue |
+        Remove-Item -Force
+}
 New-Item -ItemType Directory -Force -Path (Join-Path $PackageRoot "integrated") | Out-Null
 Get-ChildItem -LiteralPath (Join-Path $Root "integrated") -File -ErrorAction SilentlyContinue |
     Copy-Item -Destination (Join-Path $PackageRoot "integrated") -Force
@@ -68,6 +97,80 @@ Windows Server 전용 설치 패키지입니다. 다른 OS용 설치 파일과 �
 1. 이 ZIP 파일을 원하는 폴더에 압축 해제합니다.
 2. `LOCK-FIX Setup Wizard.exe`를 실행합니다.
 3. 설치 마법사 화면에 따라 설치를 진행합니다.
+
+## 폐쇄망 설치 기준
+
+LOCK-FIX Windows Server 패키지는 폐쇄망 설치를 기준으로 구성됩니다. 설치 중 인터넷 다운로드, `pip install`, 외부 패키지 저장소 접속이 필요하지 않아야 합니다.
+
+포함 기준:
+
+- `python\python.exe` 내장 런타임
+- `LOCK-FIX Setup Wizard.exe`
+- `LOCK-FIX Console.exe`
+- `LOCK-FIX WebUI Service.exe`
+- `dist\lockfix-ui.exe`
+- `dist\lockfixctl.exe`
+- `config`, `lockfix`, `web`, `tools`
+
+설치 후 Web UI는 시스템 Python이 아니라 설치 폴더의 `python\python.exe`를 우선 사용합니다. 폐쇄망에서 필요한 네트워크 통신은 내부 Veeam Backup Server의 `9419` REST API와 로컬 Web UI `127.0.0.1:8088`뿐입니다.
+
+설치 패키지 검증:
+
+```powershell
+Test-Path .\python\python.exe
+Test-Path '.\LOCK-FIX Setup Wizard.exe'
+Test-Path '.\LOCK-FIX Console.exe'
+Test-Path '.\LOCK-FIX WebUI Service.exe'
+```
+
+Web UI 상시 실행 서비스 등록:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\install_lockfix_webui_service.ps1
+```
+
+## 실제 전원 OFF 컨트롤러 설정
+
+LOCK-FIX는 기본 패키지에서 `power.type=command`를 사용하며, 최종 5단계에서 `tools\lockfix_power_control.ps1`을 호출합니다. 이 스크립트는 현장 PDU, 릴레이, 또는 스토리지 컨트롤러의 실제 OFF/ON 명령을 환경변수로 받아 실행합니다. 장비 정보가 설정되지 않으면 실제 전원 OFF가 완료된 것으로 처리하지 않고 오류 로그를 남깁니다.
+
+HTTP 기반 PDU/릴레이 예시:
+
+```powershell
+[Environment]::SetEnvironmentVariable("LOCKFIX_POWER_BAY_01_OFF_URL", "https://pdu.example.local/api/outlets/1/off", "Machine")
+[Environment]::SetEnvironmentVariable("LOCKFIX_POWER_BAY_01_ON_URL",  "https://pdu.example.local/api/outlets/1/on",  "Machine")
+[Environment]::SetEnvironmentVariable("LOCKFIX_POWER_BAY_01_OFF_METHOD", "POST", "Machine")
+[Environment]::SetEnvironmentVariable("LOCKFIX_POWER_BAY_01_ON_METHOD",  "POST", "Machine")
+[Environment]::SetEnvironmentVariable("LOCKFIX_POWER_BAY_01_AUTH_HEADER", "Authorization", "Machine")
+[Environment]::SetEnvironmentVariable("LOCKFIX_POWER_BAY_01_AUTH_VALUE",  "Bearer <PDU_TOKEN>", "Machine")
+```
+
+벤더 CLI 기반 컨트롤러 예시:
+
+```powershell
+[Environment]::SetEnvironmentVariable("LOCKFIX_POWER_BAY_01_OFF_EXE", "C:\Program Files\VendorPDU\pductl.exe", "Machine")
+[Environment]::SetEnvironmentVariable("LOCKFIX_POWER_BAY_01_OFF_ARGS_JSON", '["outlet","1","off"]', "Machine")
+[Environment]::SetEnvironmentVariable("LOCKFIX_POWER_BAY_01_ON_EXE", "C:\Program Files\VendorPDU\pductl.exe", "Machine")
+[Environment]::SetEnvironmentVariable("LOCKFIX_POWER_BAY_01_ON_ARGS_JSON", '["outlet","1","on"]', "Machine")
+```
+
+슬롯 ID의 `-`는 환경변수에서 `_`로 바꿉니다. 예를 들어 `BAY-01`은 `BAY_01`입니다. 비밀번호와 토큰은 설정 파일에 직접 쓰지 말고 환경변수 또는 Windows 보안 저장소를 사용합니다.
+
+기존 설치본을 `mock`에서 `command`로 전환하려면 관리자 PowerShell에서 다음 도구를 사용합니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\enable_power_command_controller.ps1 -RestartWebUi
+```
+
+PDU HTTP URL을 동시에 등록하는 예:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\enable_power_command_controller.ps1 `
+  -OffUrl "https://pdu.example.local/api/outlets/1/off" `
+  -OnUrl "https://pdu.example.local/api/outlets/1/on" `
+  -AuthHeader "Authorization" `
+  -AuthValue "Bearer <PDU_TOKEN>" `
+  -RestartWebUi
+```
 
 ## 설치 마법사 흐름
 
@@ -130,9 +233,11 @@ PowerShell/curl 실패는 Windows Schannel 진단 이슈일 수 있으므로 실
 4. `/api/v1/jobs`와 `/api/v1/sessions`를 조회합니다.
 5. `job_id`를 우선 매칭하고, 없으면 `job_name`을 exact, case-insensitive, normalized 순서로 보조 매칭합니다.
 6. 최신 session의 `result/status`가 `Success`이면 `controller.isolate()`를 호출합니다.
-7. 같은 `session_id`는 runtime state에 기록해 중복 isolate를 방지합니다.
-8. PoC에서는 `verify_ssl=false`로 자체 서명 인증서를 허용할 수 있고, 운영에서는 Veeam REST 인증서를 Windows 신뢰 저장소에 등록한 뒤 `verify_ssl=true`를 사용합니다.
-9. `veeam-test`는 9419, 참고용 9398, token, jobs, sessions, job match, isolate 조건을 한 번에 진단합니다.
+7. Agent 백업이 `/api/v1/sessions`에 직접 노출되지 않는 환경에서는 `/api/v1/backups`, `/api/v1/backups/{id}/objects`, `/api/v1/backupObjects/{id}/restorePoints`를 조회해 최신 restore point를 백업 완료 증거로 사용합니다.
+8. LOCK-FIX의 Air-Gap 1단계 완료 기준은 Backup Copy가 `C:\`가 아닌 대상 저장소에 최종 restore point를 생성한 시점입니다. 대상 저장소는 `target_repository_id`, `target_repository_name`, `target_repository_path`로 지정하며, `C:\` 저장소는 코드 레벨에서 제외됩니다.
+9. 같은 `session_id` 또는 restore point ID는 runtime state에 기록해 중복 isolate를 방지합니다.
+10. PoC에서는 `verify_ssl=false`로 자체 서명 인증서를 허용할 수 있고, 운영에서는 Veeam REST 인증서를 Windows 신뢰 저장소에 등록한 뒤 `verify_ssl=true`를 사용합니다.
+11. `veeam-test`는 9419, 참고용 9398, token, jobs, sessions, backups, repositories, job match, isolate 조건을 한 번에 진단합니다.
 
 ```json
 "veeam": {
@@ -168,12 +273,52 @@ powershell -ExecutionPolicy Bypass -File .\tools\veeam_schannel_diagnostics.ps1 
 
 연동이 성공하면 `lockfixctl.py veeam-test`와 `lockfixctl.py veeam-watch --once`로 LOCK-FIX isolate 연동을 확인합니다.
 
+Web UI 비교 검증은 실행 중인 Web UI 서버에 HTTP로만 접근합니다. 테스트 도구는 `lockfix-ui.exe`, `python webui.py`, 또는 새 Windows 프로세스를 직접 실행하지 않습니다. Web UI 서버는 Windows 서비스 또는 작업 스케줄러에서 별도로 실행되어야 합니다.
+
+```powershell
+python .\lockfixctl.py veeam-webui-test --config .\config\lockfix.example.json --url http://127.0.0.1:8088
+```
+
+8088 포트가 닫혀 있으면 `Web UI server is not running`으로 표시합니다. 이 상태는 Veeam REST 9419 실패가 아니며, `veeam-test` CLI 결과와 `/api/veeam-backup` HTTP 응답 비교가 가능한 시점에만 Web UI 동기화 성공 여부를 판단합니다.
+
+이미 설치된 Web UI가 `LOCKFIX_VEEAM_PASSWORD`를 못 읽는 경우에는 설치본 복구 도구를 관리자 PowerShell에서 실행합니다. 이 도구는 비밀번호를 프롬프트로 입력받고, 값을 화면에 출력하지 않습니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\repair_installed_webui_veeam.ps1 -RestartWebUi
+```
+
+Veeam Backup Server IP는 Agent 대상 서버 IP와 별개입니다. Agent IP가 서버마다 바뀌더라도 LOCK-FIX는 `auto_discover=true`일 때 실제 토큰 발급이 되는 VBR REST 9419 주소를 자동 선택합니다.
+
+자동 탐지 우선순위:
+
+1. `LOCKFIX_VEEAM_BASE_URL` 환경변수
+2. `config.veeam.discovery_candidates`
+3. `LOCKFIX_VEEAM_CANDIDATES` 환경변수
+4. `config.veeam.base_url`
+5. `127.0.0.1`, `localhost`
+6. 로컬 IPv4 대역의 9419 포트 탐지
+
+예:
+
+```json
+"veeam": {
+  "base_url": "https://127.0.0.1:9419",
+  "auto_discover": true,
+  "discovery_candidates": [
+    "https://192.168.219.230:9419"
+  ],
+  "discovery_scan_local_subnet": true
+}
+```
+
 ## 포함 파일
 
 - `LOCK-FIX Setup Wizard.exe`
 - `LOCK-FIX Console.exe`
+- `LOCK-FIX WebUI Service.exe`
 - `dist\lockfix-ui.exe`
 - `dist\lockfixctl.exe`
+- `python\python.exe`
 - `config`
 - `lockfix`
 - `web`

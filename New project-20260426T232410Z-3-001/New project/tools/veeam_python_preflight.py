@@ -9,7 +9,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from lockfix.config import load_config
-from lockfix.veeam_client import VeeamClient, VeeamSettings
+from lockfix.veeam_diagnostics import run_veeam_diagnostics
 
 
 def emit(step: str, ok: bool, code: str, message: str, **payload: object) -> None:
@@ -19,28 +19,26 @@ def emit(step: str, ok: bool, code: str, message: str, **payload: object) -> Non
 def main() -> int:
     config_path = ROOT / "config" / "lockfix.example.json"
     config = load_config(config_path)
-    client = VeeamClient(VeeamSettings.from_config(config.veeam))
+    result = run_veeam_diagnostics(config)
 
-    port = client.check_port()
+    port = result.get("vbr_rest_9419", {}).get("port", {})
     emit("port", bool(port.get("ok")), str(port.get("code", "")), str(port.get("message", "")))
     if not port.get("ok"):
         return 1
 
-    try:
-        token = client.login()
-        emit("token", True, "OK", "access_token issued.", token_length=len(token))
-    except Exception as exc:
-        emit("token", False, getattr(exc, "code", exc.__class__.__name__), str(exc))
+    token = result.get("authentication") or {}
+    emit("token", bool(token.get("ok")), "OK" if token.get("ok") else str(result.get("error_type", "")), "access_token issued." if token.get("ok") else str(result.get("error", "")))
+    if not token.get("ok"):
         return 1
 
-    try:
-        sessions = client.get_sessions()
-        emit("sessions", True, "OK", "/api/v1/sessions query succeeded.", session_count=len(sessions))
-    except Exception as exc:
-        emit("sessions", False, getattr(exc, "code", exc.__class__.__name__), str(exc))
+    sessions = result.get("sessions") or {}
+    emit("sessions", bool(sessions.get("ok")), "OK" if sessions.get("ok") else str(result.get("error_type", "")), "/api/v1/sessions query succeeded." if sessions.get("ok") else str(result.get("error", "")), session_count=sessions.get("count", 0))
+    if not sessions.get("ok"):
         return 1
 
-    return 0
+    jobs = result.get("jobs") or {}
+    emit("jobs", bool(jobs.get("ok")), "OK" if jobs.get("ok") else str(result.get("error_type", "")), "/api/v1/jobs query succeeded." if jobs.get("ok") else str(result.get("error", "")), job_count=jobs.get("count", 0))
+    return 0 if jobs.get("ok") else 1
 
 
 if __name__ == "__main__":

@@ -45,21 +45,25 @@
       </div>
     </section>
 
-    <section class="login-splash hidden" id="loginSplash" aria-live="polite">
-      <img class="splash-image" src="/static/lockfix-splash.png" alt="LOCK-FIX secure cloud lock" />
+    <section class="login-splash hidden" id="loginSplash" aria-live="polite" aria-busy="true">
+      <div class="splash-stage">
+        <img class="splash-image" src="/static/lockfix-splash.png" alt="LOCK-FIX Air-Gap Protection" />
+        <div class="splash-loader" aria-hidden="true"><i></i></div>
+      </div>
     </section>
 
     <main class="app app-locked app-shell" id="appRoot">
-      <aside class="sidebar">
-        <div class="sidebar-logo">
-          <img src="/static/oam-logo.png" alt="OAM" />
-        </div>
+      <aside class="sidebar" id="sidebar">
+        <button class="sidebar-logo sidebar-logo-button" id="sidebarToggle" type="button" aria-label="Toggle sidebar" aria-expanded="true">
+          <img class="sidebar-logo-full" src="/static/oam-brand-mark.svg" alt="OAM" />
+          <img class="sidebar-logo-mark" src="/static/oam-brand-mark.svg" alt="OAM" />
+        </button>
         <nav class="side-nav" aria-label="Main navigation">
           <button class="side-item active" data-view="monitoring"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="3" height="8" rx="1"></rect><rect x="10.5" y="6" width="3" height="12" rx="1"></rect><rect x="17" y="3" width="3" height="15" rx="1"></rect></svg></span><span data-i18n="nav.monitoring">Monitoring</span></button>
           <button class="side-item" data-view="dashboard"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"></rect><rect x="13" y="4" width="7" height="7" rx="1.5"></rect><rect x="4" y="13" width="7" height="7" rx="1.5"></rect><rect x="13" y="13" width="7" height="7" rx="1.5"></rect></svg></span><span data-i18n="nav.dashboard">Dashboard</span></button>
           <button class="side-item" data-view="detect2"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="m16 16 4 4"></path></svg></span><span data-i18n="nav.detect">Detect</span></button>
           <button class="side-item" data-view="notification2"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20a2.3 2.3 0 0 0 2.2-1.6H9.8A2.3 2.3 0 0 0 12 20Z"></path><path d="M18 16H6l1.2-2V10a4.8 4.8 0 0 1 9.6 0v4L18 16Z"></path></svg></span><span data-i18n="nav.notification">Notification</span></button>
-          <button class="side-item" data-view="logs2"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h12"></path><path d="M6 10h12"></path><path d="M6 15h8"></path><path d="M4 3h16v18H4Z"></path></svg></span><span data-i18n="nav.logs">Logs</span></button>
+          <button class="side-item" data-view="logs2"><span class="nav-icon logs-nav-icon"><img src="/static/lockfix-logs-icon.png?v=20260505-logs" alt="" aria-hidden="true" /></span><span data-i18n="nav.logs">Logs</span></button>
           <button class="side-item" data-view="contact"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 5.5 10 8l-2 2.4a10.5 10.5 0 0 0 5.6 5.6L16 14l2.5 2.5c.5.5.5 1.3 0 1.8l-1 1c-.7.7-1.7.9-2.6.6A17.2 17.2 0 0 1 4.1 9.1c-.3-.9-.1-1.9.6-2.6l1-1c.5-.5 1.3-.5 1.8 0Z"></path></svg></span><span data-i18n="nav.contact">Contact Service</span></button>
           <button class="side-item" data-view="license2"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 7v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7Z"></path><path d="m9 12 2 2 4-5"></path></svg></span><span data-i18n="nav.license">License</span></button>
           <button class="side-item" data-view="network2"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8c2.5-2.4 5.5-2.4 8 0s5.5 2.4 8 0"></path><path d="M4 14c2.5-2.4 5.5-2.4 8 0s5.5 2.4 8 0"></path><path d="M4 20c2.5-2.4 5.5-2.4 8 0s5.5 2.4 8 0"></path></svg></span><span data-i18n="nav.network">Network Status</span></button>
@@ -287,7 +291,7 @@
       <header class="topbar">
         <div>
           <div class="header-brand">
-            <img src="/static/oam-logo.png" alt="OAM" />
+            <img src="/static/oam-brand-mark.svg" alt="OAM" />
             <h1>LOCK-FIX</h1>
           </div>
           <p>DataCenter + Hardware Web Solution Integrated PoC</p>
@@ -394,44 +398,7 @@
       <section class="view placeholder-view" id="licenseView"><h1>License</h1><p>라이선스 코드와 만료 상태를 확인합니다.</p></section>
       <section class="view placeholder-view" id="networkView"><h1>Network Status</h1><p>IP별 누적 트래픽과 송수신 정보를 확인하는 화면입니다.</p></section>
       <section class="view detect-view" id="detect2View">
-        <div class="detect-range">
-          <label>Start Date<strong id="detectStart">-</strong></label>
-          <label>End Date<strong id="detectEnd">-</strong></label>
-        </div>
-
-        <div class="detect-summary" id="detectCards"></div>
-
-        <div class="detect-grid">
-          <section class="detect-panel">
-            <h2>Detect</h2>
-            <div class="detect-table-wrap">
-              <table class="detect-table">
-                <thead><tr><th>Date</th><th>Event</th></tr></thead>
-                <tbody id="detectDetectTable"></tbody>
-              </table>
-            </div>
-          </section>
-
-          <section class="detect-panel">
-            <h2>Warning</h2>
-            <div class="detect-table-wrap">
-              <table class="detect-table">
-                <thead><tr><th>Date</th><th>Event</th></tr></thead>
-                <tbody id="detectWarningTable"></tbody>
-              </table>
-            </div>
-          </section>
-
-          <section class="detect-panel">
-            <h2>Logs</h2>
-            <div class="detect-table-wrap">
-              <table class="detect-table">
-                <thead><tr><th>Date</th><th>Event</th></tr></thead>
-                <tbody id="detectLogsTable"></tbody>
-              </table>
-            </div>
-          </section>
-        </div>
+        <div class="detect-fingerprint-root" id="detectFingerprintRoot"></div>
       </section>
 
       <section class="view logs-view" id="logs2View">

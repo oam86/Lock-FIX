@@ -66,7 +66,7 @@ namespace LockFix
 
         private static Process StartServer(string root, string config)
         {
-            string python = FindPython();
+            string python = FindPython(root);
             Log("Python: " + python);
             ProcessStartInfo start = new ProcessStartInfo();
             start.FileName = python;
@@ -122,10 +122,11 @@ namespace LockFix
             throw lastError ?? new TimeoutException("local web server did not respond on " + Url);
         }
 
-        private static string FindPython()
+        private static string FindPython(string root)
         {
             string[] candidates = new string[]
             {
+                Path.Combine(root, "python", "python.exe"),
                 Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                     ".cache",

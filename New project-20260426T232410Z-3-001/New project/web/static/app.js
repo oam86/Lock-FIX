@@ -11,6 +11,7 @@ const qrLoginButton = document.querySelector("#qrLoginButton");
 const qrCodeBox = document.querySelector("#qrCodeBox");
 const qrTimer = document.querySelector("#qrTimer");
 const appRoot = document.querySelector("#appRoot");
+const sidebarToggle = document.querySelector("#sidebarToggle");
 const logoutButton = document.querySelector("#logoutButton");
 const logoutSideButton = document.querySelector("#logoutSideButton");
 const sideItems = document.querySelectorAll(".side-item[data-view]");
@@ -65,6 +66,7 @@ const detectCards = document.querySelector("#detectCards");
 const detectDetectTable = document.querySelector("#detectDetectTable");
 const detectWarningTable = document.querySelector("#detectWarningTable");
 const detectLogsTable = document.querySelector("#detectLogsTable");
+const detectFingerprintRoot = document.querySelector("#detectFingerprintRoot");
 const logsStart = document.querySelector("#logsStart");
 const logsEnd = document.querySelector("#logsEnd");
 const logsRangeApply = document.querySelector("#logsRangeApply");
@@ -130,6 +132,7 @@ let latestSourcesData = null;
 let latestDashboardData = null;
 let airgapPollTimer = null;
 let veeamPollTimer = null;
+let emergencyActionStatus = "";
 let activeMonitoringMetric = "cpu";
 let monitoringRange = {
   start: "",
@@ -146,6 +149,7 @@ let uiSettings = {
   theme: localStorage.getItem("lockfix.theme") || "light",
 };
 let pendingUiSettings = { ...uiSettings };
+let sidebarCollapsed = localStorage.getItem("lockfix.sidebarCollapsed") !== "false";
 
 const translations = {
   en: {
@@ -819,6 +823,18 @@ function applyUiSettings() {
   });
 }
 
+function applySidebarState() {
+  appRoot?.classList.toggle("sidebar-collapsed", sidebarCollapsed);
+  sidebarToggle?.setAttribute("aria-expanded", String(!sidebarCollapsed));
+  sidebarToggle?.setAttribute("title", sidebarCollapsed ? "Open sidebar" : "Close sidebar");
+}
+
+function toggleSidebar() {
+  sidebarCollapsed = !sidebarCollapsed;
+  localStorage.setItem("lockfix.sidebarCollapsed", String(sidebarCollapsed));
+  applySidebarState();
+}
+
 function applyPendingUiSettings() {
   uiSettings = { ...pendingUiSettings };
   localStorage.setItem("lockfix.language", uiSettings.language);
@@ -1410,6 +1426,86 @@ function renderNotification(data) {
 }
 
 function renderDetect(data) {
+  if (detectFingerprintRoot) {
+    const fingerprint = data.fingerprint || {};
+    const parts = Array.isArray(fingerprint.parts) ? fingerprint.parts : [];
+    const status = String(fingerprint.status || "UNREGISTERED");
+    const isNormal = fingerprint.match === true || status === "MATCH";
+    const statusClass = isNormal ? "normal" : "abnormal";
+    const judgementLabel = isNormal ? "REGISTERED" : status === "DIFFERENT_DISK" ? "DIFFERENT DISK" : "UNREGISTERED";
+    const recognitionLabel = isNormal ? "NORMAL RECOGNITION" : "RECOGNITION FAILED";
+    const diskSize = parts.find((part) => {
+      const key = String(part.key || "").toLowerCase();
+      const label = String(part.label || "").toLowerCase();
+      return key.includes("size") || label.includes("size");
+    });
+    const latency = fingerprint.detection_latency_seconds ?? data.detection_latency_seconds ?? "0.5";
+    const fingerprintValue = String(fingerprint.value || "-");
+    const shortFingerprint = fingerprintValue.length > 12 ? `${fingerprintValue.slice(0, 12)}...` : fingerprintValue;
+    const backgroundFormula = `${fingerprint.formula_title || "LOCK-FIX-DISK-FINGERPRINT ="}\n${fingerprint.formula || ""}`;
+    detectFingerprintRoot.innerHTML = `
+      <div class="detect-judgement-page">
+        <header class="detect-judgement-head">
+          <span aria-hidden="true"></span>
+          <h1>Judgement Module UI</h1>
+        </header>
+        <section class="detect-judgement-panel detect-judgement-${statusClass}">
+          <div class="detect-judgement-topline">
+            <div class="detect-final-state">
+              <span>FINAL JUDGEMENT</span>
+              <strong>${escapeHtml(judgementLabel)}</strong>
+              <em>${escapeHtml(recognitionLabel)}</em>
+            </div>
+            <div class="detect-latency">
+              <span>DETECTION LATENCY</span>
+              <strong>${escapeHtml(String(latency))}<small>sec</small></strong>
+            </div>
+          </div>
+          <div class="detect-judgement-cards">
+            <article>
+              <span>SLOT ID</span>
+              <strong>${escapeHtml(fingerprint.slot_id || "-")}</strong>
+            </article>
+            <article>
+              <span>CURRENT FINGERPRINT</span>
+              <strong>${escapeHtml(shortFingerprint)}</strong>
+            </article>
+            <article>
+              <span>DISK SIZE</span>
+              <strong>${escapeHtml(diskSize?.value || "-")}</strong>
+            </article>
+          </div>
+        </section>
+        <section class="detect-background-fingerprint" aria-label="Background fingerprint judgement basis">
+          <h2>Background Judgement Basis</h2>
+          <div class="detect-background-grid">
+            <article>
+              <span>REGISTERED FINGERPRINT</span>
+              <strong>${escapeHtml(fingerprint.registered_value || "-")}</strong>
+            </article>
+            <article>
+              <span>CURRENT STATUS</span>
+              <strong class="${isNormal ? "detect-text-normal" : "detect-text-abnormal"}">${escapeHtml(status)}</strong>
+            </article>
+            <article>
+              <span>FORMULA</span>
+              <strong>${escapeHtml(backgroundFormula.replace(/\n/g, " "))}</strong>
+            </article>
+          </div>
+        </section>
+        <section class="detect-parts-grid" aria-label="Disk identity fingerprint parts">
+          ${parts.map((part) => `
+            <article>
+              <span>${escapeHtml(part.label || "-")}</span>
+              <strong>${escapeHtml(part.value || "-")}</strong>
+            </article>
+          `).join("")}
+        </section>
+      </div>
+    `;
+    return;
+  }
+  if (!detectStart || !detectEnd || !detectCards || !detectDetectTable || !detectWarningTable || !detectLogsTable) return;
   detectStart.textContent = data.range.start;
   detectEnd.textContent = data.range.end;
   detectCards.replaceChildren();
@@ -1781,7 +1877,7 @@ function renderVeeamBackup(data) {
   const steps = Array.isArray(data.steps) ? data.steps : [];
   const logs = Array.isArray(data.logs) ? data.logs : [];
   const result = String(job.result || "WAITING").toUpperCase();
-  const apiSynced = Boolean(api.api_synced || api.state_source === "veeam_rest_api");
+  const apiSynced = isVeeamSynced(api);
   const progress = apiSynced ? Math.max(0, Math.min(100, Number(job.progress_percent || 0))) : 0;
 
   veeamApiChip.className = `veeam-api-chip veeam-api-${apiSynced ? "connected" : "waiting"}`;
@@ -1823,6 +1919,16 @@ function renderVeeamBackup(data) {
   });
 }
 
+function isVeeamSynced(value) {
+  const stateSource = String(value?.state_source || value?.stateSource || "").toLowerCase();
+  return Boolean(
+    value?.api_synced ||
+    value?.connected ||
+    value?.port_open && stateSource.startsWith("veeam_rest_api") ||
+    stateSource.startsWith("veeam_rest_api")
+  );
+}
+
 function fallbackAirGapSummary(loading = false) {
   return {
     security_score: {
@@ -1853,7 +1959,7 @@ function fallbackAirGapSummary(loading = false) {
       },
     ],
     timeline: [
-      { step: 1, title: "Backup completed", label: "백업 완료", state: "ACTIVE", code: "BACKUP_COMPLETED" },
+      { step: 1, title: "Backup completed", label: "백업 완료", state: "PENDING", code: "BACKUP_COMPLETED" },
       { step: 2, title: "Flush running", label: "Flush 실행", state: "PENDING", code: "FLUSHING" },
       { step: 3, title: "I/O checking", label: "I/O 종료 확인", state: "PENDING", code: "IO_CHECKING" },
       { step: 4, title: "Unmount", label: "Unmount", state: "PENDING", code: "UNMOUNTING" },
@@ -1876,7 +1982,7 @@ function fallbackAirGapSummary(loading = false) {
       message: "Veeam API is not connected yet. Current step is held and colors will not advance automatically.",
     },
     step_logs: [
-      { step: 1, label: "백업 완료", code: "BACKUP_COMPLETED", state: "ACTIVE", time: "-", source: "Veeam API 대기", detail: "현재 단계입니다. 다음 단계 전환 신호가 확인될 때까지 색상을 유지합니다.", transition_allowed: true },
+      { step: 1, label: "백업 완료", code: "BACKUP_COMPLETED", state: "PENDING", time: "-", source: "Veeam API 대기", detail: "실제 Veeam API 세션이 확인될 때까지 단계 색상을 회색으로 유지합니다.", transition_allowed: false },
       { step: 2, label: "Flush 실행", code: "FLUSHING", state: "PENDING", time: "-", source: "Veeam API 대기", detail: "아직 이전 단계 완료 신호가 확인되지 않았습니다.", transition_allowed: false },
       { step: 3, label: "I/O 종료 확인", code: "IO_CHECKING", state: "PENDING", time: "-", source: "Veeam API 대기", detail: "아직 이전 단계 완료 신호가 확인되지 않았습니다.", transition_allowed: false },
       { step: 4, label: "Unmount", code: "UNMOUNTING", state: "PENDING", time: "-", source: "Veeam API 대기", detail: "아직 이전 단계 완료 신호가 확인되지 않았습니다.", transition_allowed: false },
@@ -1899,6 +2005,27 @@ function fallbackAirGapSummary(loading = false) {
       primary: "Waiting for Dual Approval",
       secondary: "Data path activation remains blocked",
     },
+    emergency_access: {
+      title: "Emergency Volume Access",
+      description: "Unmount 이후 긴급 접속이 필요한 경우 인증 해시값을 확인한 뒤 UID와 SHA-256 검증을 다시 수행하고 볼륨을 즉시 접속합니다.",
+      primary: "검증 후 긴급 접속",
+      secondary: "C:\\ OS 볼륨은 어떤 경우에도 작업 대상이 될 수 없습니다.",
+      slot: {
+        slot_id: "BAY-01",
+        device: "D:\\",
+        mount_point: "D:\\",
+        state: "WAITING",
+        eligible: false,
+        authorization_hash_short: "-",
+        authorization_hash_protected: true,
+        current_uid_short: "-",
+        hash_status: "WAITING_FOR_MOUNT",
+        manifest_hash_short: "-",
+        last_unmount: "-",
+        last_power_off: "-",
+      },
+      slots: [],
+    },
   };
 }
 
@@ -1910,10 +2037,10 @@ function renderSources(data) {
   const timelineItems = Array.isArray(airGap.timeline) && airGap.timeline.length ? airGap.timeline : fallbackAirGapSummary().timeline;
   const veeam = airGap.veeam || fallbackAirGapSummary().veeam;
   const stepLogs = Array.isArray(airGap.step_logs) && airGap.step_logs.length ? airGap.step_logs : fallbackAirGapSummary().step_logs;
-  const apiSynced = Boolean(veeam.api_synced || veeam.state_source === "veeam_rest_api");
+  const apiSynced = isVeeamSynced(veeam);
   const backupProgress = apiSynced ? Math.max(0, Math.min(100, Number(veeam.progress_percent || 0))) : 0;
   const apiPercent = apiSynced ? Math.max(0, Math.min(100, Number(veeam.api_verification_percent ?? 100))) : 0;
-  const veeamSessionLogs = apiSynced && Array.isArray(airGap.session_logs) && airGap.session_logs.length
+  const veeamSessionLogs = Array.isArray(airGap.session_logs) && airGap.session_logs.length
     ? airGap.session_logs
     : [{
         name: "Veeam API",
@@ -1930,6 +2057,8 @@ function renderSources(data) {
     ? airGap.integrity_history
     : fallbackAirGapSummary().integrity_history;
   const emergency = airGap.emergency || fallbackAirGapSummary().emergency;
+  const emergencyAccess = airGap.emergency_access || fallbackAirGapSummary().emergency_access;
+  const emergencySlot = emergencyAccess.slot || {};
   const procedureLabels = {
     1: "Backup Done",
     2: "Flush",
@@ -1938,10 +2067,31 @@ function renderSources(data) {
     5: "Power OFF",
   };
   const stepLabel = (item) => procedureLabels[Number(item.step)] || airgapText(item.label || item.title || "-");
-  const stepHasAdvanced = (item) => Number(item.step) < Number(veeam.current_step || 1) && String(item.state || "").toUpperCase() === "DONE";
+  const isStepLive = (item) => {
+    const state = String(item.state || "").toUpperCase();
+    return ["ACTIVE", "RUNNING", "WORKING", "DONE", "COMPLETED", "SUCCESS"].includes(state);
+  };
+  const stepHasAdvanced = (item) => (
+    apiSynced &&
+    Number(item.step) < Number(veeam.current_step || 1) &&
+    isStepLive(item)
+  );
   const progressCell = (log) => {
     const value = log.progress_percent;
     return value === "" || value === undefined || value === null ? "-" : `${value}%`;
+  };
+  const transferMeta = (log) => {
+    const values = [
+      `Progress ${progressCell(log)}`,
+      `Size ${log.backup_size || "-"}`,
+      `Transferred ${log.transferred || "-"}`,
+      `Speed ${log.speed || "-"}`,
+      `Start ${log.started_at || "-"}`,
+      `End ${log.ended_at || "-"}`,
+      `API ${apiPercent}%`,
+    ];
+    if (log.last_known) values.unshift("Retained detail log");
+    return values.join(" · ");
   };
   const statusClass = (status) => {
     const key = String(status || "").toLowerCase();
@@ -1952,7 +2102,12 @@ function renderSources(data) {
   };
   const actionLines = (log) => {
     const actions = Array.isArray(log.actions) && log.actions.length ? log.actions : [log.action || log.message || "-"];
-    return actions.map((action) => `<span><i class="veeam-action-icon veeam-action-${statusClass(log.status)}"></i>${escapeHtml(action)}</span>`).join("");
+    return actions.map((action) => {
+      const text = String(action ?? "-");
+      const isSection = text.startsWith("LOCK-FIX STEP ");
+      const icon = isSection ? "" : `<i class="veeam-action-icon veeam-action-${statusClass(log.status)}"></i>`;
+      return `<span class="${isSection ? "veeam-action-section" : ""}">${icon}${escapeHtml(text)}</span>`;
+    }).join("");
   };
   sourceList.replaceChildren();
 
@@ -1998,7 +2153,7 @@ function renderSources(data) {
             <tr>
               <td class="veeam-session-name">${escapeHtml(log.name || "-")}</td>
               <td><span class="veeam-session-status veeam-session-${statusClass(log.status)}">${escapeHtml(log.status || "-")}</span></td>
-              <td class="veeam-session-actions">${actionLines(log)}<em>Progress ${progressCell(log)} · API ${apiPercent}%</em></td>
+              <td class="veeam-session-actions">${actionLines(log)}<em>${escapeHtml(transferMeta(log))}</em></td>
               <td class="veeam-session-duration">${escapeHtml(log.duration || "-")}</td>
             </tr>
           `).join("")}
@@ -2007,6 +2162,80 @@ function renderSources(data) {
     </div>
   `;
   sourceList.appendChild(procedureLogs);
+
+  const emergencyPanel = document.createElement("section");
+  const emergencyEligible = Boolean(emergencySlot.eligible);
+  const emergencyHashOk = String(emergencySlot.hash_status || "").toUpperCase() === "VALID";
+  const reconnectRuntimeOrder = [
+    "RECONNECT_REQUESTED",
+    "POWERING_ON",
+    "WAITING_DISK",
+    "VERIFYING_UID",
+    "MOUNTED_READONLY",
+    "VERIFYING_HASH",
+    "ONLINE_VERIFIED_RW",
+  ];
+  const reconnectDisplayOrder = [...reconnectRuntimeOrder].reverse();
+  const reconnectCurrentState = String(emergencySlot.state || "").toUpperCase();
+  const reconnectCurrentIndex = reconnectRuntimeOrder.indexOf(reconnectCurrentState);
+  const reconnectHistoryText = Array.isArray(emergencySlot.reconnect_history)
+    ? emergencySlot.reconnect_history.join("\n").toUpperCase()
+    : "";
+  const reconnectStepClass = (state) => {
+    const index = reconnectRuntimeOrder.indexOf(state);
+    if (state === reconnectCurrentState) return "current";
+    if (reconnectCurrentIndex >= 0 && index >= 0 && index < reconnectCurrentIndex) return "done";
+    if (reconnectHistoryText.includes(state)) return "done";
+    return "pending";
+  };
+  const reconnectFlowMarkup = reconnectDisplayOrder.map((state, index) => {
+    const stepClass = reconnectStepClass(state);
+    const isArrowActive = stepClass !== "pending" || reconnectStepClass(reconnectDisplayOrder[index + 1] || "") !== "pending";
+    return `
+      <article class="emergency-reconnect-step emergency-reconnect-${stepClass}">
+        <strong>${escapeHtml(state)}</strong>
+      </article>
+      ${index < reconnectDisplayOrder.length - 1 ? `<i class="emergency-reconnect-arrow ${isArrowActive ? "arrow-active" : ""}" aria-hidden="true"></i>` : ""}
+    `;
+  }).join("");
+  emergencyPanel.className = `airgap-panel emergency-access-panel ${emergencyEligible ? "emergency-access-ready" : "emergency-access-wait"}`;
+  emergencyPanel.innerHTML = `
+    <div class="airgap-panel-head">
+      <h2>${escapeHtml(emergencyAccess.title || "Emergency Volume Access")}</h2>
+      <span>${escapeHtml(emergencyEligible ? "READY" : "WAITING")}</span>
+    </div>
+    <p>${escapeHtml(emergencyAccess.description || "-")}</p>
+    <div class="emergency-access-grid">
+      <div><span>Slot</span><strong>${escapeHtml(emergencySlot.slot_id || "-")}</strong></div>
+      <div><span>Volume</span><strong>${escapeHtml(emergencySlot.mount_point || emergencySlot.device || "-")}</strong></div>
+      <div><span>State</span><strong>${escapeHtml(emergencySlot.state || "-")}</strong></div>
+      <div><span>Auth Hash</span><code>${escapeHtml(emergencySlot.authorization_hash_short || "-")}</code></div>
+      <div><span>Disk UID</span><code>${escapeHtml(emergencySlot.current_uid_short || "-")}</code></div>
+      <div><span>Hash Check</span><strong class="${emergencyHashOk ? "emergency-ok" : "emergency-wait"}">${escapeHtml(emergencySlot.hash_status || "-")}</strong></div>
+      <div class="wide"><span>Last Unmount</span><em>${escapeHtml(emergencySlot.last_unmount || "-")}</em></div>
+      <div class="wide"><span>Last Power OFF</span><em>${escapeHtml(emergencySlot.last_power_off || "-")}</em></div>
+      <div class="wide"><span>Last Reconnect</span><em>${escapeHtml(emergencySlot.last_reconnect || "-")}</em></div>
+      <div class="wide emergency-history"><span>Reconnect History</span><em>${(Array.isArray(emergencySlot.reconnect_history) && emergencySlot.reconnect_history.length ? emergencySlot.reconnect_history : ["-"]).map((item) => escapeHtml(item)).join("<br>")}</em></div>
+    </div>
+    <div class="emergency-reconnect-flow-wrap">
+      <span>Reconnect State Flow</span>
+      <div class="emergency-reconnect-flow" aria-label="Emergency reconnect state flow">
+        ${reconnectFlowMarkup}
+      </div>
+    </div>
+    <button class="emergency-access-button" type="button" data-slot="${escapeHtml(emergencySlot.slot_id || "")}" data-lock-disabled="${emergencyEligible ? "false" : "true"}" ${emergencyEligible ? "" : "disabled"}>
+      ${escapeHtml(emergencyAccess.primary || "검증 후 긴급 접속")}
+    </button>
+    <strong>${escapeHtml(emergencyActionStatus || emergencySlot.blocked_reason || emergencyAccess.secondary || "-")}</strong>
+  `;
+  sourceList.appendChild(emergencyPanel);
+  emergencyPanel.querySelector(".emergency-access-button")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    const slotId = button.dataset.slot || "";
+    const enteredHash = window.prompt("긴급 볼륨 접속을 위해 인증 해시값 전체를 입력하세요.", "");
+    if (!enteredHash) return;
+    runEmergencyReconnect(slotId, enteredHash);
+  });
   return;
 
   sourceRoot.innerHTML = `
@@ -2323,9 +2552,29 @@ async function runAction(action, slotId) {
   }
 }
 
+async function runEmergencyReconnect(slotId, verificationHash) {
+  setBusy(true);
+  emergencyActionStatus = "긴급 접속 검증을 실행 중입니다.";
+  try {
+    const result = await requestJson(`/api/emergency-reconnect?slot=${encodeURIComponent(slotId)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ verification_hash: verificationHash }),
+    });
+    emergencyActionStatus = result.message || "긴급 볼륨 접속이 완료되었습니다.";
+    await loadAll();
+  } catch (error) {
+    emergencyActionStatus = `긴급 접속 실패: ${error.message}`;
+    alert(error.message);
+    await loadAll();
+  } finally {
+    setBusy(false);
+  }
+}
+
 function setBusy(busy) {
   document.querySelectorAll("button").forEach((button) => {
-    button.disabled = busy;
+    button.disabled = busy || button.dataset.lockDisabled === "true";
   });
 }
 
@@ -2336,6 +2585,7 @@ qrCodeBox.addEventListener("click", confirmQrLogin);
 logoutButton.addEventListener("click", logout);
 logoutSideButton.addEventListener("click", logout);
 licenseForm.addEventListener("submit", registerLicense);
+sidebarToggle?.addEventListener("click", toggleSidebar);
 sideItems.forEach((item) => item.addEventListener("click", () => showView(item.dataset.view)));
 chartMenuButton.addEventListener("click", () => downloadMenu.classList.toggle("open"));
 chartZoomInButton.addEventListener("click", () => {
@@ -2395,6 +2645,7 @@ logRetentionSelect?.addEventListener("change", () => {
   settingsApplyStatus.textContent = translations[pendingUiSettings.language]?.["settings.pending"] || translations.en["settings.pending"];
 });
 settingsApplyButton.addEventListener("click", applyPendingUiSettings);
+applySidebarState();
 applyUiSettings();
 setupReportSignatures();
 checkSession();

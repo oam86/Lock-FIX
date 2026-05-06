@@ -3,6 +3,11 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Net;
+using System.Net.Security;
+using System.Text;
+using System.Web.Script.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -159,7 +164,7 @@ namespace LockFix
             database.Text = "DB";
             database.Checked = true;
 
-            veeamHost.Text = "127.0.0.1";
+            veeamHost.Text = "192.168.219.230";
             veeamPort.Text = "9419";
             authType.Items.AddRange(new object[] { "Windows Authentication", "API Token", "Basic Account" });
             authType.SelectedIndex = 0;
@@ -179,6 +184,13 @@ namespace LockFix
             if (pageIndex == 1)
             {
                 RunSystemCheck();
+            }
+            if (pageIndex == 4)
+            {
+                if (!ValidateVeeamConnectionBeforeNext())
+                {
+                    return;
+                }
             }
             if (pageIndex == 6)
             {
@@ -315,12 +327,163 @@ namespace LockFix
         private void RenderVeeamConnection()
         {
             pageTitle.Text = "Veeam Connection";
-            pageBody.Text = "Veeam 서버 연결 정보를 입력합니다. 기본 포트는 9419입니다.";
+            pageBody.Text = "Veeam 서버 연결 정보를 입력합니다. Next 단계는 9419 접속과 토큰 인증이 성공해야 진행됩니다.";
             AddField("Veeam Server IP", veeamHost, 146);
             AddField("Port", veeamPort, 196);
             AddField("Authentication", authType, 246);
             AddField("User", veeamUser, 296);
             AddField("Password / Token", veeamPassword, 346);
+        }
+
+        private bool ValidateVeeamConnectionBeforeNext()
+        {
+            string host = veeamHost.Text.Trim();
+            string portText = veeamPort.Text.Trim();
+            string user = veeamUser.Text.Trim();
+            string password = veeamPassword.Text;
+            int port;
+
+            if (String.IsNullOrWhiteSpace(host))
+            {
+                ShowVeeamValidationMessage("Veeam Server IP를 입력해야 합니다.");
+                veeamHost.Focus();
+                return false;
+            }
+            if (!Int32.TryParse(portText, out port) || port <= 0 || port > 65535)
+            {
+                ShowVeeamValidationMessage("Veeam REST API 포트가 올바르지 않습니다. 기본 포트는 9419입니다.");
+                veeamPort.Focus();
+                return false;
+            }
+            if (String.IsNullOrWhiteSpace(user))
+            {
+                ShowVeeamValidationMessage("Veeam 계정을 입력해야 합니다. 최소 Veeam Backup Viewer 이상 권한이 필요합니다.");
+                veeamUser.Focus();
+                return false;
+            }
+            if (String.IsNullOrWhiteSpace(password))
+            {
+                ShowVeeamValidationMessage("Veeam 비밀번호 또는 토큰을 입력해야 합니다.");
+                veeamPassword.Focus();
+                return false;
+            }
+
+            nextButton.Enabled = false;
+            Cursor previousCursor = Cursor.Current;
+            Cursor.Current = Cursors.WaitCursor;
+            try
+            {
+                string message;
+                if (!TryValidateVeeamRest(host, port, user, password, out message))
+                {
+                    ShowVeeamValidationMessage(message);
+                    return false;
+                }
+                MessageBox.Show(
+                    this,
+                    "Veeam REST API 9419 접속 및 토큰 인증이 완료되었습니다.\n\n인증된 정보로 다음 단계 진행이 가능합니다.",
+                    "Veeam Connection Verified",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return true;
+            }
+            finally
+            {
+                Cursor.Current = previousCursor;
+                nextButton.Enabled = true;
+            }
+        }
+
+        private void ShowVeeamValidationMessage(string message)
+        {
+            MessageBox.Show(
+                this,
+                message + "\n\n입력 정보가 불일치하거나 Veeam REST API 인증이 실패하면 다음 단계로 진행할 수 없습니다.",
+                "Veeam Connection Required",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+
+        private bool TryValidateVeeamRest(string host, int port, string user, string password, out string message)
+        {
+            string baseUrl = "https://" + host + ":" + port.ToString();
+            try
+            {
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+                RemoteCertificateValidationCallback previousCallback = ServicePointManager.ServerCertificateValidationCallback;
+                ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
+                try
+                {
+                    HttpWebRequest request = (HttpWebRequest)WebRequest.Create(baseUrl + "/api/oauth2/token");
+                    request.Method = "POST";
+                    request.Timeout = 7000;
+                    request.ReadWriteTimeout = 7000;
+                    request.ContentType = "application/x-www-form-urlencoded";
+                    request.Accept = "application/json";
+                    request.Headers["x-api-version"] = "1.2-rev1";
+
+                    string body =
+                        "grant_type=password" +
+                        "&username=" + Uri.EscapeDataString(user) +
+                        "&password=" + Uri.EscapeDataString(password);
+                    byte[] data = Encoding.UTF8.GetBytes(body);
+                    request.ContentLength = data.Length;
+                    using (Stream stream = request.GetRequestStream())
+                    {
+                        stream.Write(data, 0, data.Length);
+                    }
+
+                    using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                    using (StreamReader reader = new StreamReader(response.GetResponseStream()))
+                    {
+                        string raw = reader.ReadToEnd();
+                        if (response.StatusCode == HttpStatusCode.OK && raw.IndexOf("access_token", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            message = "OK";
+                            return true;
+                        }
+                    }
+                    message = "Veeam REST API 응답에서 access_token을 확인하지 못했습니다.";
+                    return false;
+                }
+                finally
+                {
+                    ServicePointManager.ServerCertificateValidationCallback = previousCallback;
+                }
+            }
+            catch (WebException ex)
+            {
+                HttpWebResponse response = ex.Response as HttpWebResponse;
+                if (response != null)
+                {
+                    if (response.StatusCode == HttpStatusCode.Unauthorized)
+                    {
+                        message = "401 인증 실패: Veeam 계정 또는 비밀번호가 올바르지 않습니다.";
+                    }
+                    else if (response.StatusCode == HttpStatusCode.Forbidden)
+                    {
+                        message = "403 권한 부족: 계정에 Veeam Backup Viewer 이상 권한을 부여해야 합니다.";
+                    }
+                    else if (response.StatusCode == HttpStatusCode.NotFound)
+                    {
+                        message = "404 API 경로 또는 버전 문제: VBR REST API 9419와 x-api-version을 확인해야 합니다.";
+                    }
+                    else
+                    {
+                        message = "Veeam REST API 오류: HTTP " + ((int)response.StatusCode).ToString() + " " + response.StatusDescription;
+                    }
+                }
+                else
+                {
+                    message = "ConnectionError: " + host + ":" + port.ToString() + " 접속에 실패했습니다. IP, 포트, 방화벽, Veeam Backup Service 상태를 확인하세요.";
+                }
+                return false;
+            }
+            catch (Exception ex)
+            {
+                message = "Veeam REST API 검증 실패: " + ex.Message;
+                return false;
+            }
         }
 
         private void RenderSecurityKey()
@@ -489,6 +652,7 @@ namespace LockFix
             }
 
             AddLog("System check completed.");
+            StopExistingWebUiBeforeCopy(targetRoot);
             AddLog("Preparing installation folder...");
             Directory.CreateDirectory(targetRoot);
             SetProgress(10);
@@ -498,6 +662,9 @@ namespace LockFix
 
             WriteInstallConfig(targetRoot);
             SetProgress(84);
+
+            RegisterWebUiService(targetRoot);
+            SetProgress(88);
 
             installedUiPath = Path.Combine(targetRoot, "dist", "lockfix-ui.exe");
             CreateWebShortcut(Path.Combine(targetRoot, "LOCK-FIX Web UI.url"), webUiUrl);
@@ -512,8 +679,8 @@ namespace LockFix
 
         private void CopyPayload(string sourceRoot, string targetRoot)
         {
-            string[] directories = { "config", "dist", "integrated", "lockfix", "web" };
-            string[] files = { "LOCK-FIX Console.exe", "webui.py", "lockfixctl.py", "README.md", "requirements_from_ppt.md", "requirements_from_reports.md" };
+            string[] directories = { "config", "dist", "integrated", "lockfix", "web", "python", "tools" };
+            string[] files = { "LOCK-FIX Console.exe", "LOCK-FIX WebUI Service.exe", "webui.py", "lockfixctl.py", "README.md", "requirements_from_ppt.md", "requirements_from_reports.md" };
             int total = directories.Length + files.Length;
             int done = 0;
 
@@ -530,11 +697,112 @@ namespace LockFix
                 string source = Path.Combine(sourceRoot, file);
                 if (File.Exists(source))
                 {
-                    File.Copy(source, Path.Combine(targetRoot, file), true);
+                    CopyFileWithRetry(source, Path.Combine(targetRoot, file));
                     AddLog("Copied " + file);
                 }
                 done++;
                 SetProgress(10 + (done * 58 / total));
+            }
+        }
+
+        private void StopExistingWebUiBeforeCopy(string targetRoot)
+        {
+            AddLog("Stopping existing LOCK-FIX Web UI service...");
+            RunServiceCommand("stop", "LOCKFIXWebUI", false);
+            Thread.Sleep(1500);
+
+            for (int attempt = 0; attempt < 8; attempt++)
+            {
+                List<int> pids = GetTcpListenerPids(8088);
+                foreach (int pid in pids)
+                {
+                    AddLog("Stopping existing Web UI listener PID " + pid.ToString());
+                    RunProcess("taskkill.exe", "/PID " + pid.ToString() + " /F", false);
+                }
+                if (GetTcpListenerPids(8088).Count == 0)
+                {
+                    break;
+                }
+                Thread.Sleep(1000);
+            }
+
+            WaitForUnlocked(Path.Combine(targetRoot, "python", "python.exe"), "LOCK-FIX Python runtime");
+            WaitForUnlocked(Path.Combine(targetRoot, "LOCK-FIX WebUI Service.exe"), "LOCK-FIX Web UI service executable");
+        }
+
+        private List<int> GetTcpListenerPids(int port)
+        {
+            List<int> result = new List<int>();
+            string stdout = RunProcess("netstat.exe", "-ano -p tcp", false);
+            string marker = ":" + port.ToString();
+            string[] lines = stdout.Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (string raw in lines)
+            {
+                string line = raw.Trim();
+                if (line.IndexOf(marker, StringComparison.OrdinalIgnoreCase) < 0 ||
+                    line.IndexOf("LISTENING", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+                string[] parts = line.Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length == 0)
+                {
+                    continue;
+                }
+                int pid;
+                if (Int32.TryParse(parts[parts.Length - 1], out pid) && pid > 0 && !result.Contains(pid))
+                {
+                    result.Add(pid);
+                }
+            }
+            return result;
+        }
+
+        private void WaitForUnlocked(string path, string label)
+        {
+            if (!File.Exists(path))
+            {
+                return;
+            }
+            for (int attempt = 0; attempt < 12; attempt++)
+            {
+                try
+                {
+                    using (FileStream stream = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                    {
+                    }
+                    return;
+                }
+                catch (IOException)
+                {
+                    Thread.Sleep(1000);
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    Thread.Sleep(1000);
+                }
+            }
+            throw new IOException(label + " is still in use. Close LOCK-FIX Web UI, stop the LOCKFIXWebUI service, or run setup as Administrator, then retry.");
+        }
+
+        private static void CopyFileWithRetry(string source, string target)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(target));
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                try
+                {
+                    File.Copy(source, target, true);
+                    return;
+                }
+                catch (IOException)
+                {
+                    if (attempt == 4)
+                    {
+                        throw;
+                    }
+                    Thread.Sleep(800);
+                }
             }
         }
 
@@ -544,6 +812,8 @@ namespace LockFix
             Directory.CreateDirectory(runtime);
             string config =
                 "install_type=" + (recommendedInstall.Checked ? "recommended" : "advanced") + Environment.NewLine +
+                "operation_mode=live" + Environment.NewLine +
+                "dry_run=false" + Environment.NewLine +
                 "components=" + SelectedComponents() + Environment.NewLine +
                 "veeam_host=" + veeamHost.Text + Environment.NewLine +
                 "veeam_port=" + veeamPort.Text + Environment.NewLine +
@@ -557,7 +827,112 @@ namespace LockFix
                 "security_key_type=" + securityKeyType.Text + Environment.NewLine +
                 "web_ui_url=" + webUiUrl + Environment.NewLine;
             File.WriteAllText(Path.Combine(runtime, "install.properties"), config);
+            WriteLockFixJsonConfig(targetRoot);
             AddLog("Installation configuration saved.");
+        }
+
+        private void RegisterWebUiService(string targetRoot)
+        {
+            string serviceExe = Path.Combine(targetRoot, "LOCK-FIX WebUI Service.exe");
+            if (!File.Exists(serviceExe))
+            {
+                throw new FileNotFoundException("LOCK-FIX Web UI service executable was not found.", serviceExe);
+            }
+            RunServiceCommand("stop", "LOCKFIXWebUI", false);
+            RunServiceCommand("delete", "LOCKFIXWebUI", false);
+            string binPath = "\"" + serviceExe + "\"";
+            RunSc(new string[] { "create", "LOCKFIXWebUI", "binPath=", binPath, "start=", "auto", "DisplayName=", "LOCK-FIX Web UI" }, true);
+            RunSc(new string[] { "description", "LOCKFIXWebUI", "Keeps LOCK-FIX Web UI listening on http://127.0.0.1:8088 using the bundled offline Python runtime." }, false);
+            RunServiceCommand("start", "LOCKFIXWebUI", true);
+            AddLog("Windows service registered: LOCKFIXWebUI (http://127.0.0.1:8088)");
+        }
+
+        private void RunServiceCommand(string action, string serviceName, bool required)
+        {
+            RunSc(new string[] { action, serviceName }, required);
+        }
+
+        private void RunSc(string[] args, bool required)
+        {
+            string stdout = RunProcess("sc.exe", QuoteArguments(args), required);
+        }
+
+        private string RunProcess(string fileName, string arguments, bool required)
+        {
+            ProcessStartInfo start = new ProcessStartInfo();
+            start.FileName = fileName;
+            start.Arguments = arguments;
+            start.UseShellExecute = false;
+            start.RedirectStandardOutput = true;
+            start.RedirectStandardError = true;
+            Process process = Process.Start(start);
+            string stdout = process.StandardOutput.ReadToEnd();
+            string stderr = process.StandardError.ReadToEnd();
+            process.WaitForExit(30000);
+            if (required && process.ExitCode != 0)
+            {
+                throw new InvalidOperationException(fileName + " failed. Run setup as Administrator. " + stdout + " " + stderr);
+            }
+            return stdout + Environment.NewLine + stderr;
+        }
+
+        private static string QuoteArguments(IEnumerable<string> args)
+        {
+            List<string> result = new List<string>();
+            foreach (string arg in args)
+            {
+                if (arg.EndsWith("=") || (arg.IndexOf(' ') < 0 && arg.IndexOf('\t') < 0))
+                {
+                    result.Add(arg);
+                }
+                else if (arg.StartsWith("\"") && arg.EndsWith("\""))
+                {
+                    result.Add(arg);
+                }
+                else
+                {
+                    result.Add("\"" + arg.Replace("\"", "\\\"") + "\"");
+                }
+            }
+            return String.Join(" ", result.ToArray());
+        }
+
+        private void WriteLockFixJsonConfig(string targetRoot)
+        {
+            string configPath = Path.Combine(targetRoot, "config", "lockfix.example.json");
+            if (!File.Exists(configPath))
+            {
+                return;
+            }
+
+            JavaScriptSerializer serializer = new JavaScriptSerializer();
+            Dictionary<string, object> root = serializer.Deserialize<Dictionary<string, object>>(File.ReadAllText(configPath));
+            Dictionary<string, object> veeam;
+            if (root.ContainsKey("veeam") && root["veeam"] is Dictionary<string, object>)
+            {
+                veeam = (Dictionary<string, object>)root["veeam"];
+            }
+            else
+            {
+                veeam = new Dictionary<string, object>();
+                root["veeam"] = veeam;
+            }
+
+            string baseUrl = "https://" + veeamHost.Text.Trim() + ":" + veeamPort.Text.Trim();
+            root["operation_mode"] = "live";
+            root["dry_run"] = false;
+            veeam["enabled"] = true;
+            veeam["base_url"] = baseUrl;
+            veeam["auto_discover"] = true;
+            veeam["discovery_candidates"] = new string[] { baseUrl };
+            veeam["discovery_scan_local_subnet"] = true;
+            veeam["api_version"] = "1.2-rev1";
+            veeam["username"] = veeamUser.Text.Trim();
+            veeam["username_env"] = "LOCKFIX_VEEAM_USER";
+            veeam["password_env"] = "LOCKFIX_VEEAM_PASSWORD";
+            veeam["verify_ssl"] = false;
+
+            File.WriteAllText(configPath, serializer.Serialize(root));
         }
 
         private static void CopyDirectory(string source, string target)
@@ -569,7 +944,7 @@ namespace LockFix
             Directory.CreateDirectory(target);
             foreach (string file in Directory.GetFiles(source))
             {
-                File.Copy(file, Path.Combine(target, Path.GetFileName(file)), true);
+                CopyFileWithRetry(file, Path.Combine(target, Path.GetFileName(file)));
             }
             foreach (string directory in Directory.GetDirectories(source))
             {

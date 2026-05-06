@@ -23,12 +23,13 @@ from urllib import request as urlrequest
 from urllib.parse import parse_qs, urlencode, urlparse
 from xml.sax.saxutils import escape
 
-from lockfix.config import load_config
+from lockfix.config import get_veeam_config, load_app_config, load_config
 from lockfix.controller import LockFixController
-from lockfix.identity import slot_uid
+from lockfix.hashcheck import verify_manifest
+from lockfix.identity import fingerprint_formula, fingerprint_parts, slot_uid, verify_uid
 from lockfix.integrated import integrated_solution_summary
 from lockfix.source_inventory import integrated_source_inventory
-from lockfix.veeam_client import VeeamClient, VeeamSettings
+from lockfix.veeam_diagnostics import run_veeam_diagnostics
 
 
 ROOT = Path(__file__).resolve().parent
@@ -44,6 +45,10 @@ class WebContext:
         self.license_path = ROOT / "runtime" / "license.json"
         self.report_customer_path = ROOT / "runtime" / "report_customer.json"
         self.report_extras_path = ROOT / "runtime" / "report_extras.json"
+
+    @property
+    def app_config(self):
+        return load_app_config(self.config_path)
 
     @property
     def config(self):
@@ -70,6 +75,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 self.serve_file(STATIC_DIR / parsed.path[len("/static/") :])
             elif parsed.path == "/api/session":
                 self.send_json({"authenticated": self.is_authenticated(), "license": self.license_status()})
+            elif parsed.path == "/open-latest-package-folder":
+                self.open_latest_package_folder()
             elif parsed.path == "/api/console/status":
                 self.require_auth()
                 self.send_json(self.console_status())
@@ -220,6 +227,19 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 slot_id = self.query_slot(parsed.query)
                 state = self.context.controller.reconnect(slot_id)
                 self.send_json({"slot_id": slot_id, "state": state.value, "summary": self.summary()})
+            elif parsed.path == "/api/emergency-reconnect":
+                self.require_auth()
+                payload = self.read_json_body()
+                slot_id = self.query_slot(parsed.query)
+                state = self.context.controller.emergency_reconnect(slot_id, str(payload.get("verification_hash", "")))
+                self.send_json(
+                    {
+                        "slot_id": slot_id,
+                        "state": state.value,
+                        "message": "Emergency volume access verified. Backup volume is reconnected.",
+                        "summary": self.summary(),
+                    }
+                )
             else:
                 self.send_error(404, "not found")
         except PermissionError as exc:
@@ -428,6 +448,19 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         events.append(today_key)
         marker.write_text(json.dumps(events[-120:], ensure_ascii=False), encoding="utf-8")
 
+    def safe_text_lines(self, path: Path) -> list[str]:
+        try:
+            return path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            return []
+
+    def audit_log_lines(self) -> list[str]:
+        try:
+            path = self.context.config.audit_log_path
+        except Exception:
+            return []
+        return LockFixWebHandler.safe_text_lines(self, path)
+
     def qr_status_response(self, token: str) -> dict:
         record = self.context.qr_tokens.get(token)
         if not record:
@@ -495,12 +528,62 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "message": "Web UI status is provided by Python functions. No .cmd execution is required from the browser.",
         }
 
+    def open_latest_package_folder(self) -> None:
+        if self.client_address[0] not in {"127.0.0.1", "::1"}:
+            self.send_json({"error": "local access only"}, status=403)
+            return
+        release_dir = self.package_release_dir()
+        latest = self.latest_package_zip(release_dir)
+        try:
+            if latest:
+                os.startfile(f'/select,"{latest}"')
+            else:
+                os.startfile(str(release_dir))
+        except OSError as exc:
+            self.send_json({"ok": False, "error": str(exc), "folder": str(release_dir)}, status=500)
+            return
+        self.send_html(
+            "<!doctype html><meta charset='utf-8'>"
+            "<title>LOCK-FIX Package Folder</title>"
+            "<body style='font-family:Segoe UI,Malgun Gothic,sans-serif;padding:28px'>"
+            "<h1>LOCK-FIX package folder opened</h1>"
+            f"<p>Folder: {escape(str(release_dir))}</p>"
+            f"<p>Selected: {escape(latest.name if latest else '-')}</p>"
+            "<p>Windows Explorer should now show the latest package file.</p>"
+            "</body>"
+        )
+
+    def package_release_dir(self) -> Path:
+        env_release_dir = os.environ.get("LOCKFIX_PACKAGE_RELEASE_DIR", "").strip()
+        candidates = [
+            Path(env_release_dir) if env_release_dir else None,
+            ROOT / "dist" / "release",
+            ROOT.parent / "New project" / "dist" / "release",
+            Path.home() / "Downloads",
+        ]
+        for candidate in candidates:
+            if candidate and candidate.exists():
+                return candidate
+        return ROOT
+
+    def latest_package_zip(self, release_dir: Path) -> Path | None:
+        try:
+            packages = sorted(
+                release_dir.glob("LOCK-FIX-Windows-Installer-Package-*.zip"),
+                key=lambda item: item.stat().st_mtime,
+                reverse=True,
+            )
+        except OSError:
+            return None
+        return packages[0] if packages else None
+
     def air_gap_summary(self) -> dict:
         summary = self.summary()
         now = time.time()
         tick = int(now)
         veeam_runtime = self.veeam_interlock_runtime(now)
         current_step = veeam_runtime["current_step"]
+        veeam_connected = bool(veeam_runtime.get("api_synced") or veeam_runtime.get("connected"))
         veeam_states = [
             {"step": 1, "title": "Backup completed", "label": "백업 완료", "state": "PENDING", "code": "BACKUP_COMPLETED"},
             {"step": 2, "title": "Flush running", "label": "Flush 실행", "state": "PENDING", "code": "FLUSHING"},
@@ -509,10 +592,11 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             {"step": 5, "title": "Power off", "label": "전원 OFF", "state": "PENDING", "code": "POWERING_OFF"},
         ]
         for item in veeam_states:
-            if item["step"] < current_step:
-                item["state"] = "DONE"
-            elif item["step"] == current_step:
-                item["state"] = "ACTIVE"
+            if veeam_connected:
+                if item["step"] < current_step:
+                    item["state"] = "DONE"
+                elif item["step"] == current_step:
+                    item["state"] = "ACTIVE"
             item["checked_at"] = veeam_runtime["last_checked"]
             item["log"] = veeam_runtime["step_logs"][item["step"] - 1]
         bays = []
@@ -569,7 +653,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 },
             ],
             "veeam": {
-                "api_poll_interval_seconds": 1,
+                "api_poll_interval_seconds": int((get_veeam_config(self.context.app_config) or {}).get("poll_interval_seconds", 10)),
                 "server": veeam_runtime["server"],
                 "port": veeam_runtime["port"],
                 "connected": veeam_runtime["connected"],
@@ -601,7 +685,216 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "primary": "Waiting for Dual Approval",
                 "secondary": "Data path activation remains blocked",
             },
+            "emergency_access": self.emergency_access_summary(summary),
         }
+
+    def emergency_access_summary(self, summary: dict | None = None) -> dict:
+        config = self.context.config
+        status = self.context.controller.status()
+        slot_summaries = []
+        for slot_id, slot in config.slots.items():
+            current_state = status.get(slot_id, "READY_MOCK")
+            auth_hash = self.context.controller.emergency_access_hash(slot_id)
+            uid_ok, current_uid = verify_uid(slot)
+            try:
+                mount_exists = slot.mount_point.exists()
+                mount_error = ""
+            except OSError as exc:
+                mount_exists = False
+                mount_error = str(exc)
+            if mount_exists:
+                try:
+                    hash_ok, actual_hash, expected_hash = verify_manifest(slot.mount_point, slot.manifest_path)
+                    hash_status = "VALID" if hash_ok else "MISMATCH"
+                except OSError as exc:
+                    actual_hash = ""
+                    expected_hash = ""
+                    mount_error = str(exc)
+                    hash_status = "MOUNT_ACCESS_ERROR"
+            else:
+                actual_hash = ""
+                expected_hash = ""
+                hash_status = "MOUNT_ACCESS_ERROR" if mount_error else "WAITING_FOR_MOUNT"
+            unmount_record = LockFixWebHandler.latest_audit_record(self, slot_id, {"disk.unmount", "disk.unmount.error"})
+            power_record = LockFixWebHandler.latest_audit_record(self, slot_id, {"power.mock.off", "power.command.off", "power.mock.off.error", "power.command.off.error"})
+            reconnect_records = LockFixWebHandler.recent_reconnect_audit_records(self, slot_id)
+            reconnect_history = [
+                item
+                for item in (LockFixWebHandler.format_reconnect_audit_record(self, record) for record in reconnect_records)
+                if item
+            ]
+            normalized_device = str(slot.device).strip().replace("/", "\\").rstrip("\\").lower()
+            normalized_mount = str(slot.mount_point).strip().replace("/", "\\").rstrip("\\").lower()
+            os_volume_blocked = normalized_device in {"c:", "c"} or normalized_mount in {"c:", "c"}
+            state_allows_access = current_state in {"ISOLATED", "POWERING_OFF", "UNMOUNTING", "WAITING_DISK", "ERROR", "QUARANTINE"}
+            slot_summaries.append(
+                {
+                    "slot_id": slot_id,
+                    "device": slot.device,
+                    "mount_point": str(slot.mount_point),
+                    "state": current_state,
+                    "dry_run": config.dry_run,
+                    "eligible": state_allows_access and not os_volume_blocked,
+                    "blocked_reason": "C:\\ OS volume is permanently blocked." if os_volume_blocked else "",
+                    "authorization_hash_short": f"{auth_hash[:16]}...{auth_hash[-8:]}" if len(auth_hash) > 28 else auth_hash,
+                    "authorization_hash_protected": True,
+                    "uid_ok": uid_ok,
+                    "current_uid_short": f"{current_uid[:16]}...{current_uid[-8:]}" if len(current_uid) > 28 else current_uid,
+                    "hash_status": hash_status,
+                    "manifest_hash_short": f"{actual_hash[:16]}...{actual_hash[-8:]}" if len(actual_hash) > 28 else actual_hash,
+                    "expected_manifest_hash_short": f"{expected_hash[:16]}...{expected_hash[-8:]}" if expected_hash and len(expected_hash) > 28 else expected_hash or "",
+                    "mount_error": mount_error,
+                    "last_unmount": LockFixWebHandler.compact_log_value(self, unmount_record.get("output") or unmount_record.get("error") or "-") if unmount_record else "-",
+                    "last_power_off": LockFixWebHandler.compact_log_value(self, power_record.get("output") or power_record.get("error") or "-") if power_record else "-",
+                    "last_reconnect": reconnect_history[-1] if reconnect_history else "-",
+                    "reconnect_history": reconnect_history[-12:],
+                }
+            )
+        first = slot_summaries[0] if slot_summaries else {}
+        return {
+            "title": "Emergency Volume Access",
+            "description": "Unmount 이후 긴급 접속이 필요한 경우 인증 해시값을 확인한 뒤 UID와 SHA-256 검증을 다시 수행하고 볼륨을 즉시 접속합니다.",
+            "primary": "검증 후 긴급 접속",
+            "secondary": "C:\\ OS 볼륨은 어떤 경우에도 마운트 해제/재접속 작업 대상이 될 수 없습니다.",
+            "slot": first,
+            "slots": slot_summaries,
+        }
+
+    def recent_reconnect_audit_records(self, slot_id: str, limit: int = 20) -> list[dict]:
+        lines = LockFixWebHandler.audit_log_lines(self)
+        events = {
+            "emergency.reconnect.request",
+            "emergency.reconnect.approved",
+            "emergency.reconnect.denied",
+            "emergency.reconnect.complete",
+            "state.transition",
+            "power.mock.on.start",
+            "power.mock.on.tick",
+            "power.mock.on",
+            "power.command.on.start",
+            "power.command.on.tick",
+            "power.command.on",
+            "power.command.on.error",
+            "disk.reconnect.plan",
+            "disk.wait.start",
+            "disk.wait.tick",
+            "disk.wait.found",
+            "disk.access_path.start",
+            "disk.access_path",
+            "disk.access_path.error",
+            "disk.mount_ro.start",
+            "disk.mount_ro.tick",
+            "disk.mount_ro",
+            "disk.mount_ro.error",
+            "disk.health.scan.start",
+            "disk.health.scan",
+            "disk.health.scan.error",
+            "disk.mount_rw.start",
+            "disk.mount_rw.tick",
+            "disk.mount_rw",
+            "disk.mount_rw.error",
+            "verify.uid",
+            "verify.hash",
+        }
+        records = []
+        reconnect_states = {
+            "RECONNECT_REQUESTED",
+            "POWERING_ON",
+            "WAITING_DISK",
+            "VERIFYING_UID",
+            "MOUNTED_READONLY",
+            "VERIFYING_HASH",
+            "ONLINE_VERIFIED_RW",
+            "QUARANTINE",
+            "ERROR",
+        }
+        for line in lines:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(record, dict) or record.get("event") not in events:
+                continue
+            if slot_id and str(record.get("slot_id") or "") != slot_id:
+                continue
+            if record.get("event") == "state.transition" and str(record.get("state") or "") not in reconnect_states:
+                continue
+            if record.get("event") == "emergency.reconnect.request" or (
+                record.get("event") == "state.transition" and str(record.get("state") or "") == "RECONNECT_REQUESTED"
+            ):
+                records = []
+            records.append(record)
+        return records[-limit:]
+
+    def format_reconnect_audit_record(self, record: dict) -> str:
+        event = str(record.get("event") or "")
+        slot_id = str(record.get("slot_id") or "-")
+        timestamp = LockFixWebHandler.format_audit_timestamp(self, record.get("ts"))
+        prefix = f"{timestamp} - " if timestamp else ""
+        if event == "emergency.reconnect.request":
+            return f"{prefix}LOCK-FIX Reconnect REQUEST - slot {slot_id}, emergency hash verification requested."
+        if event == "emergency.reconnect.approved":
+            return f"{prefix}LOCK-FIX Reconnect APPROVED - slot {slot_id}, authorization hash matched."
+        if event == "emergency.reconnect.denied":
+            reason = LockFixWebHandler.compact_log_value(self, record.get("reason") or "verification_hash_mismatch")
+            return f"{prefix}LOCK-FIX Reconnect DENIED - slot {slot_id}, {reason}"
+        if event == "state.transition":
+            state = LockFixWebHandler.compact_log_value(self, record.get("state") or "-")
+            return f"{prefix}LOCK-FIX Reconnect STATE - slot {slot_id}, {state}"
+        if event == "disk.reconnect.plan":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            disk = LockFixWebHandler.compact_log_value(self, record.get("disk_number") or "-")
+            partition = LockFixWebHandler.compact_log_value(self, record.get("partition_number") or "-")
+            volume = LockFixWebHandler.compact_log_value(self, record.get("volume_unique_id") or "-")
+            return f"{prefix}LOCK-FIX Reconnect PLAN - slot {slot_id}, drive {drive}, disk {disk}, partition {partition}, volume {volume}"
+        if event == "disk.wait.start":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            timeout = LockFixWebHandler.compact_log_value(self, record.get("timeout_seconds") or "-")
+            return f"{prefix}LOCK-FIX Reconnect WAIT START - slot {slot_id}, drive {drive}, timeout {timeout}s"
+        if event == "disk.wait.tick":
+            attempt = LockFixWebHandler.compact_log_value(self, record.get("attempt") or "-")
+            return f"{prefix}LOCK-FIX Reconnect WAIT TICK - slot {slot_id}, attempt {attempt}"
+        if event == "disk.wait.found":
+            output = LockFixWebHandler.compact_log_value(self, record.get("output") or "backup partition detected")
+            return f"{prefix}LOCK-FIX Reconnect DISK FOUND - slot {slot_id}, {output}"
+        if event == "disk.access_path.start":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            access_path = LockFixWebHandler.compact_log_value(self, record.get("access_path") or f"{drive}:\\")
+            return f"{prefix}LOCK-FIX Reconnect ACCESS PATH START - slot {slot_id}, restoring {access_path}"
+        if event == "disk.access_path":
+            output = LockFixWebHandler.compact_log_value(self, record.get("output") or "access path restored")
+            return f"{prefix}LOCK-FIX Reconnect ACCESS PATH OK - slot {slot_id}, {output}"
+        if event == "disk.access_path.error":
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "access path restore failed")
+            return f"{prefix}LOCK-FIX Reconnect ACCESS PATH ERROR - slot {slot_id}, {error}"
+        if event in {"power.mock.on", "power.command.on"}:
+            output = LockFixWebHandler.compact_log_value(self, record.get("output") or "power on completed")
+            return f"{prefix}LOCK-FIX Reconnect POWER ON OK - slot {slot_id}, {output}"
+        if event == "verify.uid":
+            return f"{prefix}LOCK-FIX Reconnect UID CHECK - slot {slot_id}, ok={record.get('ok')}"
+        if event == "verify.hash":
+            return f"{prefix}LOCK-FIX Reconnect HASH CHECK - slot {slot_id}, ok={record.get('ok')}"
+        if event in {"disk.mount_ro", "disk.mount_rw", "disk.health.scan"}:
+            output = LockFixWebHandler.compact_log_value(self, record.get("output") or event)
+            return f"{prefix}LOCK-FIX Reconnect {event.replace('disk.', '').upper()} - slot {slot_id}, {output}"
+        if event == "emergency.reconnect.complete":
+            state = LockFixWebHandler.compact_log_value(self, record.get("state") or "-")
+            return f"{prefix}LOCK-FIX Reconnect COMPLETE - slot {slot_id}, state {state}"
+        return ""
+
+    def latest_audit_record(self, slot_id: str, events: set[str]) -> dict:
+        lines = LockFixWebHandler.audit_log_lines(self)
+        for line in reversed(lines):
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(record, dict) or record.get("event") not in events:
+                continue
+            if slot_id and str(record.get("slot_id") or "") != slot_id:
+                continue
+            return record
+        return {}
 
     def veeam_interlock_runtime(self, now: float) -> dict:
         runtime_path = ROOT / "runtime" / "veeam_interlock_state.json"
@@ -617,10 +910,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         port = int(payload.get("port") or os.environ.get("LOCKFIX_VEEAM_PORT") or install_props.get("veeam_port") or 9419)
         port_open = self.tcp_port_open(server, port)
         api_payload = self.poll_veeam_api(server, port, payload)
-        if api_payload:
-            merged = dict(payload)
-            merged.update(api_payload)
-            payload = merged
+        payload = api_payload or {}
+        server = str(payload.get("server") or server)
+        port = int(payload.get("port") or port)
         api_synced = bool(payload.get("api_synced"))
         has_api_session = api_synced
         current_step = int(payload.get("current_step") or 1)
@@ -645,10 +937,11 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         custom_logs = payload.get("step_logs") if connected and isinstance(payload.get("step_logs"), list) else []
         for index, label in enumerate(labels, start=1):
             state = "PENDING"
-            if index < current_step:
-                state = "DONE"
-            elif index == current_step:
-                state = "ACTIVE"
+            if connected:
+                if index < current_step:
+                    state = "DONE"
+                elif index == current_step:
+                    state = "ACTIVE"
             custom = custom_logs[index - 1] if index - 1 < len(custom_logs) and isinstance(custom_logs[index - 1], dict) else {}
             if index == 1:
                 default_detail = (
@@ -671,9 +964,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     "time": custom.get("time") or last_checked,
                     "source": custom.get("source") or ("Veeam API" if connected else "Veeam API 대기"),
                     "detail": custom.get("detail") or default_detail,
-                    "progress_percent": custom.get("progress_percent", progress if index <= current_step else ""),
+                    "progress_percent": custom.get("progress_percent", progress if connected and index <= current_step else ""),
                     "api_verification_percent": custom.get("api_verification_percent", api_verification_percent if index == 1 else ""),
-                    "transition_allowed": index <= current_step,
+                    "transition_allowed": connected and index <= current_step,
                 }
             )
         started_at = payload.get("started_at") or payload.get("start_time") or last_checked
@@ -688,11 +981,18 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             status = "Failed"
         elif status.upper() in {"RUNNING", "WORKING", "INPROGRESS", "IN_PROGRESS"}:
             status = "Running"
-        auto_isolate = self.auto_isolate_after_veeam_success(payload, status, last_checked) if connected else {
-            "enabled": True,
-            "triggered": False,
-            "message": "Waiting for successful Veeam session.",
-        }
+        if connected:
+            auto_handler = getattr(self, "auto_isolate_after_veeam_success", None)
+            if callable(auto_handler):
+                auto_isolate = auto_handler(payload, status, last_checked)
+            else:
+                auto_isolate = LockFixWebHandler.auto_isolate_after_veeam_success(self, payload, status, last_checked)
+        else:
+            auto_isolate = {
+                "enabled": True,
+                "triggered": False,
+                "message": "Waiting for successful Veeam session.",
+            }
         payload["auto_isolate"] = auto_isolate
         if auto_isolate.get("state") == "ISOLATED":
             current_step = 5
@@ -706,7 +1006,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     item["detail"] = auto_isolate.get("message") or "Veeam success detected. LOCK-FIX isolate completed."
 
         session_logs = []
-        raw_session_logs = payload.get("session_logs") if connected and isinstance(payload.get("session_logs"), list) else []
+        raw_session_logs = payload.get("session_logs") if isinstance(payload.get("session_logs"), list) else []
         if not raw_session_logs and connected and isinstance(payload.get("logs"), list):
             raw_session_logs = payload.get("logs")
         for entry in raw_session_logs:
@@ -739,6 +1039,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     "progress_percent": entry.get("progress_percent", progress),
                     "started_at": entry.get("started_at") or started_at,
                     "ended_at": entry.get("ended_at") or ended_at,
+                    "backup_size": entry.get("backup_size") or payload.get("backup_size") or "-",
+                    "transferred": entry.get("transferred") or payload.get("transferred") or "-",
+                    "speed": entry.get("speed") or payload.get("speed") or "-",
                 }
             )
         if not connected:
@@ -757,17 +1060,24 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 waiting_actions.append(
                     "INFO - Enterprise Manager 9398 is reference-only diagnostics and does not affect LOCK-FIX 9419 validation."
                 )
-            session_logs = [
-                {
-                    "name": "Veeam API",
-                    "status": "Waiting",
-                    "actions": waiting_actions,
-                    "duration": "-",
-                    "progress_percent": 0,
-                    "started_at": "-",
-                    "ended_at": "-",
-                }
-            ]
+            if session_logs:
+                session_logs[0]["actions"] = list(session_logs[0].get("actions") or []) + waiting_actions
+            else:
+                session_logs = [
+                    {
+                        "name": "Veeam API",
+                        "status": "Waiting",
+                        "actions": waiting_actions,
+                        "duration": "-",
+                        "progress_percent": 0,
+                        "started_at": "-",
+                        "ended_at": "-",
+                    }
+                ]
+            loader = getattr(self, "load_veeam_last_logs", None)
+            last_logs = loader() if callable(loader) else LockFixWebHandler.load_veeam_last_logs(self)
+            if last_logs:
+                session_logs.extend(last_logs)
         elif not session_logs:
             backup_size = payload.get("backup_size") or "0 B"
             transferred = payload.get("transferred") or backup_size
@@ -806,8 +1116,44 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     "progress_percent": progress,
                     "started_at": started_at,
                     "ended_at": ended_at,
+                    "backup_size": backup_size,
+                    "transferred": transferred,
+                    "speed": speed,
                 }
             )
+        slot_id = str(auto_isolate.get("slot_id") or payload.get("slot_id") or os.environ.get("LOCKFIX_SLOT_ID") or next(iter(self.context.config.slots), "BAY-01"))
+        interlock_actions = LockFixWebHandler.veeam_flush_operation_actions(
+            self,
+            slot_id,
+            current_step,
+        )
+        interlock_actions += LockFixWebHandler.veeam_io_quiet_operation_actions(self, slot_id, current_step)
+        interlock_actions += LockFixWebHandler.veeam_unmount_operation_actions(self, slot_id, current_step)
+        interlock_actions += LockFixWebHandler.veeam_power_off_operation_actions(self, slot_id, current_step)
+        if interlock_actions:
+            if session_logs:
+                session_logs[0]["actions"] = list(session_logs[0].get("actions") or []) + interlock_actions
+            else:
+                session_logs.append(
+                    {
+                        "name": payload.get("name") or job,
+                        "status": status,
+                        "actions": interlock_actions,
+                        "duration": duration,
+                        "progress_percent": progress,
+                        "started_at": started_at,
+                        "ended_at": ended_at,
+                        "backup_size": payload.get("backup_size") or "-",
+                        "transferred": payload.get("transferred") or "-",
+                        "speed": payload.get("speed") or "-",
+                    }
+                )
+        if connected and session_logs:
+            saver = getattr(self, "save_veeam_last_logs", None)
+            if callable(saver):
+                saver(session_logs, last_checked)
+            else:
+                LockFixWebHandler.save_veeam_last_logs(self, session_logs, last_checked)
         return {
             "server": server,
             "port": port,
@@ -832,107 +1178,670 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             ),
         }
 
-    def veeam_backup_summary(self) -> dict:
-        now = time.time()
-        runtime = self.veeam_interlock_runtime(now)
-        payload = runtime.get("payload") or {}
-        current_step = runtime["current_step"]
-        progress = int(payload.get("progress_percent") or payload.get("progress") or max(0, (current_step - 1) * 25))
-        progress = max(0, min(100, progress))
-        raw_result = str(payload.get("result") or payload.get("status") or "").upper()
-        if raw_result in {"SUCCESS", "SUCCEEDED", "COMPLETED"}:
-            result = "SUCCESS"
-            progress = 100
-        elif raw_result in {"FAILED", "FAILURE", "ERROR"}:
-            result = "FAILED"
-        elif raw_result in {"WARNING", "WARN"}:
-            result = "WARNING"
-        elif runtime["connected"]:
-            result = "RUNNING"
-        else:
-            result = "WAITING"
-            progress = 0
-
-        started_at = payload.get("started_at") or payload.get("start_time") or "-"
-        ended_at = payload.get("ended_at") or payload.get("end_time") or "-"
-        duration = payload.get("duration") or "-"
-        details = payload.get("logs") if isinstance(payload.get("logs"), list) else []
-        if not details:
-            details = [
-                {
-                    "time": item["time"],
-                    "level": "INFO" if item["transition_allowed"] else "WAIT",
-                    "step": item["step"],
-                    "message": item["detail"],
-                    "source": item["source"],
-                }
-                for item in runtime["step_logs"]
+    def veeam_flush_operation_actions(self, slot_id: str, current_step: int, limit: int = 12) -> list[str]:
+        if current_step < 2:
+            return []
+        records = LockFixWebHandler.recent_flush_audit_records(self, slot_id, limit)
+        if not records:
+            return [
+                f"LOCK-FIX STEP 2 DETAIL - Flush operation flow for slot {slot_id}",
+                f"LOCK-FIX Flush WAIT - step 2 is active for slot {slot_id}, but no flush audit event has been recorded yet.",
             ]
+        actions = [f"LOCK-FIX STEP 2 DETAIL - Flush operation flow for slot {slot_id}"]
+        for record in records:
+            if record.get("event") == "disk.flush.start":
+                actions.extend(LockFixWebHandler.flush_start_detail_actions(self, record))
+            action = LockFixWebHandler.format_flush_audit_record(self, record)
+            if action:
+                actions.append(action)
+        if any(record.get("event") == "disk.flush.error" for record in records):
+            actions.append(f"LOCK-FIX STEP 2 ERROR - Flush result was recorded as failed. Step 3 must not proceed until the error is resolved.")
+        elif any(record.get("event") == "disk.flush" for record in records):
+            actions.append("LOCK-FIX STEP 2 COMPLETE - Flush checkpoint result was recorded. Continuing to Step 3 I/O quiet verification.")
+        return actions
 
-        return {
-            "api": {
-                "poll_interval_seconds": 1,
-                "server": runtime["server"],
-                "port": runtime["port"],
-                "connected": runtime["connected"],
-                "api_synced": runtime["api_synced"],
-                "port_open": runtime["port_open"],
-                "api_checks": runtime["api_checks"],
-                "last_checked": runtime["last_checked"],
-                "state_source": runtime["state_source"],
-                "message": runtime["message"],
-            },
-            "job": {
-                "name": runtime["job"],
-                "session_state": payload.get("session_state") or payload.get("state") or runtime["step_logs"][current_step - 1]["code"],
-                "current_step": current_step,
-                "progress_percent": progress,
-                "result": result,
-                "started_at": started_at,
-                "ended_at": ended_at,
-                "duration": duration,
-            },
-            "steps": runtime["step_logs"],
-            "session_logs": runtime["session_logs"],
-            "auto_isolate": runtime["auto_isolate"],
-            "logs": details,
+    def flush_start_detail_actions(self, record: dict) -> list[str]:
+        slot_id = str(record.get("slot_id") or "-")
+        mount_point = LockFixWebHandler.compact_log_value(self, record.get("mount_point") or "-")
+        device = LockFixWebHandler.compact_log_value(self, record.get("device") or "-")
+        timestamp = LockFixWebHandler.format_audit_timestamp(self, record.get("ts"))
+        prefix = f"{timestamp} - " if timestamp else ""
+        return [
+            f"{prefix}LOCK-FIX Flush GUARD OK - C:\\ OS volume is protected and cannot be flushed/unmounted by this step.",
+            f"{prefix}LOCK-FIX Flush TARGET - slot {slot_id}, configured backup volume {mount_point}, device {device}",
+            f"{prefix}LOCK-FIX Flush COMMAND - Windows Server flush checkpoint requested for the configured backup volume.",
+            f"{prefix}LOCK-FIX Flush MONITOR - waiting for checkpoint completion and audit result.",
+        ]
+
+    def recent_flush_audit_records(self, slot_id: str, limit: int = 12) -> list[dict]:
+        lines = LockFixWebHandler.audit_log_lines(self)
+        events = {"disk.flush.start", "disk.flush.tick", "disk.flush", "disk.flush.error"}
+        records = []
+        for line in lines:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(record, dict) or record.get("event") not in events:
+                continue
+            if slot_id and str(record.get("slot_id") or "") != slot_id:
+                continue
+            if record.get("event") == "disk.flush.start":
+                records = []
+            records.append(record)
+        return LockFixWebHandler.normalize_flush_audit_records(self, records)[-limit:]
+
+    def normalize_flush_audit_records(self, records: list[dict]) -> list[dict]:
+        starts = [record for record in records if record.get("event") == "disk.flush.start"]
+        if not starts:
+            return records
+        normalized = [starts[-1]]
+        ticks = {}
+        completions = []
+        errors = []
+        for record in records:
+            event = record.get("event")
+            if event == "disk.flush.tick":
+                try:
+                    elapsed = int(record.get("elapsed_seconds") or 0)
+                except (TypeError, ValueError):
+                    elapsed = 0
+                ticks.setdefault(elapsed, record)
+            elif event == "disk.flush":
+                completions.append(record)
+            elif event == "disk.flush.error":
+                errors.append(record)
+        normalized.extend(record for _, record in sorted(ticks.items()))
+        if errors:
+            normalized.append(errors[-1])
+        elif completions:
+            normalized.append(completions[-1])
+        return normalized
+
+    def format_flush_audit_record(self, record: dict) -> str:
+        event = str(record.get("event") or "")
+        slot_id = str(record.get("slot_id") or "-")
+        timestamp = LockFixWebHandler.format_audit_timestamp(self, record.get("ts"))
+        prefix = f"{timestamp} - " if timestamp else ""
+        if event == "disk.flush.start":
+            mount_point = LockFixWebHandler.compact_log_value(self, record.get("mount_point") or "-")
+            device = LockFixWebHandler.compact_log_value(self, record.get("device") or "-")
+            return f"{prefix}LOCK-FIX Flush START - slot {slot_id}, mount {mount_point}, device {device}"
+        if event == "disk.flush.tick":
+            elapsed = LockFixWebHandler.compact_log_value(self, record.get("elapsed_seconds") or 1)
+            mount_point = LockFixWebHandler.compact_log_value(self, record.get("mount_point") or "-")
+            return f"{prefix}LOCK-FIX Flush TICK {elapsed}s - slot {slot_id}, mount {mount_point}"
+        if event == "disk.flush.error":
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "flush command failed")
+            return f"{prefix}LOCK-FIX Flush ERROR - slot {slot_id}, {error}"
+        if event == "disk.flush":
+            output = LockFixWebHandler.compact_log_value(self, record.get("output") or "flush completed")
+            return f"{prefix}LOCK-FIX Flush OK - slot {slot_id}, {output}"
+        return ""
+
+    def veeam_io_quiet_operation_actions(self, slot_id: str, current_step: int, limit: int = 64) -> list[str]:
+        if current_step < 3:
+            return []
+        records = LockFixWebHandler.recent_io_quiet_audit_records(self, slot_id, limit)
+        if not records:
+            return [
+                f"LOCK-FIX STEP 3 DETAIL - I/O quiet verification flow for slot {slot_id}",
+                f"LOCK-FIX I/O Check WAIT - step 3 is active for slot {slot_id}, but no I/O quiet audit event has been recorded yet.",
+            ]
+        actions = [f"LOCK-FIX STEP 3 DETAIL - I/O quiet verification flow for slot {slot_id}"]
+        for record in records:
+            if record.get("event") == "disk.io_quiet.start":
+                actions.extend(LockFixWebHandler.io_quiet_start_detail_actions(self, record))
+            action = LockFixWebHandler.format_io_quiet_audit_record(self, record)
+            if action:
+                actions.append(action)
+        if any(record.get("event") == "disk.io_quiet.error" for record in records):
+            actions.append(f"LOCK-FIX STEP 3 ERROR - I/O quiet result was recorded as failed. Step 4 Unmount must not proceed until the error is resolved.")
+        elif any(record.get("event") in {"disk.io_quiet", "disk.io_quiet.dry_run"} for record in records):
+            actions.append("LOCK-FIX STEP 3 COMPLETE - 30초 quiet window 기록 확인. Continuing to Step 4 Unmount guard and execution.")
+        return actions
+
+    def io_quiet_start_detail_actions(self, record: dict) -> list[str]:
+        slot_id = str(record.get("slot_id") or "-")
+        seconds = LockFixWebHandler.compact_log_value(self, record.get("seconds") or 1)
+        mount_point = LockFixWebHandler.compact_log_value(self, record.get("mount_point") or "-")
+        timestamp = LockFixWebHandler.format_audit_timestamp(self, record.get("ts"))
+        prefix = f"{timestamp} - " if timestamp else ""
+        return [
+            f"{prefix}LOCK-FIX I/O Check WINDOW - slot {slot_id}, mount {mount_point}, quiet window target {seconds}s",
+            f"{prefix}LOCK-FIX I/O Check MONITOR - recording one audit tick per second until no-write window is satisfied.",
+            f"{prefix}LOCK-FIX I/O Check GATE - Step 4 Unmount remains blocked until Step 3 OK is recorded.",
+        ]
+
+    def recent_io_quiet_audit_records(self, slot_id: str, limit: int = 20) -> list[dict]:
+        lines = LockFixWebHandler.audit_log_lines(self)
+        events = {"disk.io_quiet.start", "disk.io_quiet.tick", "disk.io_quiet", "disk.io_quiet.dry_run", "disk.io_quiet.error"}
+        records = []
+        for line in lines:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(record, dict) or record.get("event") not in events:
+                continue
+            if slot_id and str(record.get("slot_id") or "") != slot_id:
+                continue
+            if record.get("event") == "disk.io_quiet.start":
+                records = []
+            records.append(record)
+        return LockFixWebHandler.normalize_io_quiet_audit_records(self, records)[-limit:]
+
+    def normalize_io_quiet_audit_records(self, records: list[dict]) -> list[dict]:
+        starts = [record for record in records if record.get("event") == "disk.io_quiet.start"]
+        if not starts:
+            return records
+        normalized = [starts[-1]]
+        ticks = {}
+        completions = []
+        errors = []
+        for record in records:
+            event = record.get("event")
+            if event == "disk.io_quiet.tick":
+                try:
+                    elapsed = int(record.get("elapsed_seconds") or 0)
+                except (TypeError, ValueError):
+                    elapsed = 0
+                ticks.setdefault(elapsed, record)
+            elif event in {"disk.io_quiet", "disk.io_quiet.dry_run"}:
+                completions.append(record)
+            elif event == "disk.io_quiet.error":
+                errors.append(record)
+        normalized.extend(record for _, record in sorted(ticks.items()))
+        if errors:
+            normalized.append(errors[-1])
+        elif completions:
+            normalized.append(completions[-1])
+        return normalized
+
+    def format_io_quiet_audit_record(self, record: dict) -> str:
+        event = str(record.get("event") or "")
+        slot_id = str(record.get("slot_id") or "-")
+        timestamp = LockFixWebHandler.format_audit_timestamp(self, record.get("ts"))
+        prefix = f"{timestamp} - " if timestamp else ""
+        if event == "disk.io_quiet.start":
+            seconds = LockFixWebHandler.compact_log_value(self, record.get("seconds") or 1)
+            mount_point = LockFixWebHandler.compact_log_value(self, record.get("mount_point") or "-")
+            return f"{prefix}LOCK-FIX I/O Check START - slot {slot_id}, mount {mount_point}, required quiet window {seconds}s"
+        if event == "disk.io_quiet.tick":
+            elapsed = LockFixWebHandler.compact_log_value(self, record.get("elapsed_seconds") or 1)
+            remaining = LockFixWebHandler.compact_log_value(self, record.get("remaining_seconds") or 0)
+            mount_point = LockFixWebHandler.compact_log_value(self, record.get("mount_point") or "-")
+            return f"{prefix}LOCK-FIX I/O Check TICK {elapsed}s - remaining {remaining}s, mount {mount_point}"
+        if event == "disk.io_quiet.error":
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "I/O quiet check failed")
+            return f"{prefix}LOCK-FIX I/O Check ERROR - slot {slot_id}, {error}"
+        if event in {"disk.io_quiet", "disk.io_quiet.dry_run"}:
+            seconds = LockFixWebHandler.compact_log_value(self, record.get("seconds") or 1)
+            mode = "dry-run " if event == "disk.io_quiet.dry_run" else ""
+            return f"{prefix}LOCK-FIX I/O Check OK - slot {slot_id}, {mode}quiet window satisfied for {seconds}s"
+        return ""
+
+    def veeam_unmount_operation_actions(self, slot_id: str, current_step: int, limit: int = 16) -> list[str]:
+        if current_step < 4:
+            return []
+        records = LockFixWebHandler.recent_unmount_audit_records(self, slot_id, limit)
+        if not records:
+            return [
+                f"LOCK-FIX STEP 4 DETAIL - Unmount operation flow for slot {slot_id}",
+                f"LOCK-FIX Unmount WAIT - step 4 is active for slot {slot_id}, but no unmount audit event has been recorded yet.",
+            ]
+        actions = [f"LOCK-FIX STEP 4 DETAIL - Unmount operation flow for slot {slot_id}"]
+        for record in records:
+            if record.get("event") == "disk.unmount.start":
+                actions.extend(LockFixWebHandler.unmount_start_detail_actions(self, record))
+            action = LockFixWebHandler.format_unmount_audit_record(self, record)
+            if action:
+                actions.append(action)
+        if any(record.get("event") == "disk.unmount.error" for record in records):
+            actions.append("LOCK-FIX STEP 4 ERROR - Unmount result was recorded as failed. Step 5 Power OFF must not proceed until the error is resolved.")
+            actions.extend(LockFixWebHandler.audit_history_detail_actions(self, 4, "Unmount", slot_id, records, "ERROR"))
+        elif any(record.get("event") == "disk.unmount" for record in records):
+            actions.append("LOCK-FIX STEP 4 COMPLETE - Backup volume unmount result was recorded. Continuing to Step 5 Power OFF.")
+            actions.extend(LockFixWebHandler.audit_history_detail_actions(self, 4, "Unmount", slot_id, records, "OK"))
+        return actions
+
+    def recent_unmount_audit_records(self, slot_id: str, limit: int = 16) -> list[dict]:
+        lines = LockFixWebHandler.audit_log_lines(self)
+        events = {
+            "disk.safety.preflight.start",
+            "disk.safety.preflight.ok",
+            "disk.safety.preflight.error",
+            "disk.cache.flush.start",
+            "disk.cache.flush",
+            "disk.cache.flush.error",
+            "disk.unmount.start",
+            "disk.unmount.tick",
+            "disk.unmount",
+            "disk.unmount.error",
+            "disk.unmount.verify",
+            "disk.storage_state",
+            "disk.os_volume.blocked",
         }
+        records = []
+        for line in lines:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(record, dict) or record.get("event") not in events:
+                continue
+            if slot_id and str(record.get("slot_id") or "") != slot_id:
+                continue
+            if str(record.get("event") or "").startswith("disk.safety.preflight") and str(record.get("operation") or "") != "unmount":
+                continue
+            if record.get("event") == "disk.safety.preflight.start":
+                records = []
+            elif record.get("event") == "disk.unmount.start" and not records:
+                records = []
+            records.append(record)
+        return LockFixWebHandler.normalize_unmount_audit_records(self, records)[-limit:]
+
+    def normalize_unmount_audit_records(self, records: list[dict]) -> list[dict]:
+        starts = [record for record in records if record.get("event") in {"disk.safety.preflight.start", "disk.unmount.start"}]
+        if not starts:
+            return records
+        cycle_start = starts[-1]
+        start_index = records.index(cycle_start)
+        records = records[start_index:]
+        normalized = []
+        ticks = {}
+        completions = []
+        verifications = []
+        errors = []
+        blocked = []
+        for record in records:
+            event = record.get("event")
+            if event == "disk.unmount.tick":
+                try:
+                    elapsed = int(record.get("elapsed_seconds") or 0)
+                except (TypeError, ValueError):
+                    elapsed = 0
+                ticks.setdefault(elapsed, record)
+            elif event == "disk.unmount":
+                completions.append(record)
+            elif event == "disk.unmount.verify":
+                verifications.append(record)
+            elif event in {"disk.unmount.error", "disk.safety.preflight.error", "disk.cache.flush.error"}:
+                errors.append(record)
+            elif event == "disk.os_volume.blocked":
+                blocked.append(record)
+            elif event != "disk.unmount.tick":
+                normalized.append(record)
+        normalized.extend(blocked[-1:])
+        normalized.extend(record for _, record in sorted(ticks.items()))
+        if errors:
+            normalized.append(errors[-1])
+        elif completions:
+            normalized.append(completions[-1])
+            normalized.extend(verifications[-1:])
+        return normalized
+
+    def unmount_start_detail_actions(self, record: dict) -> list[str]:
+        slot_id = str(record.get("slot_id") or "-")
+        mount_point = LockFixWebHandler.compact_log_value(self, record.get("mount_point") or "-")
+        device = LockFixWebHandler.compact_log_value(self, record.get("device") or "-")
+        drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+        timestamp = LockFixWebHandler.format_audit_timestamp(self, record.get("ts"))
+        prefix = f"{timestamp} - " if timestamp else ""
+        return [
+            f"{prefix}LOCK-FIX Unmount GUARD OK - C:\\ OS volume is protected and cannot be selected as an unmount target.",
+            f"{prefix}LOCK-FIX Unmount TARGET - slot {slot_id}, mount {mount_point}, device {device}, drive {drive}",
+            f"{prefix}LOCK-FIX Unmount COMMAND 1 - Windows Server Dismount-Volume requested for the configured backup volume.",
+            f"{prefix}LOCK-FIX Unmount COMMAND 2 - Remove-PartitionAccessPath removes {drive}:\\ so the backup volume is no longer reachable.",
+            f"{prefix}LOCK-FIX Unmount GATE - Step 5 Power OFF remains blocked until {drive}:\\ access removal is verified.",
+        ]
+
+    def format_unmount_audit_record(self, record: dict) -> str:
+        event = str(record.get("event") or "")
+        slot_id = str(record.get("slot_id") or "-")
+        timestamp = LockFixWebHandler.format_audit_timestamp(self, record.get("ts"))
+        prefix = f"{timestamp} - " if timestamp else ""
+        if event == "disk.safety.preflight.start":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            policy = LockFixWebHandler.compact_log_value(self, record.get("policy") or "healthy_non_os_volume_required")
+            return f"{prefix}LOCK-FIX Unmount SAFETY PREFLIGHT START - slot {slot_id}, drive {drive}, policy {policy}"
+        if event == "disk.safety.preflight.ok":
+            output = LockFixWebHandler.compact_log_value(self, record.get("output") or "volume health preflight passed")
+            return f"{prefix}LOCK-FIX Unmount SAFETY PREFLIGHT OK - slot {slot_id}, {output}"
+        if event == "disk.safety.preflight.error":
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "volume health preflight failed")
+            return f"{prefix}LOCK-FIX Unmount SAFETY PREFLIGHT ERROR - slot {slot_id}, {error}"
+        if event == "disk.cache.flush.start":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            return f"{prefix}LOCK-FIX Unmount CACHE FLUSH START - slot {slot_id}, drive {drive}"
+        if event == "disk.cache.flush":
+            output = LockFixWebHandler.compact_log_value(self, record.get("output") or "volume cache flush completed")
+            return f"{prefix}LOCK-FIX Unmount CACHE FLUSH OK - slot {slot_id}, {output}"
+        if event == "disk.cache.flush.error":
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "volume cache flush failed")
+            return f"{prefix}LOCK-FIX Unmount CACHE FLUSH ERROR - slot {slot_id}, {error}"
+        if event == "disk.os_volume.blocked":
+            reason = LockFixWebHandler.compact_log_value(self, record.get("reason") or "windows_c_os_volume_protected")
+            return f"{prefix}LOCK-FIX Unmount BLOCKED - slot {slot_id}, protected OS volume guard blocked the request: {reason}"
+        if event == "disk.unmount.start":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            mount_point = LockFixWebHandler.compact_log_value(self, record.get("mount_point") or "-")
+            return f"{prefix}LOCK-FIX Unmount START - slot {slot_id}, drive {drive}, mount {mount_point}"
+        if event == "disk.unmount.tick":
+            elapsed = LockFixWebHandler.compact_log_value(self, record.get("elapsed_seconds") or 1)
+            mount_point = LockFixWebHandler.compact_log_value(self, record.get("mount_point") or "-")
+            return f"{prefix}LOCK-FIX Unmount TICK {elapsed}s - slot {slot_id}, mount {mount_point}"
+        if event == "disk.unmount.error":
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "unmount command failed")
+            return f"{prefix}LOCK-FIX Unmount ERROR - slot {slot_id}, {error}"
+        if event == "disk.storage_state":
+            path = LockFixWebHandler.compact_log_value(self, record.get("path") or "storage state recorded")
+            return f"{prefix}LOCK-FIX Unmount STORAGE STATE - slot {slot_id}, disk and partition identity saved for emergency reconnect: {path}"
+        if event == "disk.unmount":
+            output = LockFixWebHandler.compact_log_value(self, record.get("output") or "unmount completed")
+            return f"{prefix}LOCK-FIX Unmount OK - slot {slot_id}, {output}"
+        if event == "disk.unmount.verify":
+            output = LockFixWebHandler.compact_log_value(self, record.get("output") or "post-dismount verification recorded")
+            return f"{prefix}LOCK-FIX Unmount VERIFY - slot {slot_id}, {output}"
+        return ""
+
+    def veeam_power_off_operation_actions(self, slot_id: str, current_step: int, limit: int = 16) -> list[str]:
+        if current_step < 5:
+            return []
+        records = LockFixWebHandler.recent_power_off_audit_records(self, slot_id, limit)
+        if not records:
+            return [
+                f"LOCK-FIX STEP 5 DETAIL - Power OFF operation flow for slot {slot_id}",
+                f"LOCK-FIX Power OFF WAIT - step 5 is active for slot {slot_id}, but no power-off audit event has been recorded yet.",
+            ]
+        actions = [f"LOCK-FIX STEP 5 DETAIL - Power OFF operation flow for slot {slot_id}"]
+        for record in records:
+            if str(record.get("event") or "").endswith(".off.start"):
+                actions.extend(LockFixWebHandler.power_off_start_detail_actions(self, record))
+            action = LockFixWebHandler.format_power_off_audit_record(self, record)
+            if action:
+                actions.append(action)
+        if any(str(record.get("event") or "").endswith(".off.error") for record in records):
+            actions.append("LOCK-FIX STEP 5 ERROR - Power OFF result was recorded as failed. Manual inspection is required.")
+            actions.extend(LockFixWebHandler.audit_history_detail_actions(self, 5, "Power OFF", slot_id, records, "ERROR"))
+        elif any(record.get("event") in {"power.mock.off", "power.command.off"} for record in records):
+            actions.append("LOCK-FIX STEP 5 COMPLETE - Power OFF result was recorded. LOCK-FIX isolation flow is complete.")
+            actions.extend(LockFixWebHandler.audit_history_detail_actions(self, 5, "Power OFF", slot_id, records, "OK"))
+        return actions
+
+    def recent_power_off_audit_records(self, slot_id: str, limit: int = 16) -> list[dict]:
+        lines = LockFixWebHandler.audit_log_lines(self)
+        events = {
+            "power.mock.off.start",
+            "power.mock.off.tick",
+            "power.mock.off",
+            "power.command.off.start",
+            "power.command.off.tick",
+            "power.command.off",
+            "power.command.off.error",
+            "power.mock.status",
+            "power.command.status.start",
+            "power.command.status",
+            "power.command.status.missing",
+            "power.command.status.error",
+            "power.off.proof",
+            "power.off.proof.required",
+        }
+        records = []
+        for line in lines:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(record, dict) or record.get("event") not in events:
+                continue
+            if slot_id and str(record.get("slot_id") or "") != slot_id:
+                continue
+            if str(record.get("event") or "").endswith(".off.start"):
+                records = []
+            records.append(record)
+        return LockFixWebHandler.normalize_power_off_audit_records(self, records)[-limit:]
+
+    def normalize_power_off_audit_records(self, records: list[dict]) -> list[dict]:
+        starts = [record for record in records if str(record.get("event") or "").endswith(".off.start")]
+        if not starts:
+            return records
+        normalized = [starts[-1]]
+        ticks = {}
+        completions = []
+        errors = []
+        statuses = []
+        proofs = []
+        for record in records:
+            event = str(record.get("event") or "")
+            if event.endswith(".off.tick"):
+                try:
+                    elapsed = int(record.get("elapsed_seconds") or 0)
+                except (TypeError, ValueError):
+                    elapsed = 0
+                ticks.setdefault(elapsed, record)
+            elif event in {"power.mock.off", "power.command.off"}:
+                completions.append(record)
+            elif event.endswith(".off.error"):
+                errors.append(record)
+            elif ".status" in event:
+                statuses.append(record)
+            elif event in {"power.off.proof", "power.off.proof.required"}:
+                proofs.append(record)
+        normalized.extend(record for _, record in sorted(ticks.items()))
+        if errors:
+            normalized.append(errors[-1])
+        elif completions:
+            normalized.append(completions[-1])
+        normalized.extend(statuses[-3:])
+        normalized.extend(proofs[-1:])
+        return normalized
+
+    def power_off_start_detail_actions(self, record: dict) -> list[str]:
+        slot_id = str(record.get("slot_id") or "-")
+        event = str(record.get("event") or "")
+        mode = "command" if event.startswith("power.command") else "mock"
+        timestamp = LockFixWebHandler.format_audit_timestamp(self, record.get("ts"))
+        prefix = f"{timestamp} - " if timestamp else ""
+        actions = [
+            f"{prefix}LOCK-FIX Power OFF TARGET - slot {slot_id}, controller mode {mode}",
+            f"{prefix}LOCK-FIX Power OFF COMMAND - issuing final isolation power-off request.",
+        ]
+        if mode == "command":
+            command = LockFixWebHandler.compact_log_value(self, " ".join(record.get("command") or []))
+            actions.append(f"{prefix}LOCK-FIX Power OFF COMMAND DETAIL - {command or 'configured command'}")
+        return actions
+
+    def format_power_off_audit_record(self, record: dict) -> str:
+        event = str(record.get("event") or "")
+        slot_id = str(record.get("slot_id") or "-")
+        timestamp = LockFixWebHandler.format_audit_timestamp(self, record.get("ts"))
+        prefix = f"{timestamp} - " if timestamp else ""
+        mode = "command" if event.startswith("power.command") else "mock"
+        if event.endswith(".off.start"):
+            return f"{prefix}LOCK-FIX Power OFF START - slot {slot_id}, controller mode {mode}"
+        if event.endswith(".off.tick"):
+            elapsed = LockFixWebHandler.compact_log_value(self, record.get("elapsed_seconds") or 1)
+            return f"{prefix}LOCK-FIX Power OFF TICK {elapsed}s - slot {slot_id}"
+        if event.endswith(".off.error"):
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "power off command failed")
+            return f"{prefix}LOCK-FIX Power OFF ERROR - slot {slot_id}, {error}"
+        if event in {"power.mock.off", "power.command.off"}:
+            output = LockFixWebHandler.compact_log_value(self, record.get("output") or f"{mode} power off completed")
+            return f"{prefix}LOCK-FIX Power OFF OK - slot {slot_id}, {output}"
+        if event == "power.command.status.start":
+            command = LockFixWebHandler.compact_log_value(self, " ".join(record.get("command") or []))
+            return f"{prefix}LOCK-FIX Power OFF STATUS CHECK START - querying PDU/relay/storage controller state. {command}"
+        if event == "power.command.status.missing":
+            requirement = LockFixWebHandler.compact_log_value(self, record.get("requirement") or "Configure power.status_command.")
+            return f"{prefix}LOCK-FIX Power OFF PROOF REQUIRED - actual OFF proof requires a PDU/relay/storage controller status response. {requirement}"
+        if event == "power.command.status.error":
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "controller status check failed")
+            return f"{prefix}LOCK-FIX Power OFF STATUS ERROR - slot {slot_id}, {error}"
+        if event == "power.command.status":
+            state = LockFixWebHandler.compact_log_value(self, record.get("state") or "-")
+            output = LockFixWebHandler.compact_log_value(self, record.get("output") or "")
+            if record.get("ok") is True:
+                return f"{prefix}LOCK-FIX Power OFF PROOF OK - controller status confirmed OFF. response {output or state}"
+            return f"{prefix}LOCK-FIX Power OFF STATUS NOT CONFIRMED - controller returned {state}. response {output}"
+        if event == "power.mock.status":
+            requirement = LockFixWebHandler.compact_log_value(self, record.get("requirement") or "Use a controller status response.")
+            return f"{prefix}LOCK-FIX Power OFF PROOF NOT AVAILABLE - mock mode cannot prove physical power state. {requirement}"
+        if event == "power.off.proof":
+            message = LockFixWebHandler.compact_log_value(self, record.get("message") or "Physical power OFF was proved.")
+            return f"{prefix}LOCK-FIX Power OFF PROOF RECORDED - {message}"
+        if event == "power.off.proof.required":
+            reason = LockFixWebHandler.compact_log_value(self, record.get("reason") or "controller status response is required")
+            required = LockFixWebHandler.compact_log_value(self, record.get("required_config") or "power.status_command")
+            return f"{prefix}LOCK-FIX Power OFF PROOF REQUIRED - {reason}. Required: {required}"
+        return ""
+
+    def audit_history_detail_actions(self, step: int, operation: str, slot_id: str, records: list[dict], result: str) -> list[str]:
+        try:
+            audit_path = self.context.config.audit_log_path
+        except Exception:
+            audit_path = Path("runtime/audit.jsonl")
+        first_ts = LockFixWebHandler.format_audit_timestamp(self, records[0].get("ts")) if records else "-"
+        last_ts = LockFixWebHandler.format_audit_timestamp(self, records[-1].get("ts")) if records else "-"
+        event_names = []
+        for record in records:
+            event_name = str(record.get("event") or "-")
+            if event_name not in event_names:
+                event_names.append(event_name)
+        event_summary = ", ".join(event_names) if event_names else "-"
+        audit_text = LockFixWebHandler.compact_log_value(self, audit_path)
+        return [
+            f"LOCK-FIX STEP {step} HISTORY - {operation} detailed audit trail is retained in {audit_text}.",
+            f"LOCK-FIX STEP {step} HISTORY DETAIL - slot {slot_id}, result {result}, records {len(records)}, first {first_ts}, last {last_ts}.",
+            f"LOCK-FIX STEP {step} HISTORY EVENTS - {event_summary}",
+        ]
+
+    def format_audit_timestamp(self, value: object) -> str:
+        if not value:
+            return ""
+        text = str(value)
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            return parsed.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return text
+
+    def compact_log_value(self, value: object) -> str:
+        return " ".join(str(value).split())
+
+    def save_veeam_last_logs(self, session_logs: list[dict], checked_at: str) -> None:
+        path = ROOT / "runtime" / "veeam_last_session_logs.json"
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps({"checked_at": checked_at, "session_logs": session_logs}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+
+    def load_veeam_last_logs(self) -> list[dict]:
+        path = ROOT / "runtime" / "veeam_last_session_logs.json"
+        try:
+            data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        except (OSError, json.JSONDecodeError):
+            return []
+        logs = data.get("session_logs") if isinstance(data, dict) else []
+        if not isinstance(logs, list):
+            return []
+        result = []
+        for item in logs:
+            if isinstance(item, dict):
+                item = dict(item)
+                item["last_known"] = True
+                item.setdefault("actions", []).append(
+                    f"Last retained Veeam detail log. Latest successful API poll: {data.get('checked_at', '-')}"
+                )
+                result.append(item)
+        return result
+
+    def veeam_backup_summary(self) -> dict:
+        config = self.context.app_config
+        veeam_config = config.get("veeam", {})
+        LockFixWebHandler.prepare_veeam_process_environment(self, veeam_config)
+        return run_veeam_diagnostics(self.context.config, self.context.controller)
 
     def poll_veeam_api(self, server: str, port: int, local_payload: dict) -> dict:
-        install_props = self.veeam_install_properties()
-        base_url = (
-            str(local_payload.get("base_url") or "").strip()
-            or os.environ.get("LOCKFIX_VEEAM_BASE_URL", "").strip()
-            or install_props.get("veeam_base_url", "").strip()
-            or self.config.veeam.base_url.strip()
-            or f"https://{server}:{port}"
-        ).rstrip("/")
-        enterprise_manager_url = (
-            str(local_payload.get("enterprise_manager_url") or "").strip()
-            or os.environ.get("LOCKFIX_VEEAM_EM_BASE_URL", "").strip()
-            or install_props.get("veeam_enterprise_manager_url", "").strip()
-            or self.config.veeam.enterprise_manager_url.strip()
-            or "https://127.0.0.1:9398"
-        ).rstrip("/")
-        password_env = self.config.veeam.password_env or "LOCKFIX_VEEAM_PASSWORD"
-        settings = VeeamSettings(
-            base_url=base_url,
-            enterprise_manager_url=enterprise_manager_url,
-            username=str(local_payload.get("username") or os.environ.get("LOCKFIX_VEEAM_USER", "") or install_props.get("veeam_user", "") or self.config.veeam.username).strip(),
-            password=str(os.environ.get(password_env, "") or os.environ.get("LOCKFIX_VEEAM_PASSWORD", "")).strip(),
-            api_version=str(local_payload.get("api_version") or os.environ.get("LOCKFIX_VEEAM_API_VERSION", "") or install_props.get("veeam_api_version", "") or self.config.veeam.api_version or "1.2-rev1").strip(),
-            verify_ssl=bool(local_payload.get("verify_ssl", self.config.veeam.verify_ssl)),
-            job_name=str(local_payload.get("job_name") or self.config.veeam.job_name or "").strip(),
-            job_id=str(local_payload.get("job_id") or self.config.veeam.job_id or "").strip(),
-        )
-        return VeeamClient(settings).latest_session_summary(settings.job_name, settings.job_id)
+        config = self.context.app_config
+        veeam_config = config.get("veeam", {})
+        LockFixWebHandler.prepare_veeam_process_environment(self, veeam_config)
+        try:
+            diagnostics = run_veeam_diagnostics(self.context.config, self.context.controller)
+            session = diagnostics.get("latest_configured_session") or {}
+            if session:
+                diagnostic_config = diagnostics.get("config") if isinstance(diagnostics.get("config"), dict) else {}
+                base_url = str(diagnostic_config.get("base_url") or veeam_config.get("base_url") or "")
+                parsed = urlparse(base_url)
+                session.setdefault("server", parsed.hostname or server)
+                session.setdefault("port", parsed.port or port)
+                session.setdefault("api_version", diagnostic_config.get("api_version") or veeam_config.get("api_version") or "1.2-rev1")
+                session.setdefault("source", diagnostics.get("source") or "python_veeam_client")
+            return session
+        except Exception as exc:
+            job_name = str(veeam_config.get("job_name") or "Veeam API")
+            return {
+                "api_synced": False,
+                "session_match": False,
+                "state_source": "veeam_rest_api_error",
+                "name": job_name,
+                "job": job_name,
+                "status": "Waiting",
+                "result": "WAITING",
+                "progress_percent": 0,
+                "current_step": 1,
+                "duration": "-",
+                "checks": {
+                    "webui": {
+                        "ok": False,
+                        "code": exc.__class__.__name__,
+                        "message": str(exc),
+                    }
+                },
+                "session_logs": [
+                    {
+                        "name": job_name,
+                        "status": "Waiting",
+                        "actions": [
+                            f"ERROR - {exc.__class__.__name__}: {exc}",
+                            "Web UI uses the same config.veeam loader as veeam-test and VeeamWatcher.",
+                            "No cached Veeam success result is returned for this request.",
+                        ],
+                        "duration": "-",
+                        "progress_percent": 0,
+                    }
+                ],
+            }
+
+    def prepare_veeam_process_environment(self, veeam_config: dict) -> None:
+        reader = getattr(self, "veeam_install_properties", None)
+        install_props = reader() if callable(reader) else LockFixWebHandler.veeam_install_properties(self)
+        password_env = str(veeam_config.get("password_env") or "LOCKFIX_VEEAM_PASSWORD")
+        username_env = str(veeam_config.get("username_env") or "LOCKFIX_VEEAM_USER")
+
+        if not os.environ.get(password_env) and install_props.get("veeam_password"):
+            os.environ[password_env] = str(install_props["veeam_password"])
+        if not os.environ.get(username_env) and install_props.get("veeam_user"):
+            os.environ[username_env] = str(install_props["veeam_user"])
+        if not os.environ.get("LOCKFIX_VEEAM_BASE_URL") and install_props.get("veeam_base_url"):
+            os.environ["LOCKFIX_VEEAM_BASE_URL"] = str(install_props["veeam_base_url"])
+        if not os.environ.get("LOCKFIX_VEEAM_API_VERSION") and install_props.get("veeam_api_version"):
+            os.environ["LOCKFIX_VEEAM_API_VERSION"] = str(install_props["veeam_api_version"])
+        if not os.environ.get("LOCKFIX_VEEAM_HOST") and install_props.get("veeam_host"):
+            os.environ["LOCKFIX_VEEAM_HOST"] = str(install_props["veeam_host"])
+        if not os.environ.get("LOCKFIX_VEEAM_PORT") and install_props.get("veeam_port"):
+            os.environ["LOCKFIX_VEEAM_PORT"] = str(install_props["veeam_port"])
 
     def auto_isolate_after_veeam_success(self, payload: dict, status: str, checked_at: str) -> dict:
         result = str(payload.get("result") or status or "").upper()
         progress = int(payload.get("progress_percent") or payload.get("progress") or 0)
         if result not in {"SUCCESS", "SUCCEEDED", "COMPLETED"} and progress < 100:
             return {"enabled": True, "triggered": False, "message": "Veeam session is not successful yet."}
-        slot_id = str(payload.get("slot_id") or os.environ.get("LOCKFIX_SLOT_ID") or next(iter(self.config.slots), "BAY-01"))
+        slot_id = str(payload.get("slot_id") or os.environ.get("LOCKFIX_SLOT_ID") or next(iter(self.context.config.slots), "BAY-01"))
         session_key = "|".join(
             [
                 str(payload.get("job") or payload.get("name") or "Veeam Backup"),
@@ -955,7 +1864,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "message": "Successful session was already isolated.",
             }
         try:
-            state = self.controller.isolate(slot_id)
+            restore_scope = payload.get("restore_point_scope") if isinstance(payload.get("restore_point_scope"), dict) else {}
+            repository_path = str(payload.get("repository_path") or restore_scope.get("repository_path") or "")
+            state = self.context.controller.isolate(slot_id, repository_path=repository_path)
             marker_path.parent.mkdir(parents=True, exist_ok=True)
             marker_path.write_text(
                 json.dumps(
@@ -1094,10 +2005,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         return f"{size:.1f} PB"
 
     def audit_items(self) -> list[dict]:
-        path = self.context.config.audit_log_path
-        if not path.exists():
-            return []
-        lines = path.read_text(encoding="utf-8").splitlines()
+        lines = LockFixWebHandler.audit_log_lines(self)
         items = []
         for line in lines[-200:]:
             try:
@@ -1304,28 +2212,32 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         ]
 
     def detect_summary(self) -> dict:
-        warning_items = [
-            {"date": "2024-12-22 13:30", "event": "[MEMORY] 93.25% (임계:80%)"},
-            {"date": "2024-12-22 13:20", "event": "[MEMORY] 92.65% (임계:80%)"},
-            {"date": "2024-12-22 13:10", "event": "[MEMORY] 92.75% (임계:80%)"},
-            {"date": "2024-12-22 13:05", "event": "[MEMORY] 92.90% (임계:80%)"},
-            {"date": "2024-12-22 13:03", "event": "[MEMORY] 92.62% (임계:80%)"},
-            {"date": "2024-12-22 13:03", "event": "[MEMORY] 92.62% (임계:80%)"},
-            {"date": "2024-12-22 13:03", "event": "[MEMORY] 92.68% (임계:80%)"},
-        ]
-        log_items = [
-            {"date": "2024-12-20 56:07", "event": "rich.kim@oam.co.kr 계정 회원가입 완료"},
-        ]
+        config = self.context.config
+        slot = next(iter(config.slots.values()))
+        unique_id = slot_uid(slot)
+        parts = fingerprint_parts(slot)
+        display_lines = ["Disk Identity Fingerprint ="]
+        display_lines.extend(part["label"] if index == 0 else f"+ {part['label']}" for index, part in enumerate(parts))
+        formula = fingerprint_formula(parts)
+        registered = slot.expected_uid
+        registered_ready = bool(registered and registered != "replace-with-registered-uid")
+        match = registered_ready and registered == unique_id
+        status = "MATCH" if match else "UNREGISTERED" if not registered_ready else "DIFFERENT_DISK"
         return {
-            "range": {"start": "2024-12-22", "end": "2024-12-22"},
-            "cards": [
-                {"id": "detect", "label": "Detect", "description": "하드웨어의 변경(추가,", "value": 0},
-                {"id": "warning", "label": "Warning", "description": "하드웨어의 초과 사용", "value": len(warning_items)},
-                {"id": "logs", "label": "Logs", "description": "이외의 서버 로그", "value": len(log_items)},
-            ],
-            "detect": [],
-            "warning": warning_items,
-            "logs": log_items,
+            "title": "LOCK-FIX 기준으로 가장 안전한 판단 방식",
+            "subtitle": "LOCK-FIX에서는 하나의 값만 보지 말고 아래 조합을 기준으로 해야 합니다.",
+            "fingerprint": {
+                "slot_id": slot.slot_id,
+                "value": unique_id,
+                "registered_value": registered if registered_ready else "",
+                "status": status,
+                "match": match,
+                "parts": [{**part, "value": part["value"] or "-"} for part in parts],
+                "display": display_lines,
+                "formula_title": "LOCK-FIX-DISK-FINGERPRINT =",
+                "formula": formula,
+                "conclusion": "이 값이 기존 등록값과 다르면 다른 디스크로 판단합니다.",
+            },
         }
 
     def network_status_summary(self) -> dict:
@@ -1821,6 +2733,15 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         for key, value in (headers or {}).items():
             self.send_header(key, value)
+        self.end_headers()
+        self.write_body(data)
+
+    def send_html(self, html: str, status: int = 200) -> None:
+        data = html.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store, max-age=0")
         self.end_headers()
         self.write_body(data)
 

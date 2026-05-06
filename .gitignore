@@ -1,0 +1,18 @@
+*.log
+*.zip
+*.exe
+*.msi
+*.cab
+*.tmp
+
+__pycache__/
+.pytest_cache/
+
+New project-20260426T232410Z-3-001/New project/build/
+New project-20260426T232410Z-3-001/New project/dist/
+New project-20260426T232410Z-3-001/New project/runtime/
+New project-20260426T232410Z-3-001/New project/backups/
+New project-20260426T232410Z-3-001/New project/__pycache__/
+
+tools/mingit*/
+New project-20260426T232410Z-3-001/codex-git-meta/

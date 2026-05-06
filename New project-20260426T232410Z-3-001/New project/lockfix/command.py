@@ -16,8 +16,16 @@ class CommandRunner:
             raise CommandError("empty command")
         if self.dry_run:
             return f"dry-run: {' '.join(args)}"
-        result = subprocess.run(args, check=False, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(
+            args,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+        )
         if result.returncode != 0:
-            message = result.stderr.strip() or result.stdout.strip() or f"exit code {result.returncode}"
+            message = (result.stderr or "").strip() or (result.stdout or "").strip() or f"exit code {result.returncode}"
             raise CommandError(message)
-        return result.stdout.strip()
+        return (result.stdout or "").strip()

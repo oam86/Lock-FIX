@@ -32,7 +32,7 @@ Windows Server 전용 LOCK-FIX 설치 패키지 소스입니다.
 
 ## 빠른 실행
 
-기본 설정은 실제 장비를 건드리지 않는 `dry_run: true`, `mock` 전원 제어입니다.
+기본 설치 설정은 Windows Server 운영 적용을 위해 `operation_mode: live`, `dry_run: false`입니다. `C:\` Windows OS 볼륨은 코드 레벨에서 항상 차단됩니다.
 
 ```powershell
 python .\lockfixctl.py status --config .\config\lockfix.example.json
@@ -64,6 +64,33 @@ Windows 실행 파일 빌드:
 
 ```text
 dist\release\LOCK-FIX-Windows-Installer-Package-YYYYMMDD-HHMMSS.zip
+```
+
+## 폐쇄망 설치 기준
+
+LOCK-FIX는 Windows Server 폐쇄망 설치를 기준으로 패키징합니다. 설치 대상 서버에서 인터넷 접속, `pip install`, 외부 다운로드가 없어도 설치와 Web UI 실행이 가능해야 합니다.
+
+오프라인 패키지 포함 항목:
+
+- `python\python.exe`: Web UI와 Veeam REST 연동에 사용하는 내장 Python 런타임
+- `LOCK-FIX Setup Wizard.exe`: 설치 마법사
+- `LOCK-FIX Console.exe`: Web UI 콘솔 실행기
+- `LOCK-FIX WebUI Service.exe`: 8088 Web UI를 유지하는 Windows 서비스 실행 파일
+- `dist\lockfix-ui.exe`, `dist\lockfixctl.exe`
+- `config`, `lockfix`, `web`, `tools`
+
+Web UI 실행기는 설치 폴더의 `python\python.exe`를 가장 먼저 사용합니다. 따라서 신규 Windows Server가 폐쇄망이고 Python이 사전 설치되어 있지 않아도 LOCK-FIX Web UI를 실행할 수 있습니다.
+
+폐쇄망에서 필요한 통신은 다음으로 제한합니다.
+
+- 로컬 Web UI: `http://127.0.0.1:8088`
+- Veeam Backup & Replication REST API: `https://<Veeam Backup Server>:9419`
+- Enterprise Manager `9398`은 참고 진단만 수행하며 필수 조건이 아닙니다.
+
+Web UI는 Windows 서비스로 등록해 `8088` 포트를 항상 열어두는 방식을 기준으로 합니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\install_lockfix_webui_service.ps1
 ```
 
 설치 마법사 화면 흐름:
@@ -120,6 +147,44 @@ $env:LOCKFIX_VEEAM_PASSWORD = "Veeam비밀번호"
 python .\lockfixctl.py veeam-test --config .\config\lockfix.example.json
 ```
 
+Web UI 연동 비교 검증은 실행 중인 Web UI 서버에 HTTP로만 접근합니다. 이 명령은 `lockfix-ui.exe`, `python webui.py`, 또는 새 Windows 프로세스를 직접 실행하지 않습니다. Web UI 서버는 Windows 서비스 또는 작업 스케줄러에서 별도로 실행되어야 합니다.
+
+```powershell
+python .\lockfixctl.py veeam-webui-test --config .\config\lockfix.example.json --url http://127.0.0.1:8088
+```
+
+8088 포트가 닫혀 있으면 결과에 `Web UI server is not running`으로 표시하며, 이를 Veeam REST 9419 연동 실패로 처리하지 않습니다. 비교 기준은 `veeam-test` CLI 결과와 `/api/veeam-backup` HTTP 응답의 base_url, token, sessions, jobs, job match, latest session 값입니다.
+
+이미 설치된 Web UI가 `LOCKFIX_VEEAM_PASSWORD`를 못 읽는 경우에는 설치본 복구 도구를 관리자 PowerShell에서 실행합니다. 이 도구는 비밀번호를 프롬프트로 입력받고, 값을 화면에 출력하지 않습니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\repair_installed_webui_veeam.ps1 -RestartWebUi
+```
+
+Veeam Backup Server IP는 Agent 대상 서버 IP와 별개입니다. Agent IP가 서버마다 바뀌더라도 LOCK-FIX는 `auto_discover=true`일 때 실제 토큰 발급이 되는 Veeam Backup Server REST 9419 주소를 자동 선택합니다.
+
+자동 탐지 우선순위:
+
+1. `LOCKFIX_VEEAM_BASE_URL` 환경변수
+2. `config.veeam.discovery_candidates`
+3. `LOCKFIX_VEEAM_CANDIDATES` 환경변수
+4. `config.veeam.base_url`
+5. `127.0.0.1`, `localhost`
+6. 로컬 IPv4 대역의 9419 포트 탐지
+
+예:
+
+```json
+"veeam": {
+  "base_url": "https://127.0.0.1:9419",
+  "auto_discover": true,
+  "discovery_candidates": [
+    "https://192.168.219.230:9419"
+  ],
+  "discovery_scan_local_subnet": true
+}
+```
+
 LOCK-FIX Veeam 연동의 기준 API는 VBR REST `9419`입니다. PowerShell/curl 실패는 Windows Schannel 진단 이슈일 수 있으므로 실제 제품 검증은 Python HTTPS 클라이언트의 `9419` 호출 결과로 판단합니다. Enterprise Manager `9398`은 참고 진단만 수행하며 필수 조건이 아닙니다.
 
 운영 설정에서는 Veeam Job ID를 알 수 있으면 이름보다 정확하므로 `job_id`를 함께 지정합니다.
@@ -132,9 +197,11 @@ LOCK-FIX Veeam 연동의 기준 API는 VBR REST `9419`입니다. PowerShell/curl
 4. `/api/v1/jobs`와 `/api/v1/sessions`를 조회합니다.
 5. `job_id`를 우선 매칭하고, 없으면 `job_name`을 exact, case-insensitive, normalized 순서로 보조 매칭합니다.
 6. 최신 session의 `result/status`가 `Success`이면 `controller.isolate()`를 호출합니다.
-7. 같은 `session_id`는 runtime state에 기록해 중복 isolate를 방지합니다.
-8. PoC에서는 `verify_ssl=false`로 자체 서명 인증서를 허용할 수 있고, 운영에서는 Veeam REST 인증서를 Windows 신뢰 저장소에 등록한 뒤 `verify_ssl=true`를 사용합니다.
-9. `veeam-test`는 9419, 참고용 9398, token, jobs, sessions, job match, isolate 조건을 한 번에 진단합니다.
+7. Agent 백업이 `/api/v1/sessions`에 직접 노출되지 않는 환경에서는 `/api/v1/backups`, `/api/v1/backups/{id}/objects`, `/api/v1/backupObjects/{id}/restorePoints`를 조회해 최신 restore point를 백업 완료 증거로 사용합니다.
+8. LOCK-FIX의 Air-Gap 1단계 완료 기준은 Backup Copy가 `C:\`가 아닌 대상 저장소에 최종 restore point를 생성한 시점입니다. 대상 저장소는 `target_repository_id`, `target_repository_name`, `target_repository_path`로 지정하며, `C:\` 저장소는 코드 레벨에서 제외됩니다.
+9. 같은 `session_id` 또는 restore point ID는 runtime state에 기록해 중복 isolate를 방지합니다.
+10. PoC에서는 `verify_ssl=false`로 자체 서명 인증서를 허용할 수 있고, 운영에서는 Veeam REST 인증서를 Windows 신뢰 저장소에 등록한 뒤 `verify_ssl=true`를 사용합니다.
+11. `veeam-test`는 9419, 참고용 9398, token, jobs, sessions, backups, repositories, job match, isolate 조건을 한 번에 진단합니다.
 
 ```json
 "veeam": {

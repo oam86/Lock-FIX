@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -24,11 +25,12 @@ namespace LockFix
                 logPath = Path.Combine(root, "runtime", "console.log");
                 Directory.CreateDirectory(Path.GetDirectoryName(logPath));
                 string config = Path.Combine(root, "config", "lockfix.example.json");
-                string python = FindPython();
+                string python = FindPython(root);
 
                 Log("Root: " + root);
                 Log("Python: " + python);
                 Log("URL: " + Url);
+                LoadVeeamEnvironment(root);
                 Log("");
 
                 if (!File.Exists(Path.Combine(root, "lockfix", "webui_server.py")))
@@ -100,6 +102,59 @@ namespace LockFix
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
             return process;
+        }
+
+        private static void LoadVeeamEnvironment(string root)
+        {
+            string propertiesPath = Path.Combine(root, "runtime", "install.properties");
+            if (!File.Exists(propertiesPath))
+            {
+                if (String.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("LOCKFIX_VEEAM_PASSWORD")))
+                {
+                    Log("Veeam password environment variable is not set. Set LOCKFIX_VEEAM_PASSWORD before starting the console.");
+                }
+                return;
+            }
+
+            Dictionary<string, string> properties = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string rawLine in File.ReadAllLines(propertiesPath))
+            {
+                string line = rawLine.Trim();
+                if (line.Length == 0 || line.StartsWith("#")) continue;
+                int separator = line.IndexOf('=');
+                if (separator <= 0) continue;
+                string key = line.Substring(0, separator).Trim();
+                string value = line.Substring(separator + 1).Trim();
+                properties[key] = value;
+            }
+
+            SetEnvIfPresent("LOCKFIX_VEEAM_BASE_URL", properties, "veeam_base_url");
+            SetEnvIfPresent("LOCKFIX_VEEAM_API_VERSION", properties, "veeam_api_version");
+            SetEnvIfPresent("LOCKFIX_VEEAM_USER", properties, "veeam_user");
+
+            if (String.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("LOCKFIX_VEEAM_PASSWORD"))
+                && properties.ContainsKey("veeam_password")
+                && !String.IsNullOrWhiteSpace(properties["veeam_password"]))
+            {
+                Environment.SetEnvironmentVariable("LOCKFIX_VEEAM_PASSWORD", properties["veeam_password"]);
+                Log("Veeam password loaded from installation settings into the Web UI process environment.");
+            }
+            else if (String.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("LOCKFIX_VEEAM_PASSWORD")))
+            {
+                Log("Veeam password environment variable is not set. Web UI Veeam calls will report the missing password_env value.");
+            }
+            else
+            {
+                Log("Veeam password environment variable is set for the Web UI process.");
+            }
+        }
+
+        private static void SetEnvIfPresent(string environmentName, Dictionary<string, string> properties, string propertyName)
+        {
+            if (properties.ContainsKey(propertyName) && !String.IsNullOrWhiteSpace(properties[propertyName]))
+            {
+                Environment.SetEnvironmentVariable(environmentName, properties[propertyName]);
+            }
         }
 
         private static Process StartServerWithRetry(string root, string python, string config)
@@ -197,10 +252,11 @@ namespace LockFix
             }
         }
 
-        private static string FindPython()
+        private static string FindPython(string root)
         {
             string[] candidates = new string[]
             {
+                Path.Combine(root, "python", "python.exe"),
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "LOCK-FIX", "python", "python.exe"),
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "LOCK-FIX", "python", "python.exe"),
                 "python"
