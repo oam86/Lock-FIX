@@ -1,0 +1,51 @@
+{
+  "dry_run": true,
+  "state_path": "runtime/state.json",
+  "audit_log_path": "runtime/audit.jsonl",
+  "io_quiet_seconds": 30,
+  "disk_wait_seconds": 60,
+  "veeam": {
+    "enabled": false,
+    "base_url": "https://127.0.0.1:9419",
+    "enterprise_manager_url": "https://127.0.0.1:9398",
+    "api_version": "1.2-rev1",
+    "username": "",
+    "password_env": "LOCKFIX_VEEAM_PASSWORD",
+    "verify_ssl": false,
+    "job_name": "Agent_backup",
+    "job_id": "실제 Veeam Job ID",
+    "poll_interval_seconds": 1,
+    "isolate_on_status": [
+      "Success"
+    ]
+  },
+  "slots": [
+    {
+      "slot_id": "BAY-01",
+      "device": "D:\\",
+      "mount_point": "D:\\",
+      "expected_uid": "replace-with-registered-uid",
+      "identity": {
+        "serial": "TEST-SERIAL-001",
+        "model": "TEST-HDD",
+        "wwn": "TEST-WWN-001"
+      },
+      "manifest_path": ".lockfix_manifest.sha256",
+      "power": {
+        "type": "mock",
+        "off_command": [
+          "powershell",
+          "-NoProfile",
+          "-Command",
+          "Write-Output 'LOCK-FIX BAY-01 power off command placeholder'"
+        ],
+        "on_command": [
+          "powershell",
+          "-NoProfile",
+          "-Command",
+          "Write-Output 'LOCK-FIX BAY-01 power on command placeholder'"
+        ]
+      }
+    }
+  ]
+}

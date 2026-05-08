@@ -1,0 +1,13 @@
+﻿[2026-04-29 18:08:08] LOCK-FIX MSI verbose build started.
+[2026-04-29 18:08:08] Workspace: C:\Users\Administrator\Documents\GitHub\Lock-FIX\New project-20260426T232410Z-3-001\New project
+[2026-04-29 18:08:08] Log file: C:\Users\Administrator\Documents\GitHub\Lock-FIX\New project-20260426T232410Z-3-001\New project\build\logs\msi-build-20260429-180808.log
+[2026-04-29 18:08:08] Advanced Installer CLI: C:\Program Files (x86)\Caphyon\Advanced Installer 23.6\bin\x86\AdvancedInstaller.com
+[2026-04-29 18:08:08] START: Build LOCK-FIX Windows executables
+C:\Users\Administrator\Documents\GitHub\Lock-FIX\New project-20260426T232410Z-3-001\New project\dist\lockfixctl.exe
+C:\Users\Administrator\Documents\GitHub\Lock-FIX\New project-20260426T232410Z-3-001\New project\dist\lockfix-ui.exe
+C:\Users\Administrator\Documents\GitHub\Lock-FIX\New project-20260426T232410Z-3-001\New project\dist\installer\LOCK-FIX Setup Wizard.exe
+[2026-04-29 18:08:11] DONE: Build LOCK-FIX Windows executables
+[2026-04-29 18:08:11] START: Build Advanced Installer MSI package
+C:\Users\Administrator\Documents\GitHub\Lock-FIX\New project-20260426T232410Z-3-001\New project\dist\lockfixctl.exe
+C:\Users\Administrator\Documents\GitHub\Lock-FIX\New project-20260426T232410Z-3-001\New project\dist\lockfix-ui.exe
+C:\Users\Administrator\Documents\GitHub\Lock-FIX\New project-20260426T232410Z-3-001\New project\dist\installer\LOCK-FIX Setup Wizard.exe

@@ -11,6 +11,7 @@ const qrLoginButton = document.querySelector("#qrLoginButton");
 const qrCodeBox = document.querySelector("#qrCodeBox");
 const qrTimer = document.querySelector("#qrTimer");
 const appRoot = document.querySelector("#appRoot");
+const sidebarToggle = document.querySelector("#sidebarToggle");
 const logoutButton = document.querySelector("#logoutButton");
 const logoutSideButton = document.querySelector("#logoutSideButton");
 const sideItems = document.querySelectorAll(".side-item[data-view]");
@@ -33,6 +34,16 @@ const networkGauge = document.querySelector("#networkGauge");
 const interfaceGauge = document.querySelector("#interfaceGauge");
 const sourceRoot = document.querySelector("#sourceRoot");
 const sourceList = document.querySelector("#sourceList");
+const veeamApiChip = document.querySelector("#veeamApiChip");
+const veeamJobName = document.querySelector("#veeamJobName");
+const veeamSessionState = document.querySelector("#veeamSessionState");
+const veeamResult = document.querySelector("#veeamResult");
+const veeamLastChecked = document.querySelector("#veeamLastChecked");
+const veeamProgressValue = document.querySelector("#veeamProgressValue");
+const veeamProgressFill = document.querySelector("#veeamProgressFill");
+const veeamStepGrid = document.querySelector("#veeamStepGrid");
+const veeamLogCount = document.querySelector("#veeamLogCount");
+const veeamLogTable = document.querySelector("#veeamLogTable");
 const dashboardView = document.querySelector("#dashboardView");
 const dashboardCards = document.querySelector("#dashboardCards");
 const dashboardNotificationTable = document.querySelector("#dashboardNotificationTable");
@@ -47,6 +58,7 @@ const reportTable = document.querySelector("#reportTable");
 const reportCustomerTable = document.querySelector("#reportCustomerTable");
 const reportServerTable = document.querySelector("#reportServerTable");
 const reportInspectionTable = document.querySelector("#reportInspectionTable");
+const reportRefreshButton = document.querySelector("#reportRefreshButton");
 const notificationTable = document.querySelector("#notificationTable");
 const detectStart = document.querySelector("#detectStart");
 const detectEnd = document.querySelector("#detectEnd");
@@ -54,6 +66,7 @@ const detectCards = document.querySelector("#detectCards");
 const detectDetectTable = document.querySelector("#detectDetectTable");
 const detectWarningTable = document.querySelector("#detectWarningTable");
 const detectLogsTable = document.querySelector("#detectLogsTable");
+const detectFingerprintRoot = document.querySelector("#detectFingerprintRoot");
 const logsStart = document.querySelector("#logsStart");
 const logsEnd = document.querySelector("#logsEnd");
 const logsRangeApply = document.querySelector("#logsRangeApply");
@@ -103,6 +116,10 @@ const themeSelect = document.querySelector("#themeSelect");
 const logRetentionSelect = document.querySelector("#logRetentionSelect");
 const settingsApplyButton = document.querySelector("#settingsApplyButton");
 const settingsApplyStatus = document.querySelector("#settingsApplyStatus");
+const consoleStatusText = document.querySelector("#consoleStatusText");
+const consoleStatusDetail = document.querySelector("#consoleStatusDetail");
+
+const LOGIN_SPLASH_DURATION_MS = 2000;
 let qrToken = "";
 let qrExpiresAt = 0;
 let qrPollTimer = null;
@@ -113,7 +130,9 @@ let latestMonitoringData = null;
 let latestReportData = null;
 let latestSourcesData = null;
 let latestDashboardData = null;
-let latestLicenseData = null;
+let airgapPollTimer = null;
+let veeamPollTimer = null;
+let emergencyActionStatus = "";
 let activeMonitoringMetric = "cpu";
 let monitoringRange = {
   start: "",
@@ -130,6 +149,8 @@ let uiSettings = {
   theme: localStorage.getItem("lockfix.theme") || "light",
 };
 let pendingUiSettings = { ...uiSettings };
+let sidebarCollapsed = false;
+localStorage.setItem("lockfix.sidebarCollapsed", "false");
 
 const translations = {
   en: {
@@ -144,27 +165,9 @@ const translations = {
     "nav.network": "Network Status",
     "nav.download": "Logs - Download",
     "nav.airgap": "Air-Gap",
+    "nav.veeam": "Veeam Backup",
     "nav.settings": "Settings",
     "nav.logout": "Logout",
-    "license.statusTitle": "License Status",
-    "license.customerInfo": "Customer Information",
-    "license.supportCode": "License Key (Support Code)",
-    "license.status": "License Status",
-    "license.firstUsedAt": "First Used At",
-    "license.expiresAt": "Expiration Date",
-    "license.daysLeft": "Days Left",
-    "license.updatedAt": "Updated At",
-    "license.contact": "License Contact",
-    "license.permanent": "Permanent License",
-    "license.daysUnit": "{count} days",
-    "license.reason.notRegistered": "A license key must be registered to use the Web UI.",
-    "license.reason.expired": "The 365-day license period has expired. Please enter a new license key.",
-    "license.reason.invalidKey": "The stored license key needs to be checked.",
-    "license.reason.invalidExpiry": "The license expiration date needs to be checked.",
-    "license.reason.default": "License verification is required.",
-    "license.deviceBasis": "Customer + Support Code",
-    "license.hardwareChange": "No impact from IP/MAC changes",
-    "license.registerFailed": "License registration failed.",
     "settings.title": "Settings",
     "settings.subtitle": "Configure display language and screen theme.",
     "settings.languageTitle": "Language",
@@ -178,6 +181,14 @@ const translations = {
     "settings.apply": "Apply",
     "settings.pending": "Select options, then click Apply.",
     "settings.applied": "Settings have been applied.",
+    "veeam.title": "Post-Backup Isolation Procedure",
+    "veeam.subtitle": "Check backup progress, success or failure, and API logs every second.",
+    "veeam.job": "Backup Job",
+    "veeam.result": "Result",
+    "veeam.progress": "Progress",
+    "veeam.steps": "Step Status",
+    "veeam.stepsDesc": "Colors advance only after API state changes.",
+    "veeam.logs": "Detail Logs and Monitoring",
     "monitoring.title": "Monitoring",
     "monitoring.subtitle": "Hardware usage status is updated every 5 seconds.",
     "monitoring.startDate": "Start Date",
@@ -212,9 +223,11 @@ const translations = {
     "report.criteria": "Criteria",
     "report.result": "Result",
     "report.generated": "Generated",
+    "report.refresh": "Refresh",
     "report.exportWord": "Word",
     "report.exportExcel": "Excel",
     "report.avg": "Avg",
+    "report.loading": "Refreshing latest report data...",
     "report.normal": "Normal",
     "report.warning": "Warning",
     "report.attentionRequired": "Attention Required",
@@ -246,8 +259,8 @@ const translations = {
     "report.managerSignature": "Manager Signature",
     "report.attachSignature": "Attach",
     "report.clearSignature": "Clear",
-    "airgap.title": "Air-Gap",
-    "airgap.subtitle": "Monitor physical power cut-off, solenoid lock, and integrity verification status in real time.",
+    "airgap.title": "Post-Backup Isolation Procedure",
+    "airgap.subtitle": "Veeam backup completion, isolation steps, and detail logs are monitored in real time.",
   },
   ko: {
     "nav.monitoring": "모니터링",
@@ -261,27 +274,9 @@ const translations = {
     "nav.network": "네트워크 상태",
     "nav.download": "로그 다운로드",
     "nav.airgap": "에어갭",
+    "nav.veeam": "Veeam 백업",
     "nav.settings": "설정",
     "nav.logout": "로그아웃",
-    "license.statusTitle": "라이선스 상태",
-    "license.customerInfo": "고객사 정보",
-    "license.supportCode": "라이선스 키(Support Code)",
-    "license.status": "라이선스 상태",
-    "license.firstUsedAt": "최초 사용 일자",
-    "license.expiresAt": "만료 일자",
-    "license.daysLeft": "남은 일자",
-    "license.updatedAt": "갱신 일자",
-    "license.contact": "라이선스 문의",
-    "license.permanent": "Permanent License",
-    "license.daysUnit": "{count}일",
-    "license.reason.notRegistered": "라이선스 키를 등록해야 Web UI를 사용할 수 있습니다.",
-    "license.reason.expired": "라이선스 사용 기간 365일이 만료되었습니다. 새 라이선스 키를 입력해 주세요.",
-    "license.reason.invalidKey": "저장된 라이선스 키 확인이 필요합니다.",
-    "license.reason.invalidExpiry": "라이선스 만료 일자 확인이 필요합니다.",
-    "license.reason.default": "라이선스 확인이 필요합니다.",
-    "license.deviceBasis": "고객사 + Support Code",
-    "license.hardwareChange": "IP/MAC 변경 영향 없음",
-    "license.registerFailed": "라이선스 등록에 실패했습니다.",
     "settings.title": "설정",
     "settings.subtitle": "표시 언어와 화면 테마를 설정합니다.",
     "settings.languageTitle": "언어",
@@ -295,6 +290,14 @@ const translations = {
     "settings.apply": "적용",
     "settings.pending": "항목을 선택한 뒤 적용 버튼을 누르세요.",
     "settings.applied": "설정이 적용되었습니다.",
+    "veeam.title": "백업 완료 후 격리 절차",
+    "veeam.subtitle": "백업 진행률, 성공/실패 여부, API 상세 로그를 1초 단위로 확인합니다.",
+    "veeam.job": "백업 작업",
+    "veeam.result": "결과",
+    "veeam.progress": "진행률",
+    "veeam.steps": "단계 상태",
+    "veeam.stepsDesc": "API 상태가 실제로 변경된 경우에만 색상이 넘어갑니다.",
+    "veeam.logs": "상세 로그 및 모니터링",
     "monitoring.title": "모니터링",
     "monitoring.subtitle": "하드웨어 사용 상태가 5초마다 업데이트됩니다.",
     "monitoring.startDate": "Start Date",
@@ -329,9 +332,11 @@ const translations = {
     "report.criteria": "점검기준",
     "report.result": "결과",
     "report.generated": "생성일",
+    "report.refresh": "새로고침",
     "report.exportWord": "워드",
     "report.exportExcel": "엑셀",
     "report.avg": "평균",
+    "report.loading": "최신 보고서 데이터를 갱신하는 중입니다...",
     "report.normal": "정상",
     "report.warning": "주의",
     "report.attentionRequired": "주의 필요",
@@ -363,8 +368,8 @@ const translations = {
     "report.managerSignature": "담당자 서명",
     "report.attachSignature": "첨부",
     "report.clearSignature": "지우기",
-    "airgap.title": "에어갭",
-    "airgap.subtitle": "물리적 전원 차단, 솔레노이드 잠금, 무결성 검증 상태를 실시간으로 확인합니다.",
+    "airgap.title": "백업 완료 후 격리 절차",
+    "airgap.subtitle": "Veeam 백업 완료 후 격리 단계와 상세 로그를 실시간으로 확인합니다.",
   },
 };
 
@@ -387,6 +392,7 @@ const reportMetricKeys = {
   Memory: "report.memory",
   Disk: "report.disk",
   Network: "report.network",
+  Interface: "report.network",
 };
 
 const reportInspectionKo = {
@@ -443,77 +449,18 @@ const airgapKo = {
   "Real-time Interlock Process": "실시간 인터록 프로세스",
   "Power cut-off and lock sequence": "전원 차단 및 잠금 연동 순서",
   "Veeam backup completion signal received": "Veeam 백업 종료 신호 수신",
-  "Permission Required": "권한 필요",
-  Waiting: "대기",
-  Running: "진행 중",
-  Failed: "실패",
-  "Veeam API Integration": "Veeam API 연동",
-  "Backup completion signal and session status from VBR REST API": "VBR REST API 백업 종료 신호 및 세션 상태",
-  "Backup Completion Monitor": "백업 완료 모니터",
-  "Progress and isolation readiness are refreshed every 5 seconds.": "진행률과 격리 준비 상태가 5초마다 갱신됩니다.",
-  "Connection": "연결",
-  "Endpoint": "엔드포인트",
-  "API Version": "API 버전",
-  "Server Time": "서버 시간",
-  "Last Backup Session": "마지막 백업 세션",
-  "Backup Progress": "백업 진행률",
-  "Started": "시작",
-  "Ended": "종료",
-  "Backup Completed": "백업 완료",
-  "Backup Not Completed": "백업 미완료",
-  "Live Veeam credentials required": "실시간 Veeam 계정 정보 필요",
-  "Backup Policy Status": "백업 정책 상태",
-  "Veeam Job States compatible policy result view": "Veeam Job States 호환 정책 결과 화면",
-  "Policies": "정책",
-  "Success": "성공",
-  "Warning": "경고",
-  "Failed": "실패",
-  "Running": "실행 중",
-  "Policy Name": "정책명",
-  "Last Result": "마지막 결과",
-  "Last Run": "마지막 실행",
-  "Next Run": "다음 실행",
-  "Enabled": "활성",
-  "Disabled": "비활성",
-  "No backup policy data": "백업 정책 데이터 없음",
-  "No session data": "세션 데이터 없음",
-  "Backup Result History": "백업 성공/실패 이력",
-  "Last 24 hours compatible Veeam session result view": "최근 24시간 Veeam 세션 결과 호환 화면",
-  "Latest Veeam REST sessions ordered by poll result": "Veeam REST 조회 기준 최신 세션 목록",
-  "Job Name": "작업명",
-  "Session Type": "세션 유형",
-  "Start Time": "시작 시간",
-  "End Time": "종료 시간",
-  "LOCK-FIX Interlock": "LOCK-FIX 인터록",
-  "Isolation Ready": "격리 준비 완료",
-  "Hold Isolation": "격리 보류",
-  "Recent Veeam Sessions": "최근 Veeam 세션",
-  "Repository Capacity": "Repository 용량",
-  "Backup Repositories": "백업 Repository",
-  Repository: "Repository",
-  "Repository capacity and free space from VBR REST API": "VBR REST API 기반 Repository 용량 및 여유 공간",
-  "Scale-out Repositories": "Scale-out Repository",
-  "Object Storage": "오브젝트 스토리지",
-  "Repositories": "Repository",
-  "Online": "온라인",
-  "Status": "상태",
-  "Total Capacity": "총 용량",
-  "Used Space": "사용 용량",
-  "Free Space": "여유 공간",
-  "Usage": "사용률",
-  "Capacity": "용량",
-  "Used": "사용",
-  "Free": "여유",
-  "Host": "호스트",
-  "Path": "경로",
-  "Type": "유형",
-  "State": "상태",
-  "No repository data": "Repository 데이터 없음",
-  "Session": "세션",
-  "State": "상태",
-  "Result": "결과",
-  "Progress": "진행률",
-  Name: "이름",
+  "Backup completed": "백업 완료",
+  "Flush running": "Flush 실행",
+  "I/O checking": "I/O 종료 확인",
+  "Power off": "전원 OFF",
+  "Veeam API Polling": "Veeam API 실시간 확인",
+  "Veeam backup status API is checked every 1 second while the Air-Gap screen is open.": "실제 Veeam API 세션이 확인되기 전까지 API 대기 상태로 유지합니다.",
+  "Veeam API is connected. Step colors change only when the current_step value advances.": "Veeam API가 연결되어 있습니다. current_step 값이 실제로 증가할 때만 단계 색상이 넘어갑니다.",
+  "Veeam API is not connected yet. Current step is held and colors will not advance automatically.": "Veeam API가 아직 연결되지 않았습니다. 현재 단계를 유지하며 색상은 자동으로 넘어가지 않습니다.",
+  "Step Detail Logs": "단계별 상세 로그",
+  "Real-time transition evidence": "실시간 전환 근거",
+  "Veeam API": "Veeam API",
+  "Veeam API waiting": "Veeam API 대기",
   "Drive hard power-off executed": "드라이브 물리 전원 차단 실행",
   "Solenoid lock engaged": "솔레노이드 잠금 체결 완료",
   "Air-Gap isolation active": "에어갭 격리 활성화",
@@ -541,6 +488,8 @@ const airgapKo = {
   "Manual release is available only after two-administrator approval.": "수동 해제는 관리자 2인 승인 후에만 가능합니다.",
   "Waiting for Dual Approval": "2인 승인 대기 중",
   "Data path activation remains blocked": "데이터 통로 활성화 차단 유지",
+  "Air-Gap status is loading": "에어갭 상태를 불러오는 중",
+  "The Air-Gap overview remains available while live source data is refreshed.": "실시간 소스 데이터를 새로 고치는 동안에도 에어갭 개요를 표시합니다.",
   MATCH: "일치",
   VALID: "유효",
 };
@@ -609,41 +558,6 @@ function localizedLogContent(content) {
     .replace("rich.kim@oam.co.kr 계정 회원가입 완료", "rich.kim@oam.co.kr 계정 회원가입 완료");
 }
 
-function veeamStatusClass(status) {
-  const normalized = String(status || "").toLowerCase();
-  if (normalized === "connected" || normalized === "live" || normalized === "success") return "veeam-status-live";
-  if (normalized === "warning") return "veeam-status-wait";
-  if (normalized === "failed") return "veeam-status-error";
-  if (normalized === "disabled" || normalized === "waiting_for_credentials" || normalized === "not_configured") {
-    return "veeam-status-wait";
-  }
-  if (normalized === "error") return "veeam-status-error";
-  return "veeam-status-mock";
-}
-
-function veeamMonitorClass(monitor) {
-  const state = String(monitor?.state || "").toLowerCase();
-  if (state === "completed") return "veeam-status-live";
-  if (state === "running" || state === "completed_waiting") return "veeam-status-wait";
-  if (state === "attention") return "veeam-status-error";
-  return "veeam-status-mock";
-}
-
-function airgapStepClass(state) {
-  const normalized = String(state || "").toLowerCase();
-  if (normalized === "active") return "airgap-step-active";
-  if (normalized === "done") return "airgap-step-done";
-  if (normalized === "running") return "airgap-step-running";
-  if (normalized === "error") return "airgap-step-error";
-  return "airgap-step-waiting";
-}
-
-function formatGb(value) {
-  const number = Number(value || 0);
-  if (number >= 1024) return `${(number / 1024).toFixed(2)} TB`;
-  return `${number.toFixed(1)} GB`;
-}
-
 function dashboardCopy() {
   if (uiSettings.language !== "ko") {
     return {
@@ -673,11 +587,6 @@ function dashboardCopy() {
       backupRunning: "Backup running",
       backupEnd: "Backup completed",
       flush: "Flush verified",
-      flowBackupComplete: ["Backup", "complete"],
-      flowFlushRun: ["Flush", "run"],
-      flowIoCheck: ["I/O closed", "verified"],
-      flowPowerOff: ["Power", "OFF"],
-      flowAirgapActive: ["Air-Gap", "active"],
       isolated: "Storage safe isolation",
       airgapActive: "Air-Gap activated",
       locked: "Locked",
@@ -717,11 +626,6 @@ function dashboardCopy() {
     backupRunning: "백업 진행",
     backupEnd: "백업 종료",
     flush: "Flush 확인",
-    flowBackupComplete: ["백업", "완료"],
-    flowFlushRun: ["Flush", "실행"],
-    flowIoCheck: ["I/O 종료", "확인"],
-    flowPowerOff: ["전원", "OFF"],
-    flowAirgapActive: ["Air-Gap", "활성"],
     isolated: "저장장치 안전 분리",
     airgapActive: "Air-Gap 활성화",
     locked: "잠김",
@@ -920,6 +824,18 @@ function applyUiSettings() {
   });
 }
 
+function applySidebarState() {
+  appRoot?.classList.toggle("sidebar-collapsed", sidebarCollapsed);
+  sidebarToggle?.setAttribute("aria-expanded", String(!sidebarCollapsed));
+  sidebarToggle?.setAttribute("title", sidebarCollapsed ? "Open sidebar" : "Close sidebar");
+}
+
+function toggleSidebar() {
+  sidebarCollapsed = !sidebarCollapsed;
+  localStorage.setItem("lockfix.sidebarCollapsed", String(sidebarCollapsed));
+  applySidebarState();
+}
+
 function applyPendingUiSettings() {
   uiSettings = { ...pendingUiSettings };
   localStorage.setItem("lockfix.language", uiSettings.language);
@@ -940,9 +856,6 @@ function applyPendingUiSettings() {
   }
   if (latestDashboardData) {
     renderDashboard(latestDashboardData);
-  }
-  if (latestLicenseData) {
-    updateLicenseGate(latestLicenseData);
   }
   reloadLogs().catch((error) => console.warn("Unable to reload logs after retention change", error));
 }
@@ -986,8 +899,10 @@ async function showLoginSplashThenEnter() {
   appRoot.classList.add("app-locked");
   loginSplash.classList.remove("hidden");
   stopQrTimers();
-  await loadAll();
-  await new Promise((resolve) => setTimeout(resolve, 3000));
+  await Promise.all([
+    loadAll(),
+    new Promise((resolve) => setTimeout(resolve, LOGIN_SPLASH_DURATION_MS)),
+  ]);
   setAuthenticated(true);
 }
 
@@ -1028,6 +943,25 @@ function showView(name) {
   const target = document.querySelector(`#${name}View`);
   if (target) {
     target.classList.add("view-active");
+  }
+  setAirGapLivePolling(name === "sources");
+  if (name === "sources") {
+    reloadSources().catch((error) => {
+      console.warn("Unable to reload Air-Gap view", error);
+      renderSources({ air_gap: fallbackAirGapSummary() });
+    });
+  }
+  if (name === "report") {
+    reloadReport().catch((error) => {
+      console.warn("Unable to reload report view", error);
+      reportAnalysis.textContent = error.message;
+    });
+  }
+  if (name === "settings") {
+    reloadConsoleStatus().catch((error) => {
+      console.warn("Unable to reload console status", error);
+      if (consoleStatusText) consoleStatusText.textContent = error.message;
+    });
   }
 }
 
@@ -1311,11 +1245,11 @@ function renderDashboard(data) {
           <p>${copy.protectedMessage.replace("전원이 차단", "<b>전원이 차단</b>").replace("Power is cut off", "<b>power is cut off</b>")}</p>
           <div class="security-flow">
             ${[
-              ["backup-complete", copy.flowBackupComplete],
-              ["flush-run", copy.flowFlushRun],
-              ["io-check", copy.flowIoCheck],
-              ["power-off", copy.flowPowerOff],
-              ["airgap-logo", copy.flowAirgapActive],
+              ["backup-complete", ["백업", "완료"]],
+              ["flush-run", ["Flush", "실행"]],
+              ["io-check", ["I/O 종료", "확인"]],
+              ["power-off", ["전원", "OFF"]],
+              ["airgap-logo", ["Air-Gap", "활성"]],
             ].map(([icon, lines], index, arr) => `
               <div class="flow-step ${index === arr.length - 1 ? "flow-step-active" : ""}">
                 <i class="security-icon security-icon-${icon}" aria-hidden="true"></i>
@@ -1493,6 +1427,86 @@ function renderNotification(data) {
 }
 
 function renderDetect(data) {
+  if (detectFingerprintRoot) {
+    const fingerprint = data.fingerprint || {};
+    const parts = Array.isArray(fingerprint.parts) ? fingerprint.parts : [];
+    const status = String(fingerprint.status || "UNREGISTERED");
+    const isNormal = fingerprint.match === true || status === "MATCH";
+    const statusClass = isNormal ? "normal" : "abnormal";
+    const judgementLabel = isNormal ? "REGISTERED" : status === "DIFFERENT_DISK" ? "DIFFERENT DISK" : "UNREGISTERED";
+    const recognitionLabel = isNormal ? "NORMAL RECOGNITION" : "RECOGNITION FAILED";
+    const diskSize = parts.find((part) => {
+      const key = String(part.key || "").toLowerCase();
+      const label = String(part.label || "").toLowerCase();
+      return key.includes("size") || label.includes("size");
+    });
+    const latency = fingerprint.detection_latency_seconds ?? data.detection_latency_seconds ?? "0.5";
+    const fingerprintValue = String(fingerprint.value || "-");
+    const shortFingerprint = fingerprintValue.length > 12 ? `${fingerprintValue.slice(0, 12)}...` : fingerprintValue;
+    const backgroundFormula = `${fingerprint.formula_title || "LOCK-FIX-DISK-FINGERPRINT ="}\n${fingerprint.formula || ""}`;
+    detectFingerprintRoot.innerHTML = `
+      <div class="detect-judgement-page">
+        <header class="detect-judgement-head">
+          <span aria-hidden="true"></span>
+          <h1>Judgement Module UI</h1>
+        </header>
+        <section class="detect-judgement-panel detect-judgement-${statusClass}">
+          <div class="detect-judgement-topline">
+            <div class="detect-final-state">
+              <span>FINAL JUDGEMENT</span>
+              <strong>${escapeHtml(judgementLabel)}</strong>
+              <em>${escapeHtml(recognitionLabel)}</em>
+            </div>
+            <div class="detect-latency">
+              <span>DETECTION LATENCY</span>
+              <strong>${escapeHtml(String(latency))}<small>sec</small></strong>
+            </div>
+          </div>
+          <div class="detect-judgement-cards">
+            <article>
+              <span>SLOT ID</span>
+              <strong>${escapeHtml(fingerprint.slot_id || "-")}</strong>
+            </article>
+            <article>
+              <span>CURRENT FINGERPRINT</span>
+              <strong>${escapeHtml(shortFingerprint)}</strong>
+            </article>
+            <article>
+              <span>DISK SIZE</span>
+              <strong>${escapeHtml(diskSize?.value || "-")}</strong>
+            </article>
+          </div>
+        </section>
+        <section class="detect-background-fingerprint" aria-label="Background fingerprint judgement basis">
+          <h2>Background Judgement Basis</h2>
+          <div class="detect-background-grid">
+            <article>
+              <span>REGISTERED FINGERPRINT</span>
+              <strong>${escapeHtml(fingerprint.registered_value || "-")}</strong>
+            </article>
+            <article>
+              <span>CURRENT STATUS</span>
+              <strong class="${isNormal ? "detect-text-normal" : "detect-text-abnormal"}">${escapeHtml(status)}</strong>
+            </article>
+            <article>
+              <span>FORMULA</span>
+              <strong>${escapeHtml(backgroundFormula.replace(/\n/g, " "))}</strong>
+            </article>
+          </div>
+        </section>
+        <section class="detect-parts-grid" aria-label="Disk identity fingerprint parts">
+          ${parts.map((part) => `
+            <article>
+              <span>${escapeHtml(part.label || "-")}</span>
+              <strong>${escapeHtml(part.value || "-")}</strong>
+            </article>
+          `).join("")}
+        </section>
+      </div>
+    `;
+    return;
+  }
+  if (!detectStart || !detectEnd || !detectCards || !detectDetectTable || !detectWarningTable || !detectLogsTable) return;
   detectStart.textContent = data.range.start;
   detectEnd.textContent = data.range.end;
   detectCards.replaceChildren();
@@ -1576,29 +1590,17 @@ function renderLogsPagination(data) {
 
 function renderLicenseStatus(license) {
   if (!licenseStatusTable) return;
-  latestLicenseData = license;
-  const state = license.valid ? t("license.permanent") : licenseReasonText(license.reason);
-  const daysLeft = license.valid ? t("license.daysUnit").replace("{count}", license.days_left) : "-";
+  const state = license.valid ? "Permanent License" : license.reason;
   licenseStatusTable.innerHTML = `
-    <tr><th>${t("license.customerInfo")}</th><td>${license.customer || "-"}</td></tr>
-    <tr><th>${t("license.supportCode")}</th><td>${license.support_code || "-"}</td></tr>
-    <tr><th>${t("license.status")}</th><td class="${license.valid ? "license-ok" : "license-bad"}">${state}</td></tr>
-    <tr><th>${t("license.firstUsedAt")}</th><td>${license.issued_at || "-"}</td></tr>
-    <tr><th>${t("license.expiresAt")}</th><td class="${license.days_left <= 30 ? "license-bad" : ""}">${license.expires_at || "-"}</td></tr>
-    <tr><th>${t("license.daysLeft")}</th><td>${daysLeft}</td></tr>
-    <tr><th>${t("license.updatedAt")}</th><td>${license.updated_at || "-"}</td></tr>
-    <tr class="license-contact-row"><th>${t("license.contact")}</th><td><a href="https://www.oam.co.kr" target="_blank" rel="noreferrer">www.oam.co.kr</a><strong>| 1666 - 3736</strong></td></tr>
+    <tr><th>고객사 정보</th><td>${license.customer || "-"}</td></tr>
+    <tr><th>라이선스 키(Support Code)</th><td>${license.support_code || "-"}</td></tr>
+    <tr><th>라이선스 상태</th><td class="${license.valid ? "license-ok" : "license-bad"}">${state}</td></tr>
+    <tr><th>최초 사용 일자</th><td>${license.issued_at || "-"}</td></tr>
+    <tr><th>만료 일자</th><td class="${license.days_left <= 30 ? "license-bad" : ""}">${license.expires_at || "-"}</td></tr>
+    <tr><th>남은 일자</th><td>${license.valid ? `${license.days_left}일` : "-"}</td></tr>
+    <tr><th>갱신 일자</th><td>${license.updated_at || "-"}</td></tr>
+    <tr class="license-contact-row"><th>라이선스 문의</th><td><a href="https://www.oam.co.kr" target="_blank" rel="noreferrer">www.oam.co.kr</a><strong>| 1666 - 3736</strong></td></tr>
   `;
-}
-
-function licenseReasonText(reason) {
-  const reasonKeys = {
-    not_registered: "license.reason.notRegistered",
-    expired: "license.reason.expired",
-    invalid_key: "license.reason.invalidKey",
-    invalid_expiry: "license.reason.invalidExpiry",
-  };
-  return reasonKeys[reason] ? t(reasonKeys[reason]) : t("license.reason.default");
 }
 
 function updateLicenseGate(license) {
@@ -1606,9 +1608,15 @@ function updateLicenseGate(license) {
   const locked = !license.valid;
   licenseModal.classList.toggle("hidden", !locked);
   if (!locked) return;
-  licenseModalReason.textContent = licenseReasonText(license.reason);
-  licenseIp.textContent = t("license.deviceBasis");
-  licenseMac.textContent = t("license.hardwareChange");
+  const reasonText = {
+    not_registered: "라이선스 키를 등록해야 Web UI를 사용할 수 있습니다.",
+    expired: "라이선스 사용 기간 365일이 만료되었습니다. 새 라이선스 키를 입력해 주세요.",
+    invalid_key: "저장된 라이선스 키 확인이 필요합니다.",
+    invalid_expiry: "라이선스 만료 일자 확인이 필요합니다.",
+  };
+  licenseModalReason.textContent = reasonText[license.reason] || "라이선스 확인이 필요합니다.";
+  licenseIp.textContent = "고객사 + Support Code";
+  licenseMac.textContent = "IP/MAC 변경 영향 없음";
   licenseSampleKey.textContent = license.sample_key || "-";
   licenseKeyInput.value = "";
   licenseError.textContent = "";
@@ -1627,7 +1635,7 @@ async function registerLicense(event) {
     }),
   });
   if (!payload.ok) {
-    licenseError.textContent = payload.error || t("license.registerFailed");
+    licenseError.textContent = payload.error || "라이선스 등록에 실패했습니다.";
     if (payload.expected_sample) {
       licenseSampleKey.textContent = payload.expected_sample;
     }
@@ -1784,29 +1792,467 @@ async function reloadLogs() {
   const logs = await requestJson(logsUrl());
   renderLogs(logs);
 }
+
+async function reloadReport() {
+  reportAnalysis.textContent = t("report.loading");
+  const report = await requestJson("/api/report");
+  renderReport(report);
+}
+
+async function reloadConsoleStatus() {
+  if (!consoleStatusText || !consoleStatusDetail) return;
+  consoleStatusText.textContent = "Checking Web UI console status...";
+  const status = await requestJson("/api/console/status");
+  consoleStatusText.textContent = status.message;
+  consoleStatusDetail.textContent = [
+    `Mode: ${status.mode}`,
+    `CMD execution from browser: ${status.cmd_execution}`,
+    `URL: ${status.url}`,
+    `Root: ${status.root}`,
+    `Config: ${status.config_path}`,
+    `Entrypoint: ${status.server.entrypoint}`,
+  ].join("\n");
+}
+
+async function reloadSources() {
+  renderSources({ air_gap: fallbackAirGapSummary(true) });
+  const sources = await requestJson("/api/sources");
+  renderSources(sources);
+}
+
+async function pollSourcesLive() {
+  if (appRoot.classList.contains("app-locked")) return;
+  const activeView = document.querySelector(".view.view-active");
+  if (!activeView || activeView.id !== "sourcesView") return;
+  try {
+    const sources = await requestJson("/api/sources");
+    renderSources(sources);
+  } catch (error) {
+    console.warn("Unable to poll Air-Gap live status", error);
+  }
+}
+
+function setAirGapLivePolling(enabled) {
+  if (enabled && !airgapPollTimer) {
+    airgapPollTimer = setInterval(pollSourcesLive, 1000);
+    pollSourcesLive();
+  }
+  if (!enabled && airgapPollTimer) {
+    clearInterval(airgapPollTimer);
+    airgapPollTimer = null;
+  }
+}
+
+async function reloadVeeamBackup() {
+  const data = await requestJson("/api/veeam-backup");
+  renderVeeamBackup(data);
+}
+
+async function pollVeeamBackupLive() {
+  if (appRoot.classList.contains("app-locked")) return;
+  const activeView = document.querySelector(".view.view-active");
+  if (!activeView || activeView.id !== "veeamView") return;
+  try {
+    await reloadVeeamBackup();
+  } catch (error) {
+    console.warn("Unable to poll Veeam backup status", error);
+    if (veeamApiChip) veeamApiChip.textContent = error.message;
+  }
+}
+
+function setVeeamLivePolling(enabled) {
+  if (enabled && !veeamPollTimer) {
+    veeamPollTimer = setInterval(pollVeeamBackupLive, 1000);
+    pollVeeamBackupLive();
+  }
+  if (!enabled && veeamPollTimer) {
+    clearInterval(veeamPollTimer);
+    veeamPollTimer = null;
+  }
+}
+
+function renderVeeamBackup(data) {
+  if (!veeamApiChip) return;
+  const api = data.api || {};
+  const job = data.job || {};
+  const steps = Array.isArray(data.steps) ? data.steps : [];
+  const logs = Array.isArray(data.logs) ? data.logs : [];
+  const result = String(job.result || "WAITING").toUpperCase();
+  const apiSynced = isVeeamSynced(api);
+  const progress = apiSynced ? Math.max(0, Math.min(100, Number(job.progress_percent || 0))) : 0;
+
+  veeamApiChip.className = `veeam-api-chip veeam-api-${apiSynced ? "connected" : "waiting"}`;
+  veeamApiChip.textContent = `${apiSynced ? "API CONNECTED" : "API WAITING"} · ${api.server}:${api.port} · ${api.poll_interval_seconds || 1}s`;
+  veeamJobName.textContent = job.name || "-";
+  veeamSessionState.textContent = job.session_state || "-";
+  veeamResult.className = `veeam-result veeam-result-${result.toLowerCase()}`;
+  veeamResult.textContent = result;
+  veeamLastChecked.textContent = api.last_checked || "-";
+  veeamProgressValue.textContent = `${progress}%`;
+  veeamProgressFill.style.width = `${progress}%`;
+
+  veeamStepGrid.replaceChildren();
+  steps.forEach((step) => {
+    const item = document.createElement("article");
+    item.className = `veeam-step-card veeam-step-${String(step.state || "PENDING").toLowerCase()}`;
+    const stepLabel = Number(step.step) === 1 ? "UID 검증<br />백업 완료" : step.label || "-";
+    item.innerHTML = `
+      <b>${step.step}</b>
+      <strong>${stepLabel}</strong>
+      <span>${step.code || "-"}</span>
+      <em>${step.time || "-"}</em>
+    `;
+    veeamStepGrid.appendChild(item);
+  });
+
+  veeamLogCount.textContent = `${logs.length} logs`;
+  veeamLogTable.replaceChildren();
+  logs.forEach((log) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${log.time || "-"}</td>
+      <td><span class="veeam-log-level veeam-log-${String(log.level || "INFO").toLowerCase()}">${log.level || "-"}</span></td>
+      <td>${log.step || "-"}</td>
+      <td>${log.source || "-"}</td>
+      <td>${log.message || "-"}</td>
+    `;
+    veeamLogTable.appendChild(row);
+  });
+}
+
+function isVeeamSynced(value) {
+  const stateSource = String(value?.state_source || value?.stateSource || "").toLowerCase();
+  return Boolean(
+    value?.api_synced ||
+    value?.connected ||
+    value?.port_open && stateSource.startsWith("veeam_rest_api") ||
+    stateSource.startsWith("veeam_rest_api")
+  );
+}
+
+function fallbackAirGapSummary(loading = false) {
+  return {
+    security_score: {
+      score: loading ? "--" : 98,
+      status: loading ? "Air-Gap status is loading" : "SAFE AIR-GAP",
+      description: loading
+        ? "The Air-Gap overview remains available while live source data is refreshed."
+        : "Power cut-off, solenoid lock, and integrity verification are all operating normally.",
+    },
+    kpis: [
+      {
+        id: "power",
+        title: "Power Cut-off",
+        value: "Physical Cut-off Complete",
+        detail: "Hard power isolation, not a software-only unmount.",
+      },
+      {
+        id: "lock",
+        title: "Solenoid Lock",
+        value: "Locked",
+        detail: "Mechanical lock is engaged on the drive bay.",
+      },
+      {
+        id: "integrity",
+        title: "Integrity Check",
+        value: "Verified",
+        detail: "UID match and SHA-256 hash validation passed.",
+      },
+    ],
+    timeline: [
+      { step: 1, title: "Backup completed", label: "백업 완료", state: "PENDING", code: "BACKUP_COMPLETED" },
+      { step: 2, title: "Flush running", label: "Flush 실행", state: "PENDING", code: "FLUSHING" },
+      { step: 3, title: "I/O checking", label: "I/O 종료 확인", state: "PENDING", code: "IO_CHECKING" },
+      { step: 4, title: "Unmount", label: "Unmount", state: "PENDING", code: "UNMOUNTING" },
+      { step: 5, title: "Power off", label: "전원 OFF", state: "PENDING", code: "POWERING_OFF" },
+    ],
+    veeam: {
+      api_poll_interval_seconds: 1,
+      server: "127.0.0.1",
+      port: 9419,
+      connected: false,
+      last_checked: "-",
+      job: "LOCK-FIX-AIRGAP-BACKUP",
+      session_state: loading ? "LOADING" : "BACKUP_COMPLETED",
+      current_step: 1,
+      state_source: "waiting_for_veeam_api",
+      api_synced: false,
+      port_open: false,
+      progress_percent: 0,
+      api_verification_percent: 0,
+      message: "Veeam API is not connected yet. Current step is held and colors will not advance automatically.",
+    },
+    step_logs: [
+      { step: 1, label: "백업 완료", code: "BACKUP_COMPLETED", state: "PENDING", time: "-", source: "Veeam API 대기", detail: "실제 Veeam API 세션이 확인될 때까지 단계 색상을 회색으로 유지합니다.", transition_allowed: false },
+      { step: 2, label: "Flush 실행", code: "FLUSHING", state: "PENDING", time: "-", source: "Veeam API 대기", detail: "아직 이전 단계 완료 신호가 확인되지 않았습니다.", transition_allowed: false },
+      { step: 3, label: "I/O 종료 확인", code: "IO_CHECKING", state: "PENDING", time: "-", source: "Veeam API 대기", detail: "아직 이전 단계 완료 신호가 확인되지 않았습니다.", transition_allowed: false },
+      { step: 4, label: "Unmount", code: "UNMOUNTING", state: "PENDING", time: "-", source: "Veeam API 대기", detail: "아직 이전 단계 완료 신호가 확인되지 않았습니다.", transition_allowed: false },
+      { step: 5, label: "전원 OFF", code: "POWERING_OFF", state: "PENDING", time: "-", source: "Veeam API 대기", detail: "아직 이전 단계 완료 신호가 확인되지 않았습니다.", transition_allowed: false },
+    ],
+    bays: [
+      {
+        slot: "LOCK-FIX BAY 01",
+        power: { label: "Physical Power Cut-off Complete" },
+        lock: { state: "LOCKED", label: "Locked", description: "External physical access is blocked." },
+        integrity: { uid: "Drive #1 - Match", hash: "SHA-256 Hash - Valid" },
+      },
+    ],
+    integrity_history: [
+      { time: "-", target: "Backup Cycle #1042", uid: "MATCH", hash: "VALID" },
+    ],
+    emergency: {
+      title: "Emergency Control Center",
+      description: "Manual release is available only after two-administrator approval.",
+      primary: "Waiting for Dual Approval",
+      secondary: "Data path activation remains blocked",
+    },
+    emergency_access: {
+      title: "Emergency Volume Access",
+      description: "Unmount 이후 긴급 접속이 필요한 경우 인증 해시값을 확인한 뒤 UID와 SHA-256 검증을 다시 수행하고 볼륨을 즉시 접속합니다.",
+      primary: "검증 후 긴급 접속",
+      secondary: "C:\\ OS 볼륨은 어떤 경우에도 작업 대상이 될 수 없습니다.",
+      slot: {
+        slot_id: "BAY-01",
+        device: "D:\\",
+        mount_point: "D:\\",
+        state: "WAITING",
+        eligible: false,
+        authorization_hash_short: "-",
+        authorization_hash_protected: true,
+        current_uid_short: "-",
+        hash_status: "WAITING_FOR_MOUNT",
+        manifest_hash_short: "-",
+        last_unmount: "-",
+        last_power_off: "-",
+      },
+      slots: [],
+    },
+  };
+}
+
 function renderSources(data) {
   latestSourcesData = data;
-  const airGap = data.air_gap;
+  const airGap = data?.air_gap || fallbackAirGapSummary();
+  const securityScore = airGap.security_score || fallbackAirGapSummary().security_score;
+  const kpis = Array.isArray(airGap.kpis) && airGap.kpis.length ? airGap.kpis : fallbackAirGapSummary().kpis;
+  const timelineItems = Array.isArray(airGap.timeline) && airGap.timeline.length ? airGap.timeline : fallbackAirGapSummary().timeline;
+  const veeam = airGap.veeam || fallbackAirGapSummary().veeam;
+  const stepLogs = Array.isArray(airGap.step_logs) && airGap.step_logs.length ? airGap.step_logs : fallbackAirGapSummary().step_logs;
+  const apiSynced = isVeeamSynced(veeam);
+  const backupProgress = apiSynced ? Math.max(0, Math.min(100, Number(veeam.progress_percent || 0))) : 0;
+  const apiPercent = backupProgress;
+  const veeamSessionLogs = Array.isArray(airGap.session_logs) && airGap.session_logs.length
+    ? airGap.session_logs
+    : [{
+        name: "Veeam API",
+        status: "Waiting",
+        actions: [
+          `Veeam REST API is not synced. Check ${veeam.server || "127.0.0.1"}:${veeam.port || 9419} host, port, credentials, or token.`,
+          "Step colors and arrows stay fixed until a real Veeam session is received.",
+        ],
+        duration: "-",
+        progress_percent: 0,
+      }];
+  const bays = Array.isArray(airGap.bays) && airGap.bays.length ? airGap.bays : fallbackAirGapSummary().bays;
+  const integrityHistory = Array.isArray(airGap.integrity_history) && airGap.integrity_history.length
+    ? airGap.integrity_history
+    : fallbackAirGapSummary().integrity_history;
+  const emergency = airGap.emergency || fallbackAirGapSummary().emergency;
+  const emergencyAccess = airGap.emergency_access || fallbackAirGapSummary().emergency_access;
+  const emergencySlot = emergencyAccess.slot || {};
+  const procedureLabels = {
+    1: "Backup Done",
+    2: "Flush",
+    3: "I/O Check",
+    4: "Unmount",
+    5: "Power OFF",
+  };
+  const stepLabel = (item) => procedureLabels[Number(item.step)] || airgapText(item.label || item.title || "-");
+  const isStepLive = (item) => {
+    const state = String(item.state || "").toUpperCase();
+    return ["ACTIVE", "RUNNING", "WORKING", "DONE", "COMPLETED", "SUCCESS"].includes(state);
+  };
+  const stepHasAdvanced = (item) => (
+    apiSynced &&
+    Number(item.step) < Number(veeam.current_step || 1) &&
+    isStepLive(item)
+  );
+  const progressCell = (log) => {
+    const value = log.progress_percent;
+    return value === "" || value === undefined || value === null ? "-" : `${value}%`;
+  };
+  const transferMeta = (log) => {
+    const values = [
+      `Progress ${progressCell(log)}`,
+      `Size ${log.backup_size || "-"}`,
+      `Transferred ${log.transferred || "-"}`,
+      `Speed ${log.speed || "-"}`,
+      `Start ${log.started_at || "-"}`,
+      `End ${log.ended_at || "-"}`,
+      `API ${apiPercent}%`,
+    ];
+    if (log.last_known) values.unshift("Retained detail log");
+    return values.join(" · ");
+  };
+  const statusClass = (status) => {
+    const key = String(status || "").toLowerCase();
+    if (key.includes("success") || key.includes("succeed") || key.includes("completed")) return "success";
+    if (key.includes("fail") || key.includes("error")) return "failed";
+    if (key.includes("running") || key.includes("working")) return "running";
+    return "waiting";
+  };
+  const actionLines = (log) => {
+    const actions = Array.isArray(log.actions) && log.actions.length ? log.actions : [log.action || log.message || "-"];
+    return actions.map((action) => {
+      const text = String(action ?? "-");
+      const isSection = text.startsWith("LOCK-FIX STEP ");
+      const icon = isSection ? "" : `<i class="veeam-action-icon veeam-action-${statusClass(log.status)}"></i>`;
+      return `<span class="${isSection ? "veeam-action-section" : ""}">${icon}${escapeHtml(text)}</span>`;
+    }).join("");
+  };
   sourceList.replaceChildren();
-  if (!airGap) {
-    sourceRoot.textContent = data.root;
-    return;
-  }
+
+  sourceRoot.className = "source-root airgap-procedure-root";
+  sourceRoot.innerHTML = `
+    <div class="veeam-procedure-header airgap-procedure-header">
+      <div class="veeam-api-chip ${apiSynced ? "veeam-api-connected" : "veeam-api-waiting"}">
+        ${apiSynced ? "API CONNECTED" : "API WAITING"} · Veeam ${veeam.server}:${veeam.port} · ${veeam.api_poll_interval_seconds || 1}s
+      </div>
+    </div>
+    <div class="veeam-step-grid airgap-procedure-steps">
+      ${timelineItems.map((item) => `
+        <article class="veeam-step-card veeam-step-${String(item.state || "PENDING").toLowerCase()} ${stepHasAdvanced(item) ? "veeam-step-arrow-visible" : ""}">
+          <b>${item.step}</b>
+          <div class="veeam-step-copy">
+            <strong class="step-label-main">${stepLabel(item)}</strong>
+            ${Number(item.step) === 1 ? `<em class="step-api-badge ${apiPercent === 100 ? "api-ok" : "api-wait"}">API ${apiPercent}%</em>` : ""}
+          </div>
+        </article>
+      `).join("")}
+    </div>
+  `;
+
+  const procedureLogs = document.createElement("section");
+  procedureLogs.className = "veeam-panel veeam-monitoring-panel airgap-monitoring-panel";
+  procedureLogs.innerHTML = `
+    <h2>${t("veeam.logs")}</h2>
+    <div class="veeam-log-meta">
+      <span>${veeamSessionLogs.length} sessions · ${veeam.job || "-"} · ${veeam.last_checked || "-"}</span>
+    </div>
+    <div class="veeam-log-wrap">
+      <table class="veeam-log-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Action</th>
+            <th>Duration</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${veeamSessionLogs.map((log) => `
+            <tr>
+              <td class="veeam-session-name">${escapeHtml(log.name || "-")}</td>
+              <td><span class="veeam-session-status veeam-session-${statusClass(log.status)}">${escapeHtml(log.status || "-")}</span></td>
+              <td class="veeam-session-actions">${actionLines(log)}<em>${escapeHtml(transferMeta(log))}</em></td>
+              <td class="veeam-session-duration">${escapeHtml(log.duration || "-")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+  sourceList.appendChild(procedureLogs);
+
+  const emergencyPanel = document.createElement("section");
+  const emergencyEligible = Boolean(emergencySlot.eligible);
+  const emergencyHashOk = String(emergencySlot.hash_status || "").toUpperCase() === "VALID";
+  const reconnectRuntimeOrder = [
+    "RECONNECT_REQUESTED",
+    "POWERING_ON",
+    "WAITING_DISK",
+    "VERIFYING_UID",
+    "MOUNTED_READONLY",
+    "VERIFYING_HASH",
+    "ONLINE_VERIFIED_RW",
+  ];
+  const reconnectDisplayOrder = [...reconnectRuntimeOrder].reverse();
+  const reconnectCurrentState = String(emergencySlot.state || "").toUpperCase();
+  const reconnectCurrentIndex = reconnectRuntimeOrder.indexOf(reconnectCurrentState);
+  const reconnectHistoryText = Array.isArray(emergencySlot.reconnect_history)
+    ? emergencySlot.reconnect_history.join("\n").toUpperCase()
+    : "";
+  const reconnectStepClass = (state) => {
+    const index = reconnectRuntimeOrder.indexOf(state);
+    if (state === reconnectCurrentState) return "current";
+    if (reconnectCurrentIndex >= 0 && index >= 0 && index < reconnectCurrentIndex) return "done";
+    if (reconnectHistoryText.includes(state)) return "done";
+    return "pending";
+  };
+  const reconnectFlowMarkup = reconnectDisplayOrder.map((state, index) => {
+    const stepClass = reconnectStepClass(state);
+    const isArrowActive = stepClass !== "pending" || reconnectStepClass(reconnectDisplayOrder[index + 1] || "") !== "pending";
+    return `
+      <article class="emergency-reconnect-step emergency-reconnect-${stepClass}">
+        <strong>${escapeHtml(state)}</strong>
+      </article>
+      ${index < reconnectDisplayOrder.length - 1 ? `<i class="emergency-reconnect-arrow ${isArrowActive ? "arrow-active" : ""}" aria-hidden="true"></i>` : ""}
+    `;
+  }).join("");
+  emergencyPanel.className = `airgap-panel emergency-access-panel ${emergencyEligible ? "emergency-access-ready" : "emergency-access-wait"}`;
+  emergencyPanel.innerHTML = `
+    <div class="airgap-panel-head">
+      <h2>${escapeHtml(emergencyAccess.title || "Emergency Volume Access")}</h2>
+      <span>${escapeHtml(emergencyEligible ? "READY" : "WAITING")}</span>
+    </div>
+    <p>${escapeHtml(emergencyAccess.description || "-")}</p>
+    <div class="emergency-access-grid">
+      <div><span>Slot</span><strong>${escapeHtml(emergencySlot.slot_id || "-")}</strong></div>
+      <div><span>Volume</span><strong>${escapeHtml(emergencySlot.mount_point || emergencySlot.device || "-")}</strong></div>
+      <div><span>State</span><strong>${escapeHtml(emergencySlot.state || "-")}</strong></div>
+      <div><span>Auth Hash</span><code>${escapeHtml(emergencySlot.authorization_hash_short || "-")}</code></div>
+      <div><span>Disk UID</span><code>${escapeHtml(emergencySlot.current_uid_short || "-")}</code></div>
+      <div><span>Hash Check</span><strong class="${emergencyHashOk ? "emergency-ok" : "emergency-wait"}">${escapeHtml(emergencySlot.hash_status || "-")}</strong></div>
+      <div class="wide"><span>Last Unmount</span><em>${escapeHtml(emergencySlot.last_unmount || "-")}</em></div>
+      <div class="wide"><span>Last Power OFF</span><em>${escapeHtml(emergencySlot.last_power_off || "-")}</em></div>
+      <div class="wide"><span>Last Reconnect</span><em>${escapeHtml(emergencySlot.last_reconnect || "-")}</em></div>
+      <div class="wide emergency-history"><span>Reconnect History</span><em>${(Array.isArray(emergencySlot.reconnect_history) && emergencySlot.reconnect_history.length ? emergencySlot.reconnect_history : ["-"]).map((item) => escapeHtml(item)).join("<br>")}</em></div>
+    </div>
+    <div class="emergency-reconnect-flow-wrap">
+      <span>Reconnect State Flow</span>
+      <div class="emergency-reconnect-flow" aria-label="Emergency reconnect state flow">
+        ${reconnectFlowMarkup}
+      </div>
+    </div>
+    <button class="emergency-access-button" type="button" data-slot="${escapeHtml(emergencySlot.slot_id || "")}" data-lock-disabled="${emergencyEligible ? "false" : "true"}" ${emergencyEligible ? "" : "disabled"}>
+      ${escapeHtml(emergencyAccess.primary || "검증 후 긴급 접속")}
+    </button>
+    <strong>${escapeHtml(emergencyActionStatus || emergencySlot.blocked_reason || emergencyAccess.secondary || "-")}</strong>
+  `;
+  sourceList.appendChild(emergencyPanel);
+  emergencyPanel.querySelector(".emergency-access-button")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    const slotId = button.dataset.slot || "";
+    const enteredHash = window.prompt("긴급 볼륨 접속을 위해 인증 해시값 전체를 입력하세요.", "");
+    if (!enteredHash) return;
+    runEmergencyReconnect(slotId, enteredHash);
+  });
+  return;
 
   sourceRoot.innerHTML = `
     <section class="airgap-hero">
       <div class="airgap-score">
         <span>${airgapText("Unified Security Score")}</span>
-        <strong>${airGap.security_score.score}</strong>
-        <em>${airgapText(airGap.security_score.status)}</em>
+        <strong>${securityScore.score}</strong>
+        <em>${airgapText(securityScore.status)}</em>
       </div>
-      <p>${airgapText(airGap.security_score.description)}</p>
+      <p>${airgapText(securityScore.description)}</p>
     </section>
   `;
 
   const kpi = document.createElement("section");
   kpi.className = "airgap-kpi-grid";
-  kpi.innerHTML = airGap.kpis.map((item) => `
+  kpi.innerHTML = kpis.map((item) => `
     <article class="airgap-kpi airgap-kpi-${item.id}">
       <i aria-hidden="true"></i>
       <div>
@@ -1819,220 +2265,57 @@ function renderSources(data) {
   sourceList.appendChild(kpi);
 
   const timeline = document.createElement("section");
-  timeline.className = "airgap-panel";
+  timeline.className = "airgap-panel airgap-interlock-panel";
   timeline.innerHTML = `
     <div class="airgap-panel-head">
       <h2>${airgapText("Real-time Interlock Process")}</h2>
-      <span>${airgapText("Power cut-off and lock sequence")}</span>
+      <span>${airgapText("Veeam API Polling")} · ${veeam.api_poll_interval_seconds || 1}s</span>
     </div>
-    <div class="airgap-timeline">
-      ${airGap.timeline.map((item) => `
-        <article class="airgap-step ${airgapStepClass(item.state)}">
+    <div class="veeam-live-status">
+      <strong>${veeam.connected ? "CONNECTED" : "CHECKING"}</strong>
+      <span>Veeam ${veeam.server}:${veeam.port} · ${veeam.job} · ${veeam.last_checked}</span>
+      <em>${airgapText(veeam.message)}</em>
+    </div>
+    <div class="airgap-interlock-flow">
+      ${timelineItems.map((item) => `
+        <article class="interlock-step interlock-${String(item.state || "PENDING").toLowerCase()}">
           <b>${item.step}</b>
-          <strong>${airgapText(item.title)}</strong>
-          <span>${airgapText(item.status || (item.state === "ACTIVE" ? "Safe state active" : "Complete"))}</span>
+          <strong>${airgapText(item.label || item.title)}</strong>
         </article>
       `).join("")}
     </div>
   `;
   sourceList.appendChild(timeline);
 
-  if (airGap.veeam) {
-    const veeam = airGap.veeam;
-    const lastBackup = veeam.last_backup || {};
-    const monitor = veeam.backup_monitor || {};
-    const sessionResultMonitor = veeam.session_result_monitor || {};
-    const policyMonitor = veeam.policy_monitor || {};
-    const policies = policyMonitor.policies || [];
-    const repositoryMonitor = veeam.repository_monitor || {};
-    const repositories = repositoryMonitor.repositories || [];
-    const progress = Math.max(0, Math.min(100, Number(monitor.progress || lastBackup.progress || 0)));
-    const veeamPanel = document.createElement("section");
-    veeamPanel.className = "airgap-panel veeam-panel";
-    veeamPanel.innerHTML = `
-      <div class="airgap-panel-head">
-        <h2>${airgapText("Backup Completion Monitor")}</h2>
-        <span>${airgapText("Progress and isolation readiness are refreshed every 5 seconds.")}</span>
-      </div>
-      <div class="veeam-monitor-hero">
-        <article class="veeam-monitor-primary">
-          <span>${airgapText("Last Backup Session")}</span>
-          <strong>${escapeHtml(lastBackup.name || "-")}</strong>
-          <em class="${veeamMonitorClass(monitor)}">${airgapText(monitor.completed ? "Backup Completed" : "Backup Not Completed")}</em>
-          <div class="veeam-progress" aria-label="${airgapText("Backup Progress")}">
-            <i style="width: ${progress}%"></i>
-          </div>
-          <p><b>${airgapText("Backup Progress")}</b><strong>${progress}%</strong></p>
-        </article>
-        <article class="veeam-monitor-gate">
-          <span>${airgapText("LOCK-FIX Interlock")}</span>
-          <strong class="${veeam.interlock_ready ? "veeam-status-live" : "veeam-status-wait"}">${airgapText(veeam.interlock_ready ? "Isolation Ready" : "Hold Isolation")}</strong>
-          <p>${escapeHtml(veeam.interlock_policy || "-")}</p>
-        </article>
-        <article class="veeam-monitor-time">
-          <span>${airgapText("Started")}</span>
-          <strong>${escapeHtml(monitor.started_at || lastBackup.creation_time || "-")}</strong>
-          <span>${airgapText("Ended")}</span>
-          <strong>${escapeHtml(monitor.ended_at || lastBackup.end_time || "-")}</strong>
-        </article>
-        <article class="veeam-monitor-results">
-          <span>${airgapText("Backup Result History")}</span>
-          <div>
-            <strong class="veeam-status-live">${sessionResultMonitor.success_count || 0}</strong><small>${airgapText("Success")}</small>
-            <strong class="veeam-status-error">${sessionResultMonitor.failed_count || 0}</strong><small>${airgapText("Failed")}</small>
-            <strong class="veeam-status-wait">${sessionResultMonitor.running_count || 0}</strong><small>${airgapText("Running")}</small>
-          </div>
-        </article>
-      </div>
-      <div class="veeam-summary-grid">
-        <article>
-          <span>${airgapText("Connection")}</span>
-          <strong class="${veeamStatusClass(veeam.status)}">${escapeHtml(veeam.status || "-")}</strong>
-          <p>${escapeHtml(veeam.message || "-")}</p>
-        </article>
-        <article>
-          <span>${airgapText("Endpoint")}</span>
-          <strong>${escapeHtml(veeam.endpoint || "-")}</strong>
-          <p>${airgapText("API Version")}: ${escapeHtml(veeam.api_version || "-")}</p>
-        </article>
-        <article>
-          <span>${airgapText("Result")}</span>
-          <strong class="${veeamMonitorClass(monitor)}">${escapeHtml(monitor.result || lastBackup.result || "-")}</strong>
-          <p>${escapeHtml(airgapText(monitor.title || "-"))}</p>
-        </article>
-      </div>
-      <div class="veeam-session-table-wrap">
-        <h3>${airgapText("Backup Policy Status")}</h3>
-        <p class="veeam-section-note">${airgapText("Veeam Job States compatible policy result view")}</p>
-        <div class="veeam-policy-summary">
-          <article><span>${airgapText("Policies")}</span><strong>${policyMonitor.policy_count || 0}</strong><p>${airgapText("Running")}: ${policyMonitor.running_count || 0}</p></article>
-          <article><span>${airgapText("Success")}</span><strong class="veeam-status-live">${policyMonitor.success_count || 0}</strong><p>${airgapText("Warning")}: ${policyMonitor.warning_count || 0}</p></article>
-          <article><span>${airgapText("Failed")}</span><strong class="veeam-status-error">${policyMonitor.failed_count || 0}</strong><p>${escapeHtml(policyMonitor.message || "-")}</p></article>
-        </div>
-        <table class="veeam-session-table veeam-policy-table">
-          <thead>
-            <tr><th>${airgapText("Policy Name")}</th><th>${airgapText("Type")}</th><th>${airgapText("State")}</th><th>${airgapText("Last Result")}</th><th>${airgapText("Last Run")}</th><th>${airgapText("Next Run")}</th><th>${airgapText("Enabled")}</th></tr>
-          </thead>
-          <tbody>
-            ${policies.length ? policies.map((item) => `
-              <tr>
-                <td>${escapeHtml(item.name || "-")}</td>
-                <td>${escapeHtml(item.type || "-")}</td>
-                <td>${escapeHtml(item.status || "-")}</td>
-                <td><strong class="${veeamStatusClass(item.last_result)}">${escapeHtml(item.last_result || "-")}</strong></td>
-                <td>${escapeHtml(item.last_run || "-")}</td>
-                <td>${escapeHtml(item.next_run || "-")}</td>
-                <td>${airgapText(item.is_enabled ? "Enabled" : "Disabled")}</td>
-              </tr>
-            `).join("") : `<tr><td colspan="7">${airgapText("No backup policy data")}</td></tr>`}
-          </tbody>
-        </table>
-        <h3>${airgapText("Repository Capacity")}</h3>
-        <p class="veeam-section-note">${airgapText("Repository capacity and free space from VBR REST API")}</p>
-        <div class="veeam-repository-console">
-          <aside class="veeam-repository-tree" aria-label="${airgapText("Backup Repositories")}">
-            <strong>${airgapText("Backup Infrastructure")}</strong>
-            <button type="button" class="active"><span></span>${airgapText("Backup Repositories")} <b>${repositoryMonitor.repository_count || 0}</b></button>
-            <button type="button"><span></span>${airgapText("Scale-out Repositories")} <b>0</b></button>
-            <button type="button"><span></span>${airgapText("Object Storage")} <b>0</b></button>
-          </aside>
-          <section class="veeam-repository-grid">
-            <div class="veeam-repository-toolbar">
-              <div>
-                <strong>${airgapText("Backup Repositories")}</strong>
-                <span>${airgapText("Online")}: ${repositoryMonitor.online_count || 0} / ${repositoryMonitor.repository_count || 0}</span>
-              </div>
-              <div class="repository-total-meter">
-                <span>${airgapText("Total Capacity")}</span>
-                <b>${formatGb(repositoryMonitor.total_capacity_gb)}</b>
-                <i><em style="width: ${Math.max(0, Math.min(100, Number(repositoryMonitor.usage_percent || 0)))}%"></em></i>
-              </div>
+  const detailLogs = document.createElement("section");
+  detailLogs.className = "airgap-panel airgap-step-log-panel";
+  detailLogs.innerHTML = `
+    <div class="airgap-panel-head">
+      <h2>${airgapText("Step Detail Logs")}</h2>
+      <span>${airgapText("Real-time transition evidence")}</span>
+    </div>
+    <div class="airgap-step-log-grid">
+      ${stepLogs.map((log) => `
+        <article class="step-log-card step-log-${String(log.state || "PENDING").toLowerCase()}">
+          <div class="step-log-top">
+            <b>${log.step}</b>
+            <div>
+              <strong>${airgapText(log.label)}</strong>
+              <span>${log.code}</span>
             </div>
-            <table class="veeam-session-table veeam-repository-table">
-              <thead>
-                <tr>
-                  <th>${airgapText("Name")}</th>
-                  <th>${airgapText("Status")}</th>
-                  <th>${airgapText("Type")}</th>
-                  <th>${airgapText("Host")}</th>
-                  <th>${airgapText("Path")}</th>
-                  <th>${airgapText("Capacity")}</th>
-                  <th>${airgapText("Free")}</th>
-                  <th>${airgapText("Used")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${repositories.length ? repositories.map((item) => `
-                  <tr>
-                    <td><span class="repository-name-cell"><i></i>${escapeHtml(item.name || "-")}</span></td>
-                    <td><span class="repository-status ${item.is_online ? "repository-online" : "repository-offline"}">${escapeHtml(item.is_online ? "Online" : "Offline")}</span></td>
-                    <td>${escapeHtml(item.type || "-")}</td>
-                    <td>${escapeHtml(item.host || "-")}</td>
-                    <td>${escapeHtml(item.path || "-")}</td>
-                    <td>${formatGb(item.capacity_gb)}</td>
-                    <td>${formatGb(item.free_gb)}</td>
-                    <td>
-                      <div class="repository-usage">
-                        <span><i style="width: ${Math.max(0, Math.min(100, Number(item.usage_percent || 0)))}%"></i></span>
-                        <b>${escapeHtml(String(item.usage_percent ?? 0))}%</b>
-                      </div>
-                    </td>
-                  </tr>
-                `).join("") : `<tr><td colspan="8">${airgapText("No repository data")}</td></tr>`}
-              </tbody>
-            </table>
-            <div class="veeam-repository-footer">
-              <span>${airgapText("Used Space")}: <b>${formatGb(repositoryMonitor.total_used_gb)}</b></span>
-              <span>${airgapText("Free Space")}: <b>${formatGb(repositoryMonitor.total_free_gb)}</b></span>
-              <span>${airgapText("Usage")}: <b>${repositoryMonitor.usage_percent || 0}%</b></span>
-            </div>
-          </section>
-        </div>
-        <h3>${airgapText("Backup Result History")}</h3>
-        <p class="veeam-section-note">${airgapText("Last 24 hours compatible Veeam session result view")}</p>
-        <table class="veeam-session-table">
-          <thead>
-            <tr><th>${airgapText("Job Name")}</th><th>${airgapText("Session Type")}</th><th>${airgapText("Status")}</th><th>${airgapText("Start Time")}</th><th>${airgapText("End Time")}</th></tr>
-          </thead>
-          <tbody>
-            ${(veeam.sessions || []).length ? (veeam.sessions || []).map((item) => `
-              <tr>
-                <td>${escapeHtml(item.name || "-")}</td>
-                <td>${escapeHtml(item.session_type || "-")}</td>
-                <td><strong class="${veeamStatusClass(item.result)}">${escapeHtml(item.result || item.state || "-")}</strong></td>
-                <td>${escapeHtml(item.creation_time || "-")}</td>
-                <td>${escapeHtml(item.end_time || "-")}</td>
-              </tr>
-            `).join("") : `<tr><td colspan="5">${airgapText("No session data")}</td></tr>`}
-          </tbody>
-        </table>
-        <h3>${airgapText("Recent Veeam Sessions")}</h3>
-        <p class="veeam-section-note">${airgapText("Latest Veeam REST sessions ordered by poll result")}</p>
-        <table class="veeam-session-table veeam-recent-session-table">
-          <thead>
-            <tr><th>${airgapText("Session")}</th><th>${airgapText("Session Type")}</th><th>${airgapText("State")}</th><th>${airgapText("Result")}</th><th>${airgapText("Progress")}</th></tr>
-          </thead>
-          <tbody>
-            ${(veeam.sessions || []).length ? (veeam.sessions || []).map((item) => `
-              <tr>
-                <td>${escapeHtml(item.name || "-")}</td>
-                <td>${escapeHtml(item.session_type || "-")}</td>
-                <td>${escapeHtml(item.state || "-")}</td>
-                <td><strong class="${veeamStatusClass(item.result)}">${escapeHtml(item.result || "-")}</strong></td>
-                <td>
-                  <div class="repository-usage">
-                    <span><i style="width: ${Math.max(0, Math.min(100, Number(item.progress || 0)))}%"></i></span>
-                    <b>${escapeHtml(String(item.progress ?? "-"))}${item.progress === undefined ? "" : "%"}</b>
-                  </div>
-                </td>
-              </tr>
-            `).join("") : `<tr><td colspan="5">${airgapText("No session data")}</td></tr>`}
-          </tbody>
-        </table>
-      </div>
-    `;
-    sourceList.appendChild(veeamPanel);
-  }
+          </div>
+          <dl>
+            <div><dt>상태</dt><dd>${log.state || "PENDING"}</dd></div>
+            <div><dt>확인 시간</dt><dd>${log.time || "-"}</dd></div>
+            <div><dt>연동</dt><dd>${airgapText(log.source || "-")}</dd></div>
+            <div><dt>색상 전환</dt><dd>${log.transition_allowed ? "허용" : "대기"}</dd></div>
+          </dl>
+          <p>${log.detail || "-"}</p>
+        </article>
+      `).join("")}
+    </div>
+  `;
+  sourceList.appendChild(detailLogs);
 
   const bayMap = document.createElement("section");
   bayMap.className = "airgap-panel";
@@ -2042,21 +2325,21 @@ function renderSources(data) {
       <span>${airgapText("Physical power and solenoid status by slot")}</span>
     </div>
     <div class="airgap-bay-grid">
-      ${airGap.bays.map((bay) => `
-        <article class="airgap-bay ${bay.lock.state === "LOCKED" ? "bay-locked" : "bay-ready"}">
+      ${bays.map((bay) => `
+        <article class="airgap-bay ${bay.lock?.state === "LOCKED" ? "bay-locked" : "bay-ready"}">
           <div class="bay-top">
             <strong>${bay.slot}</strong>
-            <span>${airgapText(bay.lock.label)}</span>
+            <span>${airgapText(bay.lock?.label)}</span>
           </div>
           <div class="bay-visual">
             <i class="circuit-cut" aria-hidden="true"></i>
             <i class="bay-lock" aria-hidden="true"></i>
           </div>
           <dl>
-            <div><dt>${airgapText("Power Cut-off")}</dt><dd>${airgapText(bay.power.label)}</dd></div>
-            <div><dt>${airgapText("Solenoid")}</dt><dd>${airgapText(bay.lock.description)}</dd></div>
-            <div><dt>UID</dt><dd>${airgapText(bay.integrity.uid)}</dd></div>
-            <div><dt>${airgapText("Hash")}</dt><dd>${airgapText(bay.integrity.hash)}</dd></div>
+            <div><dt>${airgapText("Power Cut-off")}</dt><dd>${airgapText(bay.power?.label)}</dd></div>
+            <div><dt>${airgapText("Solenoid")}</dt><dd>${airgapText(bay.lock?.description)}</dd></div>
+            <div><dt>UID</dt><dd>${airgapText(bay.integrity?.uid)}</dd></div>
+            <div><dt>${airgapText("Hash")}</dt><dd>${airgapText(bay.integrity?.hash)}</dd></div>
           </dl>
         </article>
       `).join("")}
@@ -2080,7 +2363,7 @@ function renderSources(data) {
       <table class="airgap-history">
         <thead><tr><th>${airgapText("Time")}</th><th>${airgapText("Target")}</th><th>UID</th><th>${airgapText("Hash")}</th></tr></thead>
         <tbody>
-          ${airGap.integrity_history.map((item) => `
+          ${integrityHistory.map((item) => `
             <tr><td>${item.time}</td><td>${airgapText(item.target)}</td><td>${airgapText(item.uid)}</td><td>${airgapText(item.hash)}</td></tr>
           `).join("")}
         </tbody>
@@ -2088,12 +2371,12 @@ function renderSources(data) {
     </article>
     <article class="airgap-panel emergency-panel">
       <div class="airgap-panel-head">
-        <h2>${airgapText(airGap.emergency.title)}</h2>
+        <h2>${airgapText(emergency.title)}</h2>
         <span>${airgapText("Two-administrator approval required")}</span>
       </div>
-      <p>${airgapText(airGap.emergency.description)}</p>
-      <button type="button">${airgapText(airGap.emergency.primary)}</button>
-      <strong>${airgapText(airGap.emergency.secondary)}</strong>
+      <p>${airgapText(emergency.description)}</p>
+      <button type="button">${airgapText(emergency.primary)}</button>
+      <strong>${airgapText(emergency.secondary)}</strong>
     </article>
   `;
   sourceList.appendChild(integrity);
@@ -2172,15 +2455,24 @@ function drawLineChart(series) {
   `;
 }
 function renderGauge(target, label, value, color) {
-  const radius = 62;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (circumference * value) / 100;
+  const key = label.toLowerCase();
+  const thresholds = { cpu: 80, memory: 80, disk: 85, network: 75, interface: 70 };
+  const values = latestMonitoringSeries.map((item) => Number(item[key] || 0));
+  const average = values.length ? values.reduce((sum, item) => sum + item, 0) / values.length : value;
+  const peak = values.length ? Math.max(...values) : value;
+  const status = peak >= (thresholds[key] || 80) ? "Warning" : "Normal";
+  const statusClass = status === "Warning" ? "warning" : "normal";
+  const valueColor = status === "Warning" ? "#e11d1d" : "#0b2e79";
   target.innerHTML = `
-    <svg viewBox="0 0 160 160">
-      <circle cx="80" cy="80" r="${radius}" fill="none" stroke="#f0f0f0" stroke-width="10"></circle>
-      <circle cx="80" cy="80" r="${radius}" fill="none" stroke="${color}" stroke-width="10" stroke-linecap="round" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"></circle>
-    </svg>
-    <div class="gauge-label"><span>${label}</span><strong style="color:${color}">${value}%</strong></div>
+    <div class="gauge-card-body">
+      <span>${escapeHtml(label)}</span>
+      <strong style="color:${valueColor}">${Number(value).toFixed(value % 1 ? 1 : 0)}%</strong>
+      <div class="gauge-meta">
+        <em>Avg ${average.toFixed(1)}%</em>
+        <em>Peak ${peak.toFixed(1)}%</em>
+      </div>
+      <b class="gauge-status-${statusClass}">${status}</b>
+    </div>
   `;
 }
 
@@ -2207,33 +2499,44 @@ function renderAudit(items) {
 }
 
 async function loadAll() {
-  const [summary, audit, integrated, monitoring, sources, dashboard, report, notification, detect, networkStatus, logs, license] = await Promise.all([
-    requestJson("/api/summary"),
-    requestJson("/api/audit"),
-    requestJson("/api/integrated"),
-    requestJson(monitoringUrl()),
-    requestJson("/api/sources"),
-    requestJson("/api/dashboard"),
-    requestJson("/api/report"),
-    requestJson("/api/notification"),
-    requestJson("/api/detect"),
-    requestJson("/api/network-status"),
-    requestJson(logsUrl()),
-    requestJson("/api/license"),
-  ]);
-  renderSlots(summary);
-  renderAudit(audit.items);
-  renderIntegrated(integrated);
-  renderMonitoring(monitoring);
-  renderSources(sources);
-  renderDashboard(dashboard);
-  renderReport(report);
-  renderNotification(notification);
-  renderDetect(detect);
-  renderNetworkStatus(networkStatus);
-  renderLogs(logs);
-  renderLicenseStatus(license);
-  updateLicenseGate(license);
+  const requests = {
+    summary: requestJson("/api/summary"),
+    audit: requestJson("/api/audit"),
+    integrated: requestJson("/api/integrated"),
+    monitoring: requestJson(monitoringUrl()),
+    sources: requestJson("/api/sources"),
+    dashboard: requestJson("/api/dashboard"),
+    report: requestJson("/api/report"),
+    notification: requestJson("/api/notification"),
+    detect: requestJson("/api/detect"),
+    networkStatus: requestJson("/api/network-status"),
+    logs: requestJson(logsUrl()),
+    license: requestJson("/api/license"),
+  };
+  const entries = await Promise.allSettled(Object.entries(requests).map(async ([key, promise]) => [key, await promise]));
+  const data = {};
+  entries.forEach((entry) => {
+    if (entry.status === "fulfilled") {
+      data[entry.value[0]] = entry.value[1];
+      return;
+    }
+    console.warn("Unable to refresh data", entry.reason);
+  });
+  if (data.summary) renderSlots(data.summary);
+  if (data.audit) renderAudit(data.audit.items);
+  if (data.integrated) renderIntegrated(data.integrated);
+  if (data.monitoring) renderMonitoring(data.monitoring);
+  if (data.sources) renderSources(data.sources);
+  if (data.dashboard) renderDashboard(data.dashboard);
+  if (data.report) renderReport(data.report);
+  if (data.notification) renderNotification(data.notification);
+  if (data.detect) renderDetect(data.detect);
+  if (data.networkStatus) renderNetworkStatus(data.networkStatus);
+  if (data.logs) renderLogs(data.logs);
+  if (data.license) {
+    renderLicenseStatus(data.license);
+    updateLicenseGate(data.license);
+  }
   lastUpdated.textContent = new Date().toLocaleString();
 }
 
@@ -2250,9 +2553,29 @@ async function runAction(action, slotId) {
   }
 }
 
+async function runEmergencyReconnect(slotId, verificationHash) {
+  setBusy(true);
+  emergencyActionStatus = "긴급 접속 검증을 실행 중입니다.";
+  try {
+    const result = await requestJson(`/api/emergency-reconnect?slot=${encodeURIComponent(slotId)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ verification_hash: verificationHash }),
+    });
+    emergencyActionStatus = result.message || "긴급 볼륨 접속이 완료되었습니다.";
+    await loadAll();
+  } catch (error) {
+    emergencyActionStatus = `긴급 접속 실패: ${error.message}`;
+    alert(error.message);
+    await loadAll();
+  } finally {
+    setBusy(false);
+  }
+}
+
 function setBusy(busy) {
   document.querySelectorAll("button").forEach((button) => {
-    button.disabled = busy;
+    button.disabled = busy || button.dataset.lockDisabled === "true";
   });
 }
 
@@ -2263,6 +2586,7 @@ qrCodeBox.addEventListener("click", confirmQrLogin);
 logoutButton.addEventListener("click", logout);
 logoutSideButton.addEventListener("click", logout);
 licenseForm.addEventListener("submit", registerLicense);
+sidebarToggle?.addEventListener("click", toggleSidebar);
 sideItems.forEach((item) => item.addEventListener("click", () => showView(item.dataset.view)));
 chartMenuButton.addEventListener("click", () => downloadMenu.classList.toggle("open"));
 chartZoomInButton.addEventListener("click", () => {
@@ -2302,6 +2626,7 @@ logsRangeApply.addEventListener("click", async () => {
 logsRangeDownload?.addEventListener("click", () => {
   window.location.href = logsCsvUrl();
 });
+reportRefreshButton?.addEventListener("click", reloadReport);
 metricFilterButtons.forEach((button) => {
   button.addEventListener("click", () => {
     activeMonitoringMetric = button.dataset.metric;
@@ -2321,6 +2646,7 @@ logRetentionSelect?.addEventListener("change", () => {
   settingsApplyStatus.textContent = translations[pendingUiSettings.language]?.["settings.pending"] || translations.en["settings.pending"];
 });
 settingsApplyButton.addEventListener("click", applyPendingUiSettings);
+applySidebarState();
 applyUiSettings();
 setupReportSignatures();
 checkSession();
