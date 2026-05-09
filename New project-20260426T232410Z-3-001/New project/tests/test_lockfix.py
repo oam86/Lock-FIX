@@ -532,6 +532,60 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("disk.unmount.verify", audit_text)
         self.assertNotIn("-Force", audit_text)
 
+    def test_storage_permission_denied_uses_system_fallback(self) -> None:
+        tmp_path = self.make_workspace()
+        audit_path = tmp_path / "system-fallback-audit.jsonl"
+
+        class DeniedRunner(CommandRunner):
+            def __init__(self) -> None:
+                super().__init__(dry_run=False)
+
+            def run(self, args: list[str], timeout: int = 120) -> str:
+                raise CommandError("Get-Volume : 액세스가 거부되었습니다.")
+
+        class FallbackDisk(DiskOperator):
+            def run_storage_command_as_system(self, command_text: str, timeout: int = 120) -> str:
+                self.audit.write("test.system_fallback.invoked", command=command_text)
+                return "SYSTEM fallback OK"
+
+        disk = FallbackDisk(DeniedRunner(), AuditLogger(audit_path))
+
+        output = disk.storage_run([
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            "Get-Volume -DriveLetter D",
+        ])
+
+        self.assertEqual(output, "SYSTEM fallback OK")
+        audit_text = audit_path.read_text(encoding="utf-8")
+        self.assertIn('"event": "storage.command.primary_denied"', audit_text)
+        self.assertIn('"event": "test.system_fallback.invoked"', audit_text)
+
+    def test_non_storage_permission_denied_does_not_use_system_fallback(self) -> None:
+        tmp_path = self.make_workspace()
+
+        class DeniedRunner(CommandRunner):
+            def __init__(self) -> None:
+                super().__init__(dry_run=False)
+
+            def run(self, args: list[str], timeout: int = 120) -> str:
+                raise CommandError("access is denied")
+
+        class FallbackDisk(DiskOperator):
+            def run_storage_command_as_system(self, command_text: str, timeout: int = 120) -> str:
+                raise AssertionError("fallback should not run for non-storage commands")
+
+        disk = FallbackDisk(DeniedRunner(), AuditLogger(tmp_path / "non-storage-audit.jsonl"))
+
+        with self.assertRaisesRegex(CommandError, "access is denied"):
+            disk.storage_run([
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "Write-Output 'hello'",
+            ])
+
     def test_veeam_api_version_defaults_to_vbr_reference_version(self) -> None:
         tmp_path = self.make_workspace()
 
@@ -772,9 +826,9 @@ class LockFixTests(unittest.TestCase):
 
         self.assertIn(".veeam-log-wrap", css)
         self.assertIn("box-sizing: border-box;", css)
-        self.assertIn("height: clamp(360px, 58vh, 430px);", css)
-        self.assertIn("max-height: 430px;", css)
-        self.assertIn("border: 1px solid #2b72df;", css)
+        self.assertIn("height: clamp(280px, 42vh, 340px);", css)
+        self.assertIn("max-height: 340px;", css)
+        self.assertIn("border: 1px solid #c8d8ea;", css)
         self.assertIn("direction: ltr;", css)
         self.assertIn("overflow-x: auto;", css)
         self.assertIn("overflow-y: scroll;", css)

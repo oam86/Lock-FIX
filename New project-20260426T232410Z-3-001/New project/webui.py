@@ -7,11 +7,14 @@ import io
 import mimetypes
 import os
 import platform
+import re
 import secrets
 import shutil
 import ssl
 import hashlib
 import socket
+import subprocess
+import threading
 import time
 import uuid
 import zipfile
@@ -45,6 +48,8 @@ class WebContext:
         self.license_path = ROOT / "runtime" / "license.json"
         self.report_customer_path = ROOT / "runtime" / "report_customer.json"
         self.report_extras_path = ROOT / "runtime" / "report_extras.json"
+        self.emergency_jobs = {}
+        self.emergency_jobs_lock = threading.Lock()
 
     @property
     def app_config(self):
@@ -57,6 +62,178 @@ class WebContext:
     @property
     def controller(self) -> LockFixController:
         return LockFixController(self.config)
+
+    def start_emergency_reconnect(self, slot_id: str, repository_path: str) -> dict:
+        with self.emergency_jobs_lock:
+            running = self.emergency_jobs.get(slot_id)
+            if running and running.get("status") == "running":
+                return dict(running)
+            approved_until = self.controller.grant_online_approval(
+                slot_id,
+                ttl_seconds=900,
+                reason="admin_emergency_reconnect_requested",
+            )
+            job = {
+                "job_id": uuid.uuid4().hex,
+                "slot_id": slot_id,
+                "repository_path": repository_path,
+                "status": "running",
+                "started_at": datetime.now().isoformat(timespec="seconds"),
+                "background_started_at": "",
+                "approved_until": approved_until,
+                "message": "Emergency reconnect job started in background.",
+            }
+            self.emergency_jobs[slot_id] = job
+        self.controller.audit.write(
+            "emergency.reconnect.request",
+            slot_id=slot_id,
+            job_id=job["job_id"],
+            repository_path=repository_path,
+            approved_until=job["approved_until"],
+            message="Emergency reconnect request accepted by WebUI. Background worker launch is being verified.",
+        )
+        worker = threading.Thread(
+            target=self._run_emergency_reconnect_job,
+            args=(slot_id, repository_path, job["job_id"]),
+            daemon=True,
+        )
+        worker.start()
+        return dict(job)
+
+    def _run_emergency_reconnect_job(self, slot_id: str, repository_path: str, job_id: str) -> None:
+        controller = self.controller
+        background_started_at = datetime.now().isoformat(timespec="seconds")
+        with self.emergency_jobs_lock:
+            current = self.emergency_jobs.get(slot_id, {})
+            if current.get("job_id") == job_id:
+                current["background_started_at"] = background_started_at
+                current["message"] = "Emergency reconnect background worker is running."
+                self.emergency_jobs[slot_id] = current
+        controller.audit.write(
+            "emergency.reconnect.background.started",
+            slot_id=slot_id,
+            job_id=job_id,
+            repository_path=repository_path,
+            message="Emergency reconnect accepted by WebUI and moved to a background worker.",
+        )
+        try:
+            state = controller.emergency_reconnect(slot_id, repository_path=repository_path)
+        except Exception as exc:
+            controller.audit.write(
+                "emergency.reconnect.background.error",
+                slot_id=slot_id,
+                job_id=job_id,
+                repository_path=repository_path,
+                error=str(exc),
+            )
+            status = {"status": "error", "error": str(exc), "finished_at": datetime.now().isoformat(timespec="seconds")}
+        else:
+            controller.audit.write(
+                "emergency.reconnect.background.complete",
+                slot_id=slot_id,
+                job_id=job_id,
+                repository_path=repository_path,
+                state=state.value,
+            )
+            status = {"status": "complete", "state": state.value, "finished_at": datetime.now().isoformat(timespec="seconds")}
+        with self.emergency_jobs_lock:
+            current = self.emergency_jobs.get(slot_id, {})
+            if current.get("job_id") == job_id:
+                current.update(status)
+                self.emergency_jobs[slot_id] = current
+
+    def emergency_reconnect_status(self, slot_id: str, job_id: str = "") -> dict:
+        with self.emergency_jobs_lock:
+            job = dict(self.emergency_jobs.get(slot_id) or {})
+        if not job:
+            return {"slot_id": slot_id, "status": "idle", "message": "No emergency reconnect job is active."}
+        if job_id and job.get("job_id") != job_id:
+            return {"slot_id": slot_id, "status": "stale", "message": "A different emergency reconnect job is active.", "job": job}
+        try:
+            started_at = datetime.fromisoformat(str(job.get("started_at") or ""))
+            elapsed = (datetime.now() - started_at).total_seconds()
+        except ValueError:
+            elapsed = 0
+        job["elapsed_seconds"] = int(max(0, elapsed))
+        if job.get("status") == "running" and job.get("background_started_at"):
+            timeout_seconds = max(180, int(getattr(self.config, "disk_wait_seconds", 60)) + 120)
+            if elapsed >= timeout_seconds:
+                message = "재접속 작업 제한 시간을 초과했습니다. 실제 볼륨 연결이 완료되지 않았습니다."
+                guidance = [
+                    "저장된 Volume GUID/accessPath가 유지되는지 확인하세요.",
+                    "LOCK-FIX WebUI 서비스를 LocalSystem 또는 관리자 권한으로 실행하세요.",
+                    "서버에서 mountvol D:\\ \\\\?\\Volume{...}\\ 방식으로 수동 복구가 가능한지 확인하세요.",
+                    "Get-Disk/Get-Partition/Get-Volume 권한과 Storage/WMI 서비스를 점검하세요.",
+                ]
+                updated = {
+                    **job,
+                    "status": "error",
+                    "error": message,
+                    "message": message,
+                    "resolution": guidance,
+                    "finished_at": datetime.now().isoformat(timespec="seconds"),
+                }
+                with self.emergency_jobs_lock:
+                    current = self.emergency_jobs.get(slot_id, {})
+                    if current.get("job_id") == job.get("job_id") and current.get("status") == "running":
+                        self.emergency_jobs[slot_id] = updated
+                        job = dict(updated)
+                self.controller.audit.write(
+                    "emergency.reconnect.background.timeout",
+                    slot_id=slot_id,
+                    job_id=job.get("job_id", ""),
+                    repository_path=job.get("repository_path", ""),
+                    elapsed_seconds=int(elapsed),
+                    timeout_seconds=timeout_seconds,
+                    message=message,
+                    resolution=" | ".join(guidance),
+                )
+        if job.get("status") == "running":
+            self.controller.audit.write(
+                "emergency.reconnect.heartbeat",
+                slot_id=slot_id,
+                job_id=job.get("job_id", ""),
+                repository_path=job.get("repository_path", ""),
+                background_started=bool(job.get("background_started_at")),
+                elapsed_seconds=job.get("elapsed_seconds", 0),
+                message=(
+                    "Emergency reconnect background worker is running."
+                    if job.get("background_started_at")
+                    else "Emergency reconnect request is waiting for background worker start confirmation."
+                ),
+            )
+        if job.get("status") == "running" and not job.get("background_started_at"):
+            if elapsed >= 12:
+                message = "재접속 작업이 시작되지 않았습니다. 관리자 권한/서비스 상태 확인 필요"
+                guidance = [
+                    "LOCK-FIX를 관리자 권한으로 재시작하세요.",
+                    "WebUI 서비스가 최신 소스로 재시작되었는지 확인하세요.",
+                    "Windows 디스크/파티션 API(Get-Disk, Get-Volume, Get-Partition) 접근 권한을 확인하세요.",
+                    "작업 로그에 emergency.reconnect.background.started가 없으면 백그라운드 작업이 실제로 진입하지 못한 상태입니다.",
+                ]
+                updated = {
+                    **job,
+                    "status": "not_started",
+                    "message": message,
+                    "resolution": guidance,
+                    "finished_at": datetime.now().isoformat(timespec="seconds"),
+                }
+                with self.emergency_jobs_lock:
+                    current = self.emergency_jobs.get(slot_id, {})
+                    if current.get("job_id") == job.get("job_id") and current.get("status") == "running":
+                        self.emergency_jobs[slot_id] = updated
+                        job = dict(updated)
+                    else:
+                        job = dict(current or updated)
+                self.controller.audit.write(
+                    "emergency.reconnect.background.not_started",
+                    slot_id=slot_id,
+                    job_id=job.get("job_id", ""),
+                    repository_path=job.get("repository_path", ""),
+                    message=message,
+                    resolution=" | ".join(guidance),
+                )
+        return {"slot_id": slot_id, **job}
 
 
 class LockFixWebHandler(BaseHTTPRequestHandler):
@@ -80,6 +257,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/console/status":
                 self.require_auth()
                 self.send_json(self.console_status())
+            elif parsed.path == "/api/service/status":
+                self.require_auth()
+                self.send_json(self.lockfix_service_status())
             elif parsed.path == "/api/qr-login/status":
                 token = parse_qs(parsed.query).get("token", [""])[0]
                 response = self.qr_status_response(token)
@@ -124,7 +304,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 self.send_json(self.dashboard_summary())
             elif parsed.path == "/api/notification":
                 self.require_auth()
-                self.send_json({"items": self.notification_items()})
+                self.send_json(self.notification_summary())
             elif parsed.path == "/api/detect":
                 self.require_auth()
                 self.send_json(self.detect_summary())
@@ -143,12 +323,22 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                         params.get("end", [""])[0],
                         params.get("page", ["1"])[0],
                         params.get("retention", ["30"])[0],
+                        params.get("severity", [""])[0],
+                        params.get("source", [""])[0],
+                        params.get("q", [""])[0],
                     )
                 )
             elif parsed.path == "/api/logs.csv":
                 self.require_auth()
                 params = parse_qs(parsed.query)
-                self.send_logs_csv(params.get("start", [""])[0], params.get("end", [""])[0], params.get("retention", ["30"])[0])
+                self.send_logs_csv(
+                    params.get("start", [""])[0],
+                    params.get("end", [""])[0],
+                    params.get("retention", ["30"])[0],
+                    params.get("severity", [""])[0],
+                    params.get("source", [""])[0],
+                    params.get("q", [""])[0],
+                )
             elif parsed.path == "/api/license":
                 self.require_auth()
                 self.send_json(self.license_status())
@@ -157,6 +347,12 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 inventory = integrated_source_inventory()
                 inventory["air_gap"] = self.air_gap_summary()
                 self.send_json(inventory)
+            elif parsed.path == "/api/emergency-reconnect/status":
+                self.require_auth()
+                params = parse_qs(parsed.query)
+                slot_id = self.query_slot(parsed.query)
+                job_id = str(params.get("job_id", [""])[0])
+                self.send_json(self.context.emergency_reconnect_status(slot_id, job_id))
             else:
                 self.send_error(404, "not found")
         except PermissionError as exc:
@@ -217,6 +413,10 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 self.require_auth()
                 payload = self.read_json_body()
                 self.send_json(self.save_report_extras(payload))
+            elif parsed.path == "/api/service/control":
+                self.require_auth()
+                payload = self.read_json_body()
+                self.send_json(self.lockfix_service_control(str(payload.get("action") or "")))
             elif parsed.path == "/api/isolate":
                 self.require_auth()
                 slot_id = self.query_slot(parsed.query)
@@ -231,14 +431,22 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 self.require_auth()
                 payload = self.read_json_body()
                 slot_id = self.query_slot(parsed.query)
-                state = self.context.controller.emergency_reconnect(slot_id, str(payload.get("verification_hash", "")))
+                slot = self.context.config.slot(slot_id)
+                repository_path = str(payload.get("repository_path") or slot.mount_point or slot.device or "").strip()
+                job = self.context.start_emergency_reconnect(slot_id, repository_path)
                 self.send_json(
                     {
                         "slot_id": slot_id,
-                        "state": state.value,
-                        "message": "Emergency volume access verified. Backup volume is reconnected.",
+                        "accepted": True,
+                        "job_id": job["job_id"],
+                        "status": job["status"],
+                        "device": slot.device,
+                        "mount_point": str(slot.mount_point),
+                        "repository_path": repository_path,
+                        "message": "Emergency volume access job started. Reconnect continues in background.",
                         "summary": self.summary(),
-                    }
+                    },
+                    status=202,
                 )
             else:
                 self.send_error(404, "not found")
@@ -528,6 +736,123 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "message": "Web UI status is provided by Python functions. No .cmd execution is required from the browser.",
         }
 
+    def lockfix_service_name(self) -> str:
+        return (
+            os.environ.get("LOCKFIX_WEBUI_SERVICE_NAME", "").strip()
+            or os.environ.get("LOCKFIX_SERVICE_NAME", "").strip()
+            or "LOCKFIXWebUI"
+        )
+
+    def service_command(self, *args: str, timeout: float = 8.0) -> subprocess.CompletedProcess:
+        sc_path = shutil.which("sc.exe") or str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "sc.exe")
+        return subprocess.run(
+            [sc_path, *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            check=False,
+        )
+
+    def lockfix_service_status(self) -> dict:
+        service_name = self.lockfix_service_name()
+        if platform.system().lower() != "windows":
+            return {
+                "service_name": service_name,
+                "display_name": "LOCK-FIX WebUI Service",
+                "state": "UNSUPPORTED",
+                "running": False,
+                "can_start": False,
+                "can_stop": False,
+                "message": "Windows 서비스 제어는 Windows 환경에서만 사용할 수 있습니다.",
+            }
+        try:
+            result = self.service_command("query", service_name)
+        except Exception as exc:
+            return {
+                "service_name": service_name,
+                "display_name": "LOCK-FIX WebUI Service",
+                "state": "ERROR",
+                "running": False,
+                "can_start": False,
+                "can_stop": False,
+                "message": f"서비스 상태 조회 실패: {exc}",
+            }
+        output = "\n".join(part for part in [result.stdout, result.stderr] if part).strip()
+        if result.returncode != 0:
+            state = "NOT_INSTALLED" if "1060" in output or "does not exist" in output.lower() else "ERROR"
+            return {
+                "service_name": service_name,
+                "display_name": "LOCK-FIX WebUI Service",
+                "state": state,
+                "running": False,
+                "can_start": False,
+                "can_stop": False,
+                "message": output or f"서비스 상태 조회 실패 코드: {result.returncode}",
+            }
+        state = "UNKNOWN"
+        for line in output.splitlines():
+            match = re.search(r"STATE\s*:\s*\d+\s+([A-Z_]+)", line)
+            if match:
+                state = match.group(1)
+                break
+        running = state == "RUNNING"
+        return {
+            "service_name": service_name,
+            "display_name": "LOCK-FIX WebUI Service",
+            "state": state,
+            "running": running,
+            "can_start": state in {"STOPPED", "STOP_PENDING", "PAUSED", "UNKNOWN"},
+            "can_stop": running,
+            "message": f"{service_name} 서비스 상태: {state}",
+            "detail": output,
+        }
+
+    def lockfix_service_control(self, action: str) -> dict:
+        action = action.strip().lower()
+        if action not in {"start", "stop"}:
+            return {"ok": False, "error": "지원하지 않는 서비스 제어 요청입니다."}
+        service_name = self.lockfix_service_name()
+        self.write_audit_event("lockfix_service_control_requested", service=service_name, action=action)
+        if action == "stop":
+            threading.Thread(target=self.delayed_service_command, args=("stop", service_name), daemon=True).start()
+            status = self.lockfix_service_status()
+            status.update(
+                {
+                    "ok": True,
+                    "accepted": True,
+                    "action": action,
+                    "message": f"{service_name} 서비스 중지 요청을 접수했습니다.",
+                }
+            )
+            return status
+        try:
+            result = self.service_command("start", service_name, timeout=12)
+        except Exception as exc:
+            self.write_audit_event("lockfix_service_control_failed", service=service_name, action=action, error=str(exc))
+            return {"ok": False, "service_name": service_name, "action": action, "error": str(exc)}
+        output = "\n".join(part for part in [result.stdout, result.stderr] if part).strip()
+        if result.returncode != 0:
+            self.write_audit_event("lockfix_service_control_failed", service=service_name, action=action, error=output)
+            return {"ok": False, "service_name": service_name, "action": action, "error": output or f"서비스 시작 실패 코드: {result.returncode}"}
+        self.write_audit_event("lockfix_service_control_completed", service=service_name, action=action, output=output)
+        status = self.lockfix_service_status()
+        status.update({"ok": True, "accepted": True, "action": action, "message": f"{service_name} 서비스 시작 요청이 완료되었습니다."})
+        return status
+
+    def delayed_service_command(self, action: str, service_name: str) -> None:
+        time.sleep(0.8)
+        try:
+            result = self.service_command(action, service_name, timeout=12)
+            output = "\n".join(part for part in [result.stdout, result.stderr] if part).strip()
+            if result.returncode == 0:
+                self.write_audit_event("lockfix_service_control_completed", service=service_name, action=action, output=output)
+            else:
+                self.write_audit_event("lockfix_service_control_failed", service=service_name, action=action, error=output)
+        except Exception as exc:
+            self.write_audit_event("lockfix_service_control_failed", service=service_name, action=action, error=str(exc))
+
     def open_latest_package_folder(self) -> None:
         if self.client_address[0] not in {"127.0.0.1", "::1"}:
             self.send_json({"error": "local access only"}, status=403)
@@ -589,7 +914,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             {"step": 2, "title": "Flush running", "label": "Flush 실행", "state": "PENDING", "code": "FLUSHING"},
             {"step": 3, "title": "I/O checking", "label": "I/O 종료 확인", "state": "PENDING", "code": "IO_CHECKING"},
             {"step": 4, "title": "Unmount", "label": "Unmount", "state": "PENDING", "code": "UNMOUNTING"},
-            {"step": 5, "title": "Power off", "label": "전원 OFF", "state": "PENDING", "code": "POWERING_OFF"},
+            {"step": 5, "title": "Offline", "label": "오프라인", "state": "PENDING", "code": "DISK_OFFLINING"},
         ]
         for item in veeam_states:
             if veeam_connected:
@@ -609,9 +934,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     "device": slot["device"],
                     "mount_point": slot["mount_point"],
                     "power": {
-                        "state": "CUT_OFF",
-                        "label": "Physical Power Cut-off Complete",
-                        "description": "Hard Power-Off circuit is open and the data path is physically isolated.",
+                        "state": "OFFLINE",
+                        "label": "Disk Offline Complete",
+                        "description": "Windows disk offline isolation is active after unmount.",
                     },
                     "lock": {
                         "state": "LOCKED" if locked else "READY",
@@ -691,6 +1016,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
     def emergency_access_summary(self, summary: dict | None = None) -> dict:
         config = self.context.config
         status = self.context.controller.status()
+        storage_capability = LockFixWebHandler.storage_api_capability(self)
         slot_summaries = []
         for slot_id, slot in config.slots.items():
             current_state = status.get(slot_id, "READY_MOCK")
@@ -716,17 +1042,60 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 expected_hash = ""
                 hash_status = "MOUNT_ACCESS_ERROR" if mount_error else "WAITING_FOR_MOUNT"
             unmount_record = LockFixWebHandler.latest_audit_record(self, slot_id, {"disk.unmount", "disk.unmount.error"})
-            power_record = LockFixWebHandler.latest_audit_record(self, slot_id, {"power.mock.off", "power.command.off", "power.mock.off.error", "power.command.off.error"})
+            power_record = LockFixWebHandler.latest_audit_record(
+                self,
+                slot_id,
+                {"disk.offline", "disk.offline.error", "power.mock.off", "power.command.off", "power.mock.off.error", "power.command.off.error"},
+            )
             reconnect_records = LockFixWebHandler.recent_reconnect_audit_records(self, slot_id)
+            reconnect_all_records = LockFixWebHandler.recent_reconnect_audit_records(self, slot_id, limit=240, reset_on_request=False)
+            reconnect_recent_records, _ = LockFixWebHandler.split_reconnect_audit_records_by_days(self, reconnect_records, days=7)
+            reconnect_all_recent_records, reconnect_older_records = LockFixWebHandler.split_reconnect_audit_records_by_days(self, reconnect_all_records, days=7)
             reconnect_history = [
                 item
-                for item in (LockFixWebHandler.format_reconnect_audit_record(self, record) for record in reconnect_records)
+                for item in (LockFixWebHandler.format_reconnect_audit_record(self, record) for record in reconnect_recent_records)
                 if item
             ]
+            reconnect_history_more = [
+                item
+                for item in (LockFixWebHandler.format_reconnect_audit_record(self, record) for record in reconnect_older_records)
+                if item
+            ]
+            last_reconnect_record = reconnect_all_recent_records[-1] if reconnect_all_recent_records else None
+            last_reconnect = LockFixWebHandler.format_audit_timestamp(self, last_reconnect_record.get("ts")) if last_reconnect_record else "-"
             normalized_device = str(slot.device).strip().replace("/", "\\").rstrip("\\").lower()
             normalized_mount = str(slot.mount_point).strip().replace("/", "\\").rstrip("\\").lower()
             os_volume_blocked = normalized_device in {"c:", "c"} or normalized_mount in {"c:", "c"}
-            state_allows_access = current_state in {"ISOLATED", "POWERING_OFF", "UNMOUNTING", "WAITING_DISK", "ERROR", "QUARANTINE"}
+            with self.context.emergency_jobs_lock:
+                reconnect_job = dict(self.context.emergency_jobs.get(slot_id) or {})
+            reconnect_running = reconnect_job.get("status") == "running"
+            online_approval_active = self.context.controller.online_approval_active(slot_id)
+            if current_state == "ISOLATED" and not reconnect_running and not online_approval_active:
+                try:
+                    self.context.controller.reblock_unauthorized_online(slot_id, reason="webui_isolated_state_guard")
+                except Exception as exc:
+                    self.context.controller.audit.write(
+                        "disk.online.unauthorized.guard.error",
+                        slot_id=slot_id,
+                        reason="webui_isolated_state_guard",
+                        error=str(exc),
+                    )
+            elif current_state == "ISOLATED" and (reconnect_running or online_approval_active):
+                self.context.controller.audit.write(
+                    "disk.online.unauthorized.guard.paused",
+                    slot_id=slot_id,
+                    reason="emergency_reconnect_active" if reconnect_running else "online_approval_active",
+                    job_id=str(reconnect_job.get("job_id") or ""),
+                    message="Unauthorized online reblock guard is paused during administrator-approved emergency reconnect.",
+                )
+            state_allows_access = current_state in {"ISOLATED", "DISK_OFFLINING", "POWERING_OFF", "UNMOUNTING", "WAITING_DISK", "ERROR", "QUARANTINE"}
+            volume_needs_reconnect = not mount_exists or hash_status in {"WAITING_FOR_MOUNT", "MOUNT_ACCESS_ERROR"}
+            emergency_eligible = (state_allows_access or volume_needs_reconnect) and not os_volume_blocked
+            blocked_reason = ""
+            if os_volume_blocked:
+                blocked_reason = "C:\\ OS volume is permanently blocked."
+            elif not emergency_eligible:
+                blocked_reason = "긴급 접속 대상 상태가 아닙니다."
             slot_summaries.append(
                 {
                     "slot_id": slot_id,
@@ -734,8 +1103,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     "mount_point": str(slot.mount_point),
                     "state": current_state,
                     "dry_run": config.dry_run,
-                    "eligible": state_allows_access and not os_volume_blocked,
-                    "blocked_reason": "C:\\ OS volume is permanently blocked." if os_volume_blocked else "",
+                    "eligible": emergency_eligible,
+                    "blocked_reason": blocked_reason,
                     "authorization_hash_short": f"{auth_hash[:16]}...{auth_hash[-8:]}" if len(auth_hash) > 28 else auth_hash,
                     "authorization_hash_protected": True,
                     "uid_ok": uid_ok,
@@ -746,8 +1115,12 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     "mount_error": mount_error,
                     "last_unmount": LockFixWebHandler.compact_log_value(self, unmount_record.get("output") or unmount_record.get("error") or "-") if unmount_record else "-",
                     "last_power_off": LockFixWebHandler.compact_log_value(self, power_record.get("output") or power_record.get("error") or "-") if power_record else "-",
-                    "last_reconnect": reconnect_history[-1] if reconnect_history else "-",
-                    "reconnect_history": reconnect_history[-12:],
+                    "last_reconnect": last_reconnect,
+                    "last_reconnect_within_days": 7,
+                    "reconnect_history": reconnect_history[-80:],
+                    "reconnect_history_more": reconnect_history_more[-120:],
+                    "reconnect_history_more_count": len(reconnect_history_more),
+                    "storage_api_capability": storage_capability,
                 }
             )
         first = slot_summaries[0] if slot_summaries else {}
@@ -758,15 +1131,60 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "secondary": "C:\\ OS 볼륨은 어떤 경우에도 마운트 해제/재접속 작업 대상이 될 수 없습니다.",
             "slot": first,
             "slots": slot_summaries,
+            "storage_api_capability": storage_capability,
         }
 
-    def recent_reconnect_audit_records(self, slot_id: str, limit: int = 20) -> list[dict]:
+    def storage_api_capability(self) -> dict:
+        path = ROOT / "runtime" / "storage-api-capability.json"
+        default_steps = [
+            "1. Windows 기본 저장소 구성 복구: winmgmt, vds, storsvc, Schedule 서비스를 확인하고 기동합니다.",
+            "2. WMI/CIM 저장소 복구: Storage WMI/CIM 권한, WMI repository, Storage 모듈 상태를 복구합니다.",
+            "3. LOCK-FIX 대체 경로 사용: 저장된 volumePath/volumeMountPath 기준으로 mountvol 드라이브 문자 재할당을 시도합니다.",
+            "4. 저장된 볼륨 식별정보 강화: volumePath, volumeMountPath, diskNumber, partitionNumber, diskUniqueId, volumeUniqueId, accessPath를 유지합니다.",
+            "5. 그래도 실패하면 서버 정책 차단으로 판단: 긴급 재접속 제한 상태로 표시하고 운영 정책/WMI 보안을 점검합니다.",
+        ]
+        if not path.exists():
+            return {
+                "status": "UNKNOWN",
+                "emergency_reconnect_mode": "storage_api_or_mountvol",
+                "reason": "Storage API install preflight has not been recorded yet.",
+                "alternative_steps": default_steps,
+            }
+        try:
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return {
+                "status": "UNKNOWN",
+                "emergency_reconnect_mode": "storage_api_or_mountvol",
+                "reason": f"Storage API capability record could not be read: {exc}",
+                "alternative_steps": default_steps,
+            }
+        if not isinstance(data, dict):
+            data = {}
+        steps = data.get("alternative_steps") if isinstance(data.get("alternative_steps"), list) else default_steps
+        return {
+            "checked_at": str(data.get("checked_at") or ""),
+            "stage": str(data.get("stage") or ""),
+            "status": str(data.get("status") or "UNKNOWN"),
+            "emergency_reconnect_mode": str(data.get("emergency_reconnect_mode") or "storage_api_or_mountvol"),
+            "reason": str(data.get("reason") or ""),
+            "alternative_steps": [str(step) for step in steps],
+        }
+
+    def recent_reconnect_audit_records(self, slot_id: str, limit: int = 120, reset_on_request: bool = True) -> list[dict]:
         lines = LockFixWebHandler.audit_log_lines(self)
         events = {
             "emergency.reconnect.request",
             "emergency.reconnect.approved",
             "emergency.reconnect.denied",
             "emergency.reconnect.complete",
+            "emergency.reconnect.failure.diagnostic",
+            "emergency.reconnect.background.error",
+            "emergency.reconnect.background.started",
+            "emergency.reconnect.background.complete",
+            "emergency.reconnect.background.not_started",
+            "emergency.reconnect.heartbeat",
+            "emergency.reconnect.step",
             "state.transition",
             "power.mock.on.start",
             "power.mock.on.tick",
@@ -775,6 +1193,12 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "power.command.on.tick",
             "power.command.on",
             "power.command.on.error",
+            "disk.online.approved",
+            "disk.online.start",
+            "disk.online.tick",
+            "disk.online",
+            "disk.online.error",
+            "disk.online.approval.cleared",
             "disk.reconnect.plan",
             "disk.wait.start",
             "disk.wait.tick",
@@ -788,17 +1212,21 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "disk.mount_ro.error",
             "disk.health.scan.start",
             "disk.health.scan",
+            "disk.health.scan.skipped",
             "disk.health.scan.error",
             "disk.mount_rw.start",
             "disk.mount_rw.tick",
             "disk.mount_rw",
             "disk.mount_rw.error",
+            "disk.storage_api.self_check.error",
+            "disk.storage_api.self_check",
             "verify.uid",
             "verify.hash",
         }
         records = []
         reconnect_states = {
             "RECONNECT_REQUESTED",
+            "DISK_ONLINING",
             "POWERING_ON",
             "WAITING_DISK",
             "VERIFYING_UID",
@@ -819,10 +1247,24 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 continue
             if record.get("event") == "state.transition" and str(record.get("state") or "") not in reconnect_states:
                 continue
-            if record.get("event") == "emergency.reconnect.request" or (
+            if reset_on_request and (record.get("event") == "emergency.reconnect.request" or (
                 record.get("event") == "state.transition" and str(record.get("state") or "") == "RECONNECT_REQUESTED"
-            ):
+            )):
                 records = []
+            if (
+                record.get("event") == "state.transition"
+                and str(record.get("state") or "") == "ERROR"
+                and records
+                and records[-1].get("event") == "state.transition"
+                and str(records[-1].get("state") or "") == "ERROR"
+            ):
+                previous = dict(records[-1])
+                previous["repeat_count"] = int(previous.get("repeat_count") or 1) + 1
+                if not previous.get("error") and record.get("error"):
+                    previous["error"] = record.get("error")
+                previous["ts"] = record.get("ts") or previous.get("ts")
+                records[-1] = previous
+                continue
             records.append(record)
         return records[-limit:]
 
@@ -835,18 +1277,67 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             return f"{prefix}LOCK-FIX Reconnect REQUEST - slot {slot_id}, emergency hash verification requested."
         if event == "emergency.reconnect.approved":
             return f"{prefix}LOCK-FIX Reconnect APPROVED - slot {slot_id}, authorization hash matched."
+        if event == "disk.online.approved":
+            approved_until = LockFixWebHandler.compact_log_value(self, record.get("approved_until") or "-")
+            return f"{prefix}LOCK-FIX Reconnect ONLINE APPROVED - slot {slot_id}, limited online window until {approved_until}"
         if event == "emergency.reconnect.denied":
             reason = LockFixWebHandler.compact_log_value(self, record.get("reason") or "verification_hash_mismatch")
             return f"{prefix}LOCK-FIX Reconnect DENIED - slot {slot_id}, {reason}"
+        if event == "emergency.reconnect.background.not_started":
+            message = LockFixWebHandler.compact_log_value(self, record.get("message") or "재접속 작업이 시작되지 않았습니다. 관리자 권한/서비스 상태 확인 필요")
+            resolution = LockFixWebHandler.compact_log_value(self, record.get("resolution") or "LOCK-FIX를 관리자 권한으로 재시작하고 WebUI 서비스를 최신 소스로 재시작하세요.")
+            return f"{prefix}LOCK-FIX Reconnect NOT STARTED - slot {slot_id}, {message} | 해결: {resolution}"
+        if event == "emergency.reconnect.background.started":
+            message = LockFixWebHandler.compact_log_value(self, record.get("message") or "background worker started")
+            return f"{prefix}LOCK-FIX Reconnect BACKGROUND STARTED - slot {slot_id}, {message}"
+        if event == "emergency.reconnect.background.complete":
+            state = LockFixWebHandler.compact_log_value(self, record.get("state") or "complete")
+            return f"{prefix}LOCK-FIX Reconnect BACKGROUND COMPLETE - slot {slot_id}, state {state}"
+        if event == "emergency.reconnect.heartbeat":
+            message = LockFixWebHandler.compact_log_value(self, record.get("message") or "reconnect job heartbeat")
+            started = "started" if record.get("background_started") else "not started yet"
+            return f"{prefix}LOCK-FIX Reconnect HEARTBEAT - slot {slot_id}, background {started}, {message}"
+        if event == "emergency.reconnect.background.error":
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "background worker failed")
+            return f"{prefix}LOCK-FIX Reconnect BACKGROUND ERROR - slot {slot_id}, {error}"
+        if event == "emergency.reconnect.failure.diagnostic":
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "reconnect failed")
+            access_denied = bool(record.get("get_volume_access_denied") or record.get("storage_api_access_denied"))
+            resolution = LockFixWebHandler.compact_log_value(self, record.get("resolution") or "")
+            denied_text = "Get-Volume access denied detected. " if access_denied else ""
+            resolution_text = f" | 해결: {resolution}" if resolution else ""
+            return f"{prefix}LOCK-FIX Reconnect ERROR DETAIL - slot {slot_id}, {denied_text}{error}{resolution_text}"
+        if event == "emergency.reconnect.step":
+            step = LockFixWebHandler.compact_log_value(self, record.get("step") or "-")
+            message = LockFixWebHandler.compact_log_value(self, record.get("message") or "reconnect step")
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "")
+            drive_text = f", drive {drive}" if drive else ""
+            return f"{prefix}LOCK-FIX Reconnect STEP {step} - slot {slot_id}, {message}{drive_text}"
         if event == "state.transition":
             state = LockFixWebHandler.compact_log_value(self, record.get("state") or "-")
-            return f"{prefix}LOCK-FIX Reconnect STATE - slot {slot_id}, {state}"
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "")
+            repeat_count = int(record.get("repeat_count") or 1)
+            repeat_text = f" (same error repeated {repeat_count} times)" if repeat_count > 1 else ""
+            error_text = f", error: {error}" if error and state == "ERROR" else ""
+            return f"{prefix}LOCK-FIX Reconnect STATE - slot {slot_id}, {state}{repeat_text}{error_text}"
         if event == "disk.reconnect.plan":
             drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
             disk = LockFixWebHandler.compact_log_value(self, record.get("disk_number") or "-")
             partition = LockFixWebHandler.compact_log_value(self, record.get("partition_number") or "-")
             volume = LockFixWebHandler.compact_log_value(self, record.get("volume_unique_id") or "-")
             return f"{prefix}LOCK-FIX Reconnect PLAN - slot {slot_id}, drive {drive}, disk {disk}, partition {partition}, volume {volume}"
+        if event == "disk.online.start":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            return f"{prefix}LOCK-FIX Reconnect ONLINE START - slot {slot_id}, drive {drive}"
+        if event == "disk.online":
+            output = LockFixWebHandler.compact_log_value(self, record.get("output") or "disk online completed")
+            return f"{prefix}LOCK-FIX Reconnect ONLINE OK - slot {slot_id}, {output}"
+        if event == "disk.online.error":
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "disk online failed")
+            return f"{prefix}LOCK-FIX Reconnect ONLINE ERROR - slot {slot_id}, {error}"
+        if event == "disk.online.approval.cleared":
+            reason = LockFixWebHandler.compact_log_value(self, record.get("reason") or "-")
+            return f"{prefix}LOCK-FIX Reconnect ONLINE APPROVAL CLEARED - slot {slot_id}, {reason}"
         if event == "disk.wait.start":
             drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
             timeout = LockFixWebHandler.compact_log_value(self, record.get("timeout_seconds") or "-")
@@ -867,6 +1358,18 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         if event == "disk.access_path.error":
             error = LockFixWebHandler.compact_log_value(self, record.get("error") or "access path restore failed")
             return f"{prefix}LOCK-FIX Reconnect ACCESS PATH ERROR - slot {slot_id}, {error}"
+        if event == "power.command.on.error":
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "power on failed")
+            return f"{prefix}LOCK-FIX Reconnect POWER ON ERROR - slot {slot_id}, {error}"
+        if event == "disk.storage_api.self_check.error":
+            check = LockFixWebHandler.compact_log_value(self, record.get("check") or "storage_api")
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "storage API self-check failed")
+            resolution = LockFixWebHandler.compact_log_value(self, record.get("resolution") or "Windows Storage 서비스와 PowerShell 디스크 명령 상태를 확인하세요.")
+            return f"{prefix}LOCK-FIX Reconnect STORAGE API ERROR - slot {slot_id}, {check}, {error} | 해결: {resolution}"
+        if event == "disk.storage_api.self_check":
+            access_denied = "access denied" if record.get("access_denied") else "completed"
+            message = LockFixWebHandler.compact_log_value(self, record.get("message") or "Windows disk/partition API self-check completed.")
+            return f"{prefix}LOCK-FIX Reconnect STORAGE API CHECK - slot {slot_id}, {access_denied}, {message}"
         if event in {"power.mock.on", "power.command.on"}:
             output = LockFixWebHandler.compact_log_value(self, record.get("output") or "power on completed")
             return f"{prefix}LOCK-FIX Reconnect POWER ON OK - slot {slot_id}, {output}"
@@ -877,6 +1380,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         if event in {"disk.mount_ro", "disk.mount_rw", "disk.health.scan"}:
             output = LockFixWebHandler.compact_log_value(self, record.get("output") or event)
             return f"{prefix}LOCK-FIX Reconnect {event.replace('disk.', '').upper()} - slot {slot_id}, {output}"
+        if event == "disk.health.scan.skipped":
+            reason = LockFixWebHandler.compact_log_value(self, record.get("reason") or "Repair-Volume scan skipped")
+            return f"{prefix}LOCK-FIX Reconnect HEALTH SCAN SKIPPED - slot {slot_id}, {reason}"
         if event == "emergency.reconnect.complete":
             state = LockFixWebHandler.compact_log_value(self, record.get("state") or "-")
             return f"{prefix}LOCK-FIX Reconnect COMPLETE - slot {slot_id}, state {state}"
@@ -931,8 +1437,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         last_checked = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now))
         job = str(payload.get("job") or "LOCK-FIX-AIRGAP-BACKUP")
         state_source = payload.get("state_source") or ("veeam_rest_api" if payload.get("api_synced") else "runtime/veeam_interlock_state.json" if payload else "waiting_for_veeam_api")
-        labels = ["백업 완료", "Flush 실행", "I/O 종료 확인", "Unmount", "전원 OFF"]
-        codes = ["BACKUP_COMPLETED", "FLUSHING", "IO_CHECKING", "UNMOUNTING", "POWERING_OFF"]
+        labels = ["백업 완료", "Flush 실행", "I/O 종료 확인", "Unmount", "오프라인"]
+        codes = ["BACKUP_COMPLETED", "FLUSHING", "IO_CHECKING", "UNMOUNTING", "DISK_OFFLINING"]
         step_logs = []
         custom_logs = payload.get("step_logs") if connected and isinstance(payload.get("step_logs"), list) else []
         for index, label in enumerate(labels, start=1):
@@ -994,7 +1500,71 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "message": "Waiting for successful Veeam session.",
             }
         payload["auto_isolate"] = auto_isolate
-        if auto_isolate.get("state") == "ISOLATED":
+        session_completed = raw_result in {"SUCCESS", "SUCCEEDED", "COMPLETED"} or progress >= 100
+        processed_backup_waiting = (
+            connected
+            and session_completed
+            and auto_isolate.get("state") == "WAITING_FOR_NEW_BACKUP"
+            and bool(auto_isolate.get("processed"))
+        )
+        if processed_backup_waiting:
+            current_step = 1
+            progress = 100
+            for item in step_logs:
+                step_number = int(item.get("step") or 0)
+                if step_number == 1:
+                    item["state"] = "ACTIVE"
+                    item["transition_allowed"] = True
+                    item["progress_percent"] = 100
+                    item["detail"] = (
+                        auto_isolate.get("message")
+                        or "This Backup Done session already completed Steps 1-5. Waiting for a new Backup Done record before Step 2 Flush."
+                    )
+                else:
+                    item["state"] = "PENDING"
+                    item["transition_allowed"] = False
+                    item["progress_percent"] = ""
+                    item["detail"] = "과거 처리 완료된 백업 정보입니다. 새 백업 완료 접수 전까지 이 단계로 전환하지 않습니다."
+        elif connected and session_completed and auto_isolate.get("triggered") is not True and auto_isolate.get("state") != "ISOLATED":
+            current_step = 1
+            for item in step_logs:
+                step_number = int(item.get("step") or 0)
+                if step_number == 1:
+                    item["state"] = "ACTIVE"
+                    item["progress_percent"] = progress
+                    item["transition_allowed"] = True
+                    item["detail"] = auto_isolate.get("message") or item.get("detail") or "Latest Veeam backup information was collected. Waiting for a new Backup Done session before Step 2 Flush."
+                else:
+                    item["state"] = "PENDING"
+                    item["progress_percent"] = ""
+                    item["transition_allowed"] = False
+                    item["detail"] = "최신 백업 완료 신호가 새로 확인되기 전까지 이 단계로 전환하지 않습니다."
+        processed_isolated_waiting = (
+            connected
+            and session_completed
+            and auto_isolate.get("state") == "ISOLATED"
+            and bool(auto_isolate.get("processed"))
+            and auto_isolate.get("triggered") is not True
+        )
+        if processed_isolated_waiting:
+            current_step = 1
+            progress = 100
+            for item in step_logs:
+                step_number = int(item.get("step") or 0)
+                if step_number == 1:
+                    item["state"] = "ACTIVE"
+                    item["transition_allowed"] = True
+                    item["progress_percent"] = 100
+                    item["detail"] = (
+                        auto_isolate.get("message")
+                        or "This Backup Done session already completed LOCK-FIX isolation. Waiting for a new Backup Done record before Step 2 Flush."
+                    )
+                else:
+                    item["state"] = "PENDING"
+                    item["transition_allowed"] = False
+                    item["progress_percent"] = ""
+                    item["detail"] = "이미 격리 완료된 백업 이력입니다. 새 백업 완료 접수 전까지 이 단계로 전환하지 않습니다."
+        elif auto_isolate.get("state") == "ISOLATED":
             current_step = 5
             progress = 100
             for item in step_logs:
@@ -1017,11 +1587,15 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             if action:
                 actions.append(action)
             checks = payload.get("checks") if isinstance(payload.get("checks"), dict) else {}
-            for key in ("port_9419", "token", "sessions"):
+            for key in ("port_9419", "token", "sessions", "session_logs", "task_sessions"):
                 check = checks.get(key) if isinstance(checks.get(key), dict) else {}
                 if check:
                     state = "OK" if check.get("ok") else "WAIT"
-                    actions.append(f"{state} - {check.get('message') or key}")
+                    elapsed = check.get("elapsed_ms")
+                    elapsed_text = f" - REST {elapsed}ms" if elapsed is not None else ""
+                    count = check.get("count")
+                    count_text = f" - {count} items" if count is not None else ""
+                    actions.append(f"{state} - {check.get('message') or key}{elapsed_text}{count_text}")
             em_check = checks.get("enterprise_manager") if isinstance(checks.get("enterprise_manager"), dict) else {}
             if em_check:
                 actions.append(
@@ -1050,11 +1624,15 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "LOCK-FIX keeps the interlock procedure at step 1 until a real Veeam API session is received.",
             ]
             checks = payload.get("checks") if isinstance(payload.get("checks"), dict) else {}
-            for key in ("port_9419", "token", "sessions"):
+            for key in ("port_9419", "token", "sessions", "session_logs", "task_sessions"):
                 check = checks.get(key) if isinstance(checks.get(key), dict) else {}
                 if check:
                     state = "OK" if check.get("ok") else "WAIT"
-                    waiting_actions.append(f"{state} - {check.get('message') or key}")
+                    elapsed = check.get("elapsed_ms")
+                    elapsed_text = f" - REST {elapsed}ms" if elapsed is not None else ""
+                    count = check.get("count")
+                    count_text = f" - {count} items" if count is not None else ""
+                    waiting_actions.append(f"{state} - {check.get('message') or key}{elapsed_text}{count_text}")
             em_check = checks.get("enterprise_manager") if isinstance(checks.get("enterprise_manager"), dict) else {}
             if em_check:
                 waiting_actions.append(
@@ -1089,7 +1667,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 2: "Flush execution",
                 3: "I/O quiet check",
                 4: "Unmount protection and execution",
-                5: "Power off",
+                5: "Offline",
             }
             try:
                 elapsed_seconds = int(payload.get("stage_elapsed_seconds") or payload.get("elapsed_seconds") or max(1, now - float(payload.get("stage_started_epoch", now))))
@@ -1122,14 +1700,27 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 }
             )
         slot_id = str(auto_isolate.get("slot_id") or payload.get("slot_id") or os.environ.get("LOCKFIX_SLOT_ID") or next(iter(self.context.config.slots), "BAY-01"))
-        interlock_actions = LockFixWebHandler.veeam_flush_operation_actions(
-            self,
-            slot_id,
-            current_step,
-        )
-        interlock_actions += LockFixWebHandler.veeam_io_quiet_operation_actions(self, slot_id, current_step)
-        interlock_actions += LockFixWebHandler.veeam_unmount_operation_actions(self, slot_id, current_step)
-        interlock_actions += LockFixWebHandler.veeam_power_off_operation_actions(self, slot_id, current_step)
+        interlock_actions = []
+        history_step = 5 if processed_isolated_waiting else current_step
+        if not processed_backup_waiting:
+            if processed_isolated_waiting:
+                if LockFixWebHandler.recent_flush_audit_records(self, slot_id, 1):
+                    interlock_actions += LockFixWebHandler.veeam_flush_operation_actions(self, slot_id, history_step)
+                if LockFixWebHandler.recent_io_quiet_audit_records(self, slot_id, 1):
+                    interlock_actions += LockFixWebHandler.veeam_io_quiet_operation_actions(self, slot_id, history_step)
+                if LockFixWebHandler.recent_unmount_audit_records(self, slot_id, 1):
+                    interlock_actions += LockFixWebHandler.veeam_unmount_operation_actions(self, slot_id, history_step)
+                if LockFixWebHandler.recent_power_off_audit_records(self, slot_id, 1):
+                    interlock_actions += LockFixWebHandler.veeam_power_off_operation_actions(self, slot_id, history_step)
+            else:
+                interlock_actions = LockFixWebHandler.veeam_flush_operation_actions(
+                    self,
+                    slot_id,
+                    history_step,
+                )
+                interlock_actions += LockFixWebHandler.veeam_io_quiet_operation_actions(self, slot_id, history_step)
+                interlock_actions += LockFixWebHandler.veeam_unmount_operation_actions(self, slot_id, history_step)
+                interlock_actions += LockFixWebHandler.veeam_power_off_operation_actions(self, slot_id, history_step)
         if interlock_actions:
             if session_logs:
                 session_logs[0]["actions"] = list(session_logs[0].get("actions") or []) + interlock_actions
@@ -1189,14 +1780,14 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             ]
         actions = [f"LOCK-FIX STEP 2 DETAIL - Flush operation flow for slot {slot_id}"]
         for record in records:
-            if record.get("event") == "disk.flush.start":
+            if record.get("event") in {"disk.flush.start", "disk.cache.flush.start"}:
                 actions.extend(LockFixWebHandler.flush_start_detail_actions(self, record))
             action = LockFixWebHandler.format_flush_audit_record(self, record)
             if action:
                 actions.append(action)
-        if any(record.get("event") == "disk.flush.error" for record in records):
+        if any(record.get("event") in {"disk.flush.error", "disk.cache.flush.error"} for record in records):
             actions.append(f"LOCK-FIX STEP 2 ERROR - Flush result was recorded as failed. Step 3 must not proceed until the error is resolved.")
-        elif any(record.get("event") == "disk.flush" for record in records):
+        elif any(record.get("event") in {"disk.flush", "disk.cache.flush"} for record in records):
             actions.append("LOCK-FIX STEP 2 COMPLETE - Flush checkpoint result was recorded. Continuing to Step 3 I/O quiet verification.")
         return actions
 
@@ -1215,7 +1806,15 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
 
     def recent_flush_audit_records(self, slot_id: str, limit: int = 12) -> list[dict]:
         lines = LockFixWebHandler.audit_log_lines(self)
-        events = {"disk.flush.start", "disk.flush.tick", "disk.flush", "disk.flush.error"}
+        events = {
+            "disk.flush.start",
+            "disk.flush.tick",
+            "disk.flush",
+            "disk.flush.error",
+            "disk.cache.flush.start",
+            "disk.cache.flush",
+            "disk.cache.flush.error",
+        }
         records = []
         for line in lines:
             try:
@@ -1226,13 +1825,13 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 continue
             if slot_id and str(record.get("slot_id") or "") != slot_id:
                 continue
-            if record.get("event") == "disk.flush.start":
+            if record.get("event") in {"disk.flush.start", "disk.cache.flush.start"}:
                 records = []
             records.append(record)
         return LockFixWebHandler.normalize_flush_audit_records(self, records)[-limit:]
 
     def normalize_flush_audit_records(self, records: list[dict]) -> list[dict]:
-        starts = [record for record in records if record.get("event") == "disk.flush.start"]
+        starts = [record for record in records if record.get("event") in {"disk.flush.start", "disk.cache.flush.start"}]
         if not starts:
             return records
         normalized = [starts[-1]]
@@ -1247,9 +1846,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 except (TypeError, ValueError):
                     elapsed = 0
                 ticks.setdefault(elapsed, record)
-            elif event == "disk.flush":
+            elif event in {"disk.flush", "disk.cache.flush"}:
                 completions.append(record)
-            elif event == "disk.flush.error":
+            elif event in {"disk.flush.error", "disk.cache.flush.error"}:
                 errors.append(record)
         normalized.extend(record for _, record in sorted(ticks.items()))
         if errors:
@@ -1263,7 +1862,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         slot_id = str(record.get("slot_id") or "-")
         timestamp = LockFixWebHandler.format_audit_timestamp(self, record.get("ts"))
         prefix = f"{timestamp} - " if timestamp else ""
-        if event == "disk.flush.start":
+        if event in {"disk.flush.start", "disk.cache.flush.start"}:
             mount_point = LockFixWebHandler.compact_log_value(self, record.get("mount_point") or "-")
             device = LockFixWebHandler.compact_log_value(self, record.get("device") or "-")
             return f"{prefix}LOCK-FIX Flush START - slot {slot_id}, mount {mount_point}, device {device}"
@@ -1271,10 +1870,10 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             elapsed = LockFixWebHandler.compact_log_value(self, record.get("elapsed_seconds") or 1)
             mount_point = LockFixWebHandler.compact_log_value(self, record.get("mount_point") or "-")
             return f"{prefix}LOCK-FIX Flush TICK {elapsed}s - slot {slot_id}, mount {mount_point}"
-        if event == "disk.flush.error":
+        if event in {"disk.flush.error", "disk.cache.flush.error"}:
             error = LockFixWebHandler.compact_log_value(self, record.get("error") or "flush command failed")
             return f"{prefix}LOCK-FIX Flush ERROR - slot {slot_id}, {error}"
-        if event == "disk.flush":
+        if event in {"disk.flush", "disk.cache.flush"}:
             output = LockFixWebHandler.compact_log_value(self, record.get("output") or "flush completed")
             return f"{prefix}LOCK-FIX Flush OK - slot {slot_id}, {output}"
         return ""
@@ -1398,10 +1997,10 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             if action:
                 actions.append(action)
         if any(record.get("event") == "disk.unmount.error" for record in records):
-            actions.append("LOCK-FIX STEP 4 ERROR - Unmount result was recorded as failed. Step 5 Power OFF must not proceed until the error is resolved.")
+            actions.append("LOCK-FIX STEP 4 ERROR - Unmount result was recorded as failed. Step 5 Offline must not proceed until the error is resolved.")
             actions.extend(LockFixWebHandler.audit_history_detail_actions(self, 4, "Unmount", slot_id, records, "ERROR"))
         elif any(record.get("event") == "disk.unmount" for record in records):
-            actions.append("LOCK-FIX STEP 4 COMPLETE - Backup volume unmount result was recorded. Continuing to Step 5 Power OFF.")
+            actions.append("LOCK-FIX STEP 4 COMPLETE - Backup volume unmount result was recorded. Continuing to Step 5 Offline.")
             actions.extend(LockFixWebHandler.audit_history_detail_actions(self, 4, "Unmount", slot_id, records, "OK"))
         return actions
 
@@ -1493,7 +2092,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             f"{prefix}LOCK-FIX Unmount TARGET - slot {slot_id}, mount {mount_point}, device {device}, drive {drive}",
             f"{prefix}LOCK-FIX Unmount COMMAND 1 - Windows Server Dismount-Volume requested for the configured backup volume.",
             f"{prefix}LOCK-FIX Unmount COMMAND 2 - Remove-PartitionAccessPath removes {drive}:\\ so the backup volume is no longer reachable.",
-            f"{prefix}LOCK-FIX Unmount GATE - Step 5 Power OFF remains blocked until {drive}:\\ access removal is verified.",
+            f"{prefix}LOCK-FIX Unmount GATE - Step 5 Offline remains blocked until {drive}:\\ access removal is verified.",
         ]
 
     def format_unmount_audit_record(self, record: dict) -> str:
@@ -1551,22 +2150,23 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         records = LockFixWebHandler.recent_power_off_audit_records(self, slot_id, limit)
         if not records:
             return [
-                f"LOCK-FIX STEP 5 DETAIL - Power OFF operation flow for slot {slot_id}",
-                f"LOCK-FIX Power OFF WAIT - step 5 is active for slot {slot_id}, but no power-off audit event has been recorded yet.",
+                f"LOCK-FIX STEP 5 DETAIL - Offline operation flow for slot {slot_id}",
+                f"LOCK-FIX Offline WAIT - step 5 is active for slot {slot_id}, but no disk offline audit event has been recorded yet.",
             ]
-        actions = [f"LOCK-FIX STEP 5 DETAIL - Power OFF operation flow for slot {slot_id}"]
+        actions = [f"LOCK-FIX STEP 5 DETAIL - Offline operation flow for slot {slot_id}"]
         for record in records:
-            if str(record.get("event") or "").endswith(".off.start"):
+            if str(record.get("event") or "").endswith(".off.start") or record.get("event") == "disk.offline.start":
                 actions.extend(LockFixWebHandler.power_off_start_detail_actions(self, record))
             action = LockFixWebHandler.format_power_off_audit_record(self, record)
             if action:
                 actions.append(action)
-        if any(str(record.get("event") or "").endswith(".off.error") for record in records):
-            actions.append("LOCK-FIX STEP 5 ERROR - Power OFF result was recorded as failed. Manual inspection is required.")
-            actions.extend(LockFixWebHandler.audit_history_detail_actions(self, 5, "Power OFF", slot_id, records, "ERROR"))
-        elif any(record.get("event") in {"power.mock.off", "power.command.off"} for record in records):
-            actions.append("LOCK-FIX STEP 5 COMPLETE - Power OFF result was recorded. LOCK-FIX isolation flow is complete.")
-            actions.extend(LockFixWebHandler.audit_history_detail_actions(self, 5, "Power OFF", slot_id, records, "OK"))
+        if any(str(record.get("event") or "").endswith(".off.error") or record.get("event") == "disk.offline.error" for record in records):
+            actions.append("LOCK-FIX STEP 5 ERROR - Offline result was recorded as failed. Manual inspection is required.")
+            actions.extend(LockFixWebHandler.audit_history_detail_actions(self, 5, "Offline", slot_id, records, "ERROR"))
+        elif any(record.get("event") in {"power.mock.off", "power.command.off", "disk.offline"} for record in records):
+            actions.append("LOCK-FIX STEP 5 COMPLETE - Disk offline result was recorded. LOCK-FIX isolation flow is complete.")
+            actions.append("LOCK-FIX STEP 5 HISTORY - Power OFF detailed audit trail is retained in logs for operator review.")
+            actions.extend(LockFixWebHandler.audit_history_detail_actions(self, 5, "Offline", slot_id, records, "OK"))
         return actions
 
     def recent_power_off_audit_records(self, slot_id: str, limit: int = 16) -> list[dict]:
@@ -1586,6 +2186,13 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "power.command.status.error",
             "power.off.proof",
             "power.off.proof.required",
+            "disk.offline.start",
+            "disk.offline.tick",
+            "disk.offline",
+            "disk.offline.error",
+            "disk.offline.proof",
+            "disk.online.unauthorized.reblock",
+            "disk.online.unauthorized.reblock.error",
         }
         records = []
         for line in lines:
@@ -1597,13 +2204,13 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 continue
             if slot_id and str(record.get("slot_id") or "") != slot_id:
                 continue
-            if str(record.get("event") or "").endswith(".off.start"):
+            if str(record.get("event") or "").endswith(".off.start") or record.get("event") == "disk.offline.start":
                 records = []
             records.append(record)
         return LockFixWebHandler.normalize_power_off_audit_records(self, records)[-limit:]
 
     def normalize_power_off_audit_records(self, records: list[dict]) -> list[dict]:
-        starts = [record for record in records if str(record.get("event") or "").endswith(".off.start")]
+        starts = [record for record in records if str(record.get("event") or "").endswith(".off.start") or record.get("event") == "disk.offline.start"]
         if not starts:
             return records
         normalized = [starts[-1]]
@@ -1614,19 +2221,19 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         proofs = []
         for record in records:
             event = str(record.get("event") or "")
-            if event.endswith(".off.tick"):
+            if event.endswith(".off.tick") or event == "disk.offline.tick":
                 try:
                     elapsed = int(record.get("elapsed_seconds") or 0)
                 except (TypeError, ValueError):
                     elapsed = 0
                 ticks.setdefault(elapsed, record)
-            elif event in {"power.mock.off", "power.command.off"}:
+            elif event in {"power.mock.off", "power.command.off", "disk.offline"}:
                 completions.append(record)
-            elif event.endswith(".off.error"):
+            elif event.endswith(".off.error") or event == "disk.offline.error":
                 errors.append(record)
             elif ".status" in event:
                 statuses.append(record)
-            elif event in {"power.off.proof", "power.off.proof.required"}:
+            elif event in {"power.off.proof", "power.off.proof.required", "disk.offline.proof"}:
                 proofs.append(record)
         normalized.extend(record for _, record in sorted(ticks.items()))
         if errors:
@@ -1640,16 +2247,17 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
     def power_off_start_detail_actions(self, record: dict) -> list[str]:
         slot_id = str(record.get("slot_id") or "-")
         event = str(record.get("event") or "")
-        mode = "command" if event.startswith("power.command") else "mock"
+        mode = "windows-storage" if event.startswith("disk.offline") else ("command" if event.startswith("power.command") else "mock")
         timestamp = LockFixWebHandler.format_audit_timestamp(self, record.get("ts"))
         prefix = f"{timestamp} - " if timestamp else ""
         actions = [
+            f"{prefix}LOCK-FIX Offline TARGET - slot {slot_id}, controller mode {mode}",
             f"{prefix}LOCK-FIX Power OFF TARGET - slot {slot_id}, controller mode {mode}",
-            f"{prefix}LOCK-FIX Power OFF COMMAND - issuing final isolation power-off request.",
+            f"{prefix}LOCK-FIX Offline COMMAND - issuing final Windows disk offline request.",
         ]
         if mode == "command":
             command = LockFixWebHandler.compact_log_value(self, " ".join(record.get("command") or []))
-            actions.append(f"{prefix}LOCK-FIX Power OFF COMMAND DETAIL - {command or 'configured command'}")
+            actions.append(f"{prefix}LOCK-FIX Offline COMMAND DETAIL - {command or 'configured command'}")
         return actions
 
     def format_power_off_audit_record(self, record: dict) -> str:
@@ -1657,43 +2265,52 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         slot_id = str(record.get("slot_id") or "-")
         timestamp = LockFixWebHandler.format_audit_timestamp(self, record.get("ts"))
         prefix = f"{timestamp} - " if timestamp else ""
-        mode = "command" if event.startswith("power.command") else "mock"
-        if event.endswith(".off.start"):
-            return f"{prefix}LOCK-FIX Power OFF START - slot {slot_id}, controller mode {mode}"
-        if event.endswith(".off.tick"):
+        mode = "windows-storage" if event.startswith("disk.offline") else ("command" if event.startswith("power.command") else "mock")
+        if event.endswith(".off.start") or event == "disk.offline.start":
+            return f"{prefix}LOCK-FIX Offline START - slot {slot_id}, controller mode {mode}"
+        if event.endswith(".off.tick") or event == "disk.offline.tick":
             elapsed = LockFixWebHandler.compact_log_value(self, record.get("elapsed_seconds") or 1)
-            return f"{prefix}LOCK-FIX Power OFF TICK {elapsed}s - slot {slot_id}"
-        if event.endswith(".off.error"):
-            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "power off command failed")
-            return f"{prefix}LOCK-FIX Power OFF ERROR - slot {slot_id}, {error}"
-        if event in {"power.mock.off", "power.command.off"}:
-            output = LockFixWebHandler.compact_log_value(self, record.get("output") or f"{mode} power off completed")
+            return f"{prefix}LOCK-FIX Offline TICK {elapsed}s - slot {slot_id}"
+        if event.endswith(".off.error") or event == "disk.offline.error":
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "offline command failed")
+            return f"{prefix}LOCK-FIX Offline ERROR - slot {slot_id}, {error}"
+        if event in {"power.mock.off", "power.command.off", "disk.offline"}:
+            output = LockFixWebHandler.compact_log_value(self, record.get("output") or f"{mode} offline completed")
             return f"{prefix}LOCK-FIX Power OFF OK - slot {slot_id}, {output}"
         if event == "power.command.status.start":
             command = LockFixWebHandler.compact_log_value(self, " ".join(record.get("command") or []))
-            return f"{prefix}LOCK-FIX Power OFF STATUS CHECK START - querying PDU/relay/storage controller state. {command}"
+            return f"{prefix}LOCK-FIX Offline STATUS CHECK START - querying legacy controller state. {command}"
         if event == "power.command.status.missing":
             requirement = LockFixWebHandler.compact_log_value(self, record.get("requirement") or "Configure power.status_command.")
             return f"{prefix}LOCK-FIX Power OFF PROOF REQUIRED - actual OFF proof requires a PDU/relay/storage controller status response. {requirement}"
         if event == "power.command.status.error":
             error = LockFixWebHandler.compact_log_value(self, record.get("error") or "controller status check failed")
-            return f"{prefix}LOCK-FIX Power OFF STATUS ERROR - slot {slot_id}, {error}"
+            return f"{prefix}LOCK-FIX Offline STATUS ERROR - slot {slot_id}, {error}"
         if event == "power.command.status":
             state = LockFixWebHandler.compact_log_value(self, record.get("state") or "-")
             output = LockFixWebHandler.compact_log_value(self, record.get("output") or "")
             if record.get("ok") is True:
-                return f"{prefix}LOCK-FIX Power OFF PROOF OK - controller status confirmed OFF. response {output or state}"
-            return f"{prefix}LOCK-FIX Power OFF STATUS NOT CONFIRMED - controller returned {state}. response {output}"
+                return f"{prefix}LOCK-FIX Offline PROOF OK - controller status confirmed OFF. response {output or state}"
+            return f"{prefix}LOCK-FIX Offline STATUS NOT CONFIRMED - controller returned {state}. response {output}"
         if event == "power.mock.status":
             requirement = LockFixWebHandler.compact_log_value(self, record.get("requirement") or "Use a controller status response.")
-            return f"{prefix}LOCK-FIX Power OFF PROOF NOT AVAILABLE - mock mode cannot prove physical power state. {requirement}"
+            return f"{prefix}LOCK-FIX Offline PROOF NOT AVAILABLE - mock mode cannot prove physical power state. {requirement}"
         if event == "power.off.proof":
-            message = LockFixWebHandler.compact_log_value(self, record.get("message") or "Physical power OFF was proved.")
-            return f"{prefix}LOCK-FIX Power OFF PROOF RECORDED - {message}"
+            message = LockFixWebHandler.compact_log_value(self, record.get("message") or "Legacy controller isolation proof was recorded.")
+            return f"{prefix}LOCK-FIX Offline PROOF RECORDED - {message}"
         if event == "power.off.proof.required":
             reason = LockFixWebHandler.compact_log_value(self, record.get("reason") or "controller status response is required")
             required = LockFixWebHandler.compact_log_value(self, record.get("required_config") or "power.status_command")
             return f"{prefix}LOCK-FIX Power OFF PROOF REQUIRED - {reason}. Required: {required}"
+        if event == "disk.offline.proof":
+            message = LockFixWebHandler.compact_log_value(self, record.get("message") or "Disk offline isolation was proved.")
+            return f"{prefix}LOCK-FIX Offline PROOF RECORDED - {message}"
+        if event == "disk.online.unauthorized.reblock":
+            output = LockFixWebHandler.compact_log_value(self, record.get("output") or "unauthorized online disk was reblocked")
+            return f"{prefix}LOCK-FIX Offline REBLOCK - unauthorized Online was detected and blocked again. {output}"
+        if event == "disk.online.unauthorized.reblock.error":
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "reblock failed")
+            return f"{prefix}LOCK-FIX Offline REBLOCK ERROR - {error}"
         return ""
 
     def audit_history_detail_actions(self, step: int, operation: str, slot_id: str, records: list[dict], result: str) -> list[str]:
@@ -1726,8 +2343,44 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         except ValueError:
             return text
 
+    def parse_audit_timestamp(self, value: object) -> datetime | None:
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo:
+            parsed = parsed.astimezone().replace(tzinfo=None)
+        return parsed
+
+    def split_reconnect_audit_records_by_days(self, records: list[dict], days: int = 7) -> tuple[list[dict], list[dict]]:
+        cutoff = datetime.now() - timedelta(days=days)
+        recent = []
+        older = []
+        for record in records:
+            timestamp = LockFixWebHandler.parse_audit_timestamp(self, record.get("ts"))
+            if timestamp and timestamp >= cutoff:
+                recent.append(record)
+            else:
+                older.append(record)
+        return recent, older
+
     def compact_log_value(self, value: object) -> str:
-        return " ".join(str(value).split())
+        text = str(value)
+        text = re.sub(r"\ufffd+", " [확인 불가 문자 제거] ", text)
+        text = "".join(ch if ch in "\r\n\t" or ord(ch) >= 32 else " " for ch in text)
+        text = re.sub(r"(?:\s*\[확인 불가 문자 제거\]\s*)+", " [확인 불가 문자 제거] ", text)
+        return " ".join(text.split())
+
+    def sanitize_json_payload(self, value):
+        if isinstance(value, str):
+            return LockFixWebHandler.compact_log_value(self, value)
+        if isinstance(value, list):
+            return [LockFixWebHandler.sanitize_json_payload(self, item) for item in value]
+        if isinstance(value, dict):
+            return {key: LockFixWebHandler.sanitize_json_payload(self, item) for key, item in value.items()}
+        return value
 
     def save_veeam_last_logs(self, session_logs: list[dict], checked_at: str) -> None:
         path = ROOT / "runtime" / "veeam_last_session_logs.json"
@@ -1836,42 +2489,90 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         if not os.environ.get("LOCKFIX_VEEAM_PORT") and install_props.get("veeam_port"):
             os.environ["LOCKFIX_VEEAM_PORT"] = str(install_props["veeam_port"])
 
+    def veeam_auto_isolate_identity(self, payload: dict) -> tuple[str, bool]:
+        identity_parts = [
+            str(payload.get("session_id") or payload.get("sessionId") or payload.get("id") or payload.get("uid") or "").strip(),
+            str(payload.get("job_id") or payload.get("jobId") or "").strip(),
+            str(payload.get("job") or payload.get("name") or "Veeam Backup").strip(),
+            str(payload.get("started_at") or payload.get("creationTime") or payload.get("startTime") or "").strip(),
+            str(payload.get("ended_at") or payload.get("endTime") or payload.get("stopTime") or "").strip(),
+        ]
+        restore_scope = payload.get("restore_point_scope") if isinstance(payload.get("restore_point_scope"), dict) else {}
+        identity_parts.append(str(payload.get("restore_point_id") or restore_scope.get("restore_point_id") or "").strip())
+        session_key = "|".join(part or "-" for part in identity_parts)
+        has_unique_session_identity = bool(any(identity_parts[index] for index in (0, 1, 3, 4, 5)))
+        return session_key, has_unique_session_identity
+
     def auto_isolate_after_veeam_success(self, payload: dict, status: str, checked_at: str) -> dict:
         result = str(payload.get("result") or status or "").upper()
         progress = int(payload.get("progress_percent") or payload.get("progress") or 0)
         if result not in {"SUCCESS", "SUCCEEDED", "COMPLETED"} and progress < 100:
             return {"enabled": True, "triggered": False, "message": "Veeam session is not successful yet."}
         slot_id = str(payload.get("slot_id") or os.environ.get("LOCKFIX_SLOT_ID") or next(iter(self.context.config.slots), "BAY-01"))
-        session_key = "|".join(
-            [
-                str(payload.get("job") or payload.get("name") or "Veeam Backup"),
-                str(payload.get("started_at") or "-"),
-                str(payload.get("ended_at") or "-"),
-            ]
-        )
+        session_key, has_unique_session_identity = LockFixWebHandler.veeam_auto_isolate_identity(self, payload)
         marker_path = ROOT / "runtime" / "veeam_auto_isolate.json"
         try:
             previous = json.loads(marker_path.read_text(encoding="utf-8")) if marker_path.exists() else {}
         except (OSError, json.JSONDecodeError):
             previous = {}
-        if previous.get("session_key") == session_key and previous.get("state") == "ISOLATED":
+        processed_session_keys = set(previous.get("processed_session_keys") or [])
+        if previous.get("session_key") and previous.get("state") == "ISOLATED":
+            processed_session_keys.add(str(previous.get("session_key")))
+        if not has_unique_session_identity:
+            self.context.controller.audit.write(
+                "veeam.auto_isolate.identity_missing",
+                slot_id=slot_id,
+                session_key=session_key,
+                message="Veeam success was detected, but no unique new session identity was present. Waiting for a new backup session id or timestamp before Step 2 Flush.",
+            )
+            return {
+                "enabled": True,
+                "triggered": False,
+                "slot_id": slot_id,
+                "session_key": session_key,
+                "message": "Veeam success detected, but no unique new session identity was present. Waiting for a new backup completion record.",
+            }
+        current_processed_session = (
+            str(previous.get("session_key") or "") == session_key
+            and previous.get("state") == "ISOLATED"
+        )
+        if current_processed_session:
             return {
                 "enabled": True,
                 "triggered": False,
                 "slot_id": slot_id,
                 "session_key": session_key,
                 "state": "ISOLATED",
-                "message": "Successful session was already isolated.",
+                "processed": True,
+                "message": "This Backup Done session already completed LOCK-FIX isolation. Step 5 Offline remains the latest completed state.",
+            }
+        if session_key in processed_session_keys:
+            self.context.controller.audit.write(
+                "veeam.auto_isolate.duplicate_skip",
+                slot_id=slot_id,
+                session_key=session_key,
+                message="This completed backup session already passed LOCK-FIX Steps 1-5. Waiting for a new Backup Done session before Step 2 Flush.",
+            )
+            return {
+                "enabled": True,
+                "triggered": False,
+                "slot_id": slot_id,
+                "session_key": session_key,
+                "state": "WAITING_FOR_NEW_BACKUP",
+                "processed": True,
+                "message": "This Backup Done session was already processed through Steps 1-5. Waiting for a new Backup Done record.",
             }
         try:
             restore_scope = payload.get("restore_point_scope") if isinstance(payload.get("restore_point_scope"), dict) else {}
             repository_path = str(payload.get("repository_path") or restore_scope.get("repository_path") or "")
             state = self.context.controller.isolate(slot_id, repository_path=repository_path)
+            processed_session_keys.add(session_key)
             marker_path.parent.mkdir(parents=True, exist_ok=True)
             marker_path.write_text(
                 json.dumps(
                     {
                         "session_key": session_key,
+                        "processed_session_keys": sorted(processed_session_keys),
                         "slot_id": slot_id,
                         "state": state.value,
                         "checked_at": checked_at,
@@ -2195,6 +2896,26 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "total_logs": len(logs),
         }
 
+    def notification_summary(self) -> dict:
+        audit_alert = self.audit_anomaly_alert_summary()
+        return {
+            "items": self.notification_items(),
+            "audit_alert": audit_alert,
+            "summary": {
+                "unauthorized_access": {
+                    "label": "비인가 접근 시도",
+                    "value": "0건",
+                    "period": "최근 24시간",
+                },
+                "audit_anomaly": {
+                    "label": "감사 이력 이상 감지",
+                    "value": f"{audit_alert['count_24h']}건",
+                    "period": "최근 24시간",
+                    "status": audit_alert["status"],
+                },
+            },
+        }
+
     def notification_items(self) -> list[dict]:
         return [
             {
@@ -2210,6 +2931,94 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "last_login": "2024-12-22 20:57:39",
             },
         ]
+
+    def audit_anomaly_alert_summary(self) -> dict:
+        cutoff = datetime.now() - timedelta(hours=24)
+        anomalies = []
+        for line in LockFixWebHandler.audit_log_lines(self)[-1000:]:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                record = {"ts": "", "event": "audit.parse_error", "raw": line}
+            timestamp = LockFixWebHandler.parse_audit_timestamp(self, record.get("ts"))
+            if timestamp and timestamp < cutoff:
+                continue
+            if not LockFixWebHandler.is_audit_anomaly_record(self, record):
+                continue
+            anomalies.append(LockFixWebHandler.format_audit_anomaly_alert(self, record))
+        anomalies = anomalies[-30:]
+        return {
+            "enabled": True,
+            "status": "ALERT" if anomalies else "NORMAL",
+            "count_24h": len(anomalies),
+            "alert_target": "Notification",
+            "send_channel": "SMTP",
+            "smtp_status": "Connected",
+            "last_detected": anomalies[-1]["detected_at"] if anomalies else "-",
+            "items": list(reversed(anomalies[-10:])),
+        }
+
+    def is_audit_anomaly_record(self, record: dict) -> bool:
+        event = str(record.get("event") or "").lower()
+        state = str(record.get("state") or "").lower()
+        text = json.dumps(record, ensure_ascii=False).lower()
+        if event.endswith(".heartbeat") or event.endswith(".tick"):
+            return False
+        anomaly_events = {
+            "emergency.reconnect.denied",
+            "emergency.reconnect.background.error",
+            "emergency.reconnect.background.timeout",
+            "emergency.reconnect.background.not_started",
+            "disk.online.unauthorized.reblock",
+            "disk.online.unauthorized.reblock.error",
+            "disk.online.unauthorized.guard.error",
+            "disk.storage_api.self_check.error",
+            "admin.alert.quarantine",
+            "emergency.quarantine.unmount.error",
+            "emergency.quarantine.relay_off.error",
+            "emergency.quarantine.offline.error",
+            "license_register_failed",
+            "lockfix_service_control_failed",
+            "audit.parse_error",
+        }
+        anomaly_tokens = (
+            "unauthorized",
+            "denied",
+            "access denied",
+            "access_denied",
+            "timeout",
+            "not_started",
+            "failed",
+            "failure",
+            "error",
+            "mismatch",
+            "quarantine",
+            "parse_error",
+            "액세스 거부",
+            "실패",
+            "오류",
+        )
+        return event in anomaly_events or state == "error" or any(token in event or token in text for token in anomaly_tokens)
+
+    def format_audit_anomaly_alert(self, record: dict) -> dict:
+        event = str(record.get("event") or "audit.unknown")
+        text = LockFixWebHandler.compact_log_value(
+            self,
+            record.get("message")
+            or record.get("resolution")
+            or record.get("error")
+            or record.get("raw")
+            or event,
+        )
+        severity = "CRITICAL" if any(token in event.lower() or token in text.lower() for token in ("unauthorized", "denied", "quarantine", "mismatch", "액세스 거부")) else "WARNING"
+        return {
+            "detected_at": LockFixWebHandler.format_audit_timestamp(self, record.get("ts")) or "-",
+            "event": event,
+            "slot_id": str(record.get("slot_id") or "-"),
+            "severity": severity,
+            "message": text[:220],
+            "alert_status": "ALERT SENT" if severity == "CRITICAL" else "ALERT READY",
+        }
 
     def detect_summary(self) -> dict:
         config = self.context.config
@@ -2354,7 +3163,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 )
         for item in self.audit_items()[:50]:
             event = str(item.get("event", "audit_event"))
-            severity = "WARN" if "warning" in event or "expired" in event or "failed" in event else "INFO"
+            severity = LockFixWebHandler.log_audit_severity(self, item)
             raw_date = str(item.get("ts", "-"))[:19]
             try:
                 stamp = datetime.fromisoformat(raw_date)
@@ -2366,13 +3175,90 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 {
                     "type": "SYSLOG",
                     "date": raw_date,
-                    "source": "license" if event.startswith("license") else "audit",
+                    "source": LockFixWebHandler.log_audit_source(self, item),
                     "severity": severity,
-                    "message": event,
+                    "message": LockFixWebHandler.format_log_audit_record(self, item),
                 }
             )
         items.sort(key=lambda item: item["date"], reverse=True)
         return items, range_start, range_end
+
+    def log_audit_source(self, record: dict) -> str:
+        event = str(record.get("event") or "")
+        if event.startswith("license"):
+            return "license"
+        if event.startswith("disk.offline") or event.startswith("disk.online") or event.startswith("disk.storage_api"):
+            return "storage"
+        if event.startswith("emergency.reconnect"):
+            return "reconnect"
+        if event.startswith("veeam"):
+            return "veeam"
+        return "audit"
+
+    def log_audit_severity(self, record: dict) -> str:
+        event = str(record.get("event") or "").lower()
+        text = json.dumps(record, ensure_ascii=False).lower()
+        if "error" in event or "failed" in event or "denied" in event or "unauthorized" in event:
+            return "ERROR"
+        if "warning" in event or "expired" in event or "timeout" in event or "access denied" in text or "액세스 거부" in text:
+            return "WARN"
+        return "INFO"
+
+    def extract_lockfix_storage_state(self, output: object) -> dict:
+        text = str(output or "")
+        for line in text.splitlines():
+            marker = "LOCKFIX_STORAGE_STATE="
+            if marker not in line:
+                continue
+            raw = line.split(marker, 1)[1].strip()
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                return {}
+            return parsed if isinstance(parsed, dict) else {}
+        return {}
+
+    def format_log_audit_record(self, record: dict) -> str:
+        event = str(record.get("event") or "audit_event")
+        slot_id = str(record.get("slot_id") or "-")
+        if event == "disk.offline.start":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            return (
+                f"LOCK-FIX Offline START - slot {slot_id}, drive {drive}: "
+                "Get-Partition/Get-Disk 대상 확인 후 Windows 디스크 오프라인 전환을 시작했습니다."
+            )
+        if event == "disk.offline.tick":
+            elapsed = LockFixWebHandler.compact_log_value(self, record.get("elapsed_seconds") or "1")
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            return f"LOCK-FIX Offline CHECK - slot {slot_id}, drive {drive}: 오프라인 증명 확인 {elapsed}s 경과."
+        if event == "disk.offline":
+            proof = LockFixWebHandler.extract_lockfix_storage_state(self, record.get("output"))
+            drive = LockFixWebHandler.compact_log_value(self, proof.get("drive") or record.get("drive_letter") or "-")
+            disk_number = LockFixWebHandler.compact_log_value(self, proof.get("diskNumber") or record.get("disk_number") or "-")
+            is_offline = proof.get("isOffline", record.get("is_offline", "-"))
+            method = LockFixWebHandler.compact_log_value(self, proof.get("method") or record.get("method") or "Set-Disk -IsOffline true")
+            return (
+                f"LOCK-FIX Offline CONFIRMED - slot {slot_id}, drive {drive}, disk {disk_number}, "
+                f"IsOffline={is_offline}, method={method}."
+            )
+        if event == "disk.offline.proof":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            disk_number = LockFixWebHandler.compact_log_value(self, record.get("disk_number") or "-")
+            is_offline = LockFixWebHandler.compact_log_value(self, record.get("is_offline"))
+            method = LockFixWebHandler.compact_log_value(self, record.get("method") or "Set-Disk -IsOffline true")
+            return (
+                f"LOCK-FIX Offline PROOF - slot {slot_id}, drive {drive}, disk {disk_number}, "
+                f"IsOffline={is_offline}, evidence=Get-Disk/Set-Disk, method={method}."
+            )
+        if event == "disk.offline.error":
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "offline failed")
+            return f"LOCK-FIX Offline ERROR - slot {slot_id}, {error}"
+        if event == "state.transition" and record.get("state") == "DISK_OFFLINING":
+            return f"LOCK-FIX Offline STATE - slot {slot_id}, step 5 disk offlining started."
+        if event == "state.transition" and record.get("state") == "ISOLATED":
+            return f"LOCK-FIX Isolated STATE - slot {slot_id}, step 5 offline isolation completed."
+        message = record.get("message") or record.get("error") or record.get("output") or event
+        return LockFixWebHandler.compact_log_value(self, message)
 
     def retention_days(self, value: str = "30") -> int:
         try:
@@ -2381,9 +3267,56 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             days = 30
         return min(100, max(30, days))
 
-    def logs_summary(self, start_date: str = "", end_date: str = "", page_value: str = "1", retention_value: str = "30") -> dict:
+    def filter_log_items(self, items: list[dict], severity: str = "", source: str = "", query: str = "") -> list[dict]:
+        severity = str(severity or "").strip().upper()
+        source = str(source or "").strip().lower()
+        query = str(query or "").strip().lower()
+        filtered = []
+        for item in items:
+            item_severity = str(item.get("severity") or "").upper()
+            item_source = str(item.get("source") or "").lower()
+            text = " ".join(str(item.get(key) or "") for key in ("type", "date", "source", "severity", "message")).lower()
+            if severity and item_severity != severity:
+                continue
+            if source and item_source != source:
+                continue
+            if query and query not in text:
+                continue
+            filtered.append(item)
+        return filtered
+
+    def log_summary_counts(self, items: list[dict]) -> dict:
+        severity_counts = {"ERROR": 0, "WARN": 0, "INFO": 0}
+        type_counts = {}
+        source_counts = {}
+        for item in items:
+            severity = str(item.get("severity") or "INFO").upper()
+            severity_counts[severity] = severity_counts.get(severity, 0) + 1
+            type_name = str(item.get("type") or "-")
+            source_name = str(item.get("source") or "-")
+            type_counts[type_name] = type_counts.get(type_name, 0) + 1
+            source_counts[source_name] = source_counts.get(source_name, 0) + 1
+        return {
+            "severity": severity_counts,
+            "types": type_counts,
+            "sources": source_counts,
+        }
+
+    def logs_summary(
+        self,
+        start_date: str = "",
+        end_date: str = "",
+        page_value: str = "1",
+        retention_value: str = "30",
+        severity: str = "",
+        source: str = "",
+        query: str = "",
+    ) -> dict:
         retention_days = self.retention_days(retention_value)
         items, range_start, range_end = self.log_items(start_date, end_date, retention_days)
+        source_options = sorted({str(item.get("source") or "-") for item in items})
+        items = LockFixWebHandler.filter_log_items(self, items, severity, source, query)
+        summary = LockFixWebHandler.log_summary_counts(self, items)
         per_page = 30
         try:
             page = max(1, int(page_value))
@@ -2399,11 +3332,23 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "per_page": per_page,
             "total_pages": total_pages,
             "retention_days": retention_days,
+            "summary": summary,
+            "filters": {"severity": severity, "source": source, "q": query},
+            "source_options": source_options,
             "items": items[offset : offset + per_page],
         }
 
-    def send_logs_csv(self, start_date: str = "", end_date: str = "", retention_value: str = "30") -> None:
+    def send_logs_csv(
+        self,
+        start_date: str = "",
+        end_date: str = "",
+        retention_value: str = "30",
+        severity: str = "",
+        source: str = "",
+        query: str = "",
+    ) -> None:
         items, _, _ = self.log_items(start_date, end_date, self.retention_days(retention_value))
+        items = LockFixWebHandler.filter_log_items(self, items, severity, source, query)
         rows = ["type,date,source,severity,message"]
         for item in items:
             rows.append(",".join(str(item[key]).replace('"', '""').join(['"', '"']) for key in ("type", "date", "source", "severity", "message")))
@@ -2727,6 +3672,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         self.write_body(data)
 
     def send_json(self, payload: dict, status: int = 200, headers=None) -> None:
+        payload = LockFixWebHandler.sanitize_json_payload(self, payload)
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")

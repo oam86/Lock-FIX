@@ -5,11 +5,40 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 INTEGRATED_ROOT = ROOT / "integrated"
+EXCLUDED_DIR_NAMES = {".venv", "node_modules", "target", ".idea", "__MACOSX", "__pycache__", "logs"}
+MAX_FILES_PER_PROJECT = 2500
+
+
+def project_files(root: Path, limit: int = MAX_FILES_PER_PROJECT) -> tuple[list[Path], bool]:
+    if not root.exists():
+        return [], False
+    files: list[Path] = []
+    stack = [root]
+    limited = False
+    while stack:
+        current = stack.pop()
+        try:
+            children = list(current.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            if child.is_dir():
+                if child.name in EXCLUDED_DIR_NAMES:
+                    continue
+                stack.append(child)
+                continue
+            if not child.is_file():
+                continue
+            files.append(child)
+            if len(files) >= limit:
+                limited = True
+                return files, limited
+    return files, limited
 
 
 def project_summary(name: str, relative_path: str, kind: str, run_hint: str) -> dict:
     root = INTEGRATED_ROOT / relative_path
-    files = [path for path in root.rglob("*") if path.is_file()] if root.exists() else []
+    files, scan_limited = project_files(root)
     extensions: dict[str, int] = {}
     for path in files:
         suffix = path.suffix.lower() or "(none)"
@@ -21,6 +50,7 @@ def project_summary(name: str, relative_path: str, kind: str, run_hint: str) -> 
         "kind": kind,
         "exists": root.exists(),
         "file_count": len(files),
+        "scan_limited": scan_limited,
         "top_extensions": sorted(
             [{"extension": key, "count": value} for key, value in extensions.items()],
             key=lambda item: item["count"],
@@ -47,5 +77,5 @@ def integrated_source_inventory() -> dict:
                 "./mvnw spring-boot:run",
             ),
         ],
-        "excluded": [".venv", "node_modules", "target", ".idea", "__MACOSX", "__pycache__", "logs"],
+        "excluded": sorted(EXCLUDED_DIR_NAMES),
     }

@@ -58,8 +58,7 @@ namespace LockFix
 
         private int pageIndex;
         private bool installed;
-        private string installedUiPath = "";
-        private readonly string webUiUrl = "https://localhost:8443";
+        private readonly string webUiUrl = "http://127.0.0.1:8088";
 
         public SetupWizardForm()
         {
@@ -205,9 +204,9 @@ namespace LockFix
             }
             if (pageIndex == 9)
             {
-                if (launchWebUi.Checked && File.Exists(installedUiPath))
+                if (launchWebUi.Checked)
                 {
-                    Process.Start(installedUiPath);
+                    OpenWebUi();
                 }
                 Close();
                 return;
@@ -318,7 +317,7 @@ namespace LockFix
             pageTitle.Text = "Component Selection";
             pageBody.Text = "설치할 LOCK-FIX 구성 요소를 선택합니다.";
             AddCheckCard(coreService, "디스크 격리 상태 머신과 로컬 제어 로직", 38, 140);
-            AddCheckCard(webUi, "https://localhost:8443 접속용 관리 화면", 416, 140);
+            AddCheckCard(webUi, "http://127.0.0.1:8088 접속용 관리 화면", 416, 140);
             AddCheckCard(veeamConnector, "Veeam 백업 완료 신호 및 상태 연동", 38, 244);
             AddCheckCard(agent, "현장 서버 상태 수집 및 제어 에이전트", 416, 244);
             AddCheckCard(database, "설정, 상태, 감사 로그 저장소", 38, 348);
@@ -562,7 +561,7 @@ namespace LockFix
             AddCheck("Windows Version", Environment.OSVersion.VersionString, true);
             AddCheck("PowerShell", File.Exists(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell\\v1.0\\powershell.exe")) ? "Available" : "Not found", true);
             AddCheck("WinRM", "Manual verification recommended", true);
-            AddCheck("Firewall", "Rule creation prepared for Web UI port 8443", true);
+            AddCheck("Firewall", "Rule creation prepared for Web UI port 8088", true);
             AddCheck("Administrator Permission", IsAdministratorHint() ? "Elevated" : "Current user install mode", true);
         }
 
@@ -599,7 +598,7 @@ namespace LockFix
                 "Install Type: " + (recommendedInstall.Checked ? "Recommended" : "Advanced") + Environment.NewLine +
                 "Install Path: " + installPathBox.Text + Environment.NewLine +
                 "Service Name: LOCK-FIX Core Service" + Environment.NewLine +
-                "Web UI Port: 8443" + Environment.NewLine +
+                "Web UI Port: 8088" + Environment.NewLine +
                 "Web UI URL: " + webUiUrl + Environment.NewLine +
                 "Veeam Server: " + veeamHost.Text + ":" + veeamPort.Text + Environment.NewLine +
                 "Veeam Auth: " + authType.Text + Environment.NewLine +
@@ -666,7 +665,6 @@ namespace LockFix
             RegisterWebUiService(targetRoot);
             SetProgress(88);
 
-            installedUiPath = Path.Combine(targetRoot, "dist", "lockfix-ui.exe");
             CreateWebShortcut(Path.Combine(targetRoot, "LOCK-FIX Web UI.url"), webUiUrl);
             AddLog("Web UI shortcut created.");
             SetProgress(92);
@@ -675,6 +673,14 @@ namespace LockFix
             AddLog("Start Menu launchers created.");
             SetProgress(100);
             AddLog("Installation complete. Web UI: " + webUiUrl);
+        }
+
+        private void OpenWebUi()
+        {
+            ProcessStartInfo start = new ProcessStartInfo();
+            start.FileName = webUiUrl;
+            start.UseShellExecute = true;
+            Process.Start(start);
         }
 
         private void CopyPayload(string sourceRoot, string targetRoot)

@@ -425,9 +425,16 @@ class VeeamClient:
         if not checks["port_9419"]["ok"]:
             return {"api_synced": False, "source": "python_veeam_client", "checks": checks}
         try:
+            started = time.time()
             self.login()
-            checks["token"] = {"ok": True, "message": "/api/oauth2/token issued an access token."}
+            checks["token"] = {
+                "ok": True,
+                "message": "/api/oauth2/token issued an access token.",
+                "elapsed_ms": int((time.time() - started) * 1000),
+            }
+            started = time.time()
             sessions = self.get_sessions()
+            sessions_elapsed_ms = int((time.time() - started) * 1000)
             checks["backups"] = {"ok": False, "message": "/api/v1/backups was not queried yet."}
             match = match_sessions(
                 sessions,
@@ -435,7 +442,12 @@ class VeeamClient:
                 normalized_job_id(job_id or self.settings.job_id).lower(),
             )
             session = sorted(match["matches"], key=session_sort_key, reverse=True)[0] if match["matches"] else None
-            checks["sessions"] = {"ok": True, "message": "/api/v1/sessions query succeeded."}
+            checks["sessions"] = {
+                "ok": True,
+                "message": "/api/v1/sessions query succeeded.",
+                "elapsed_ms": sessions_elapsed_ms,
+                "count": len(sessions),
+            }
         except VeeamError as exc:
             key = "token" if getattr(exc, "code", "") == "401" else "sessions"
             checks[key] = {"ok": False, "code": getattr(exc, "code", exc.__class__.__name__), "message": str(exc)}
@@ -510,9 +522,24 @@ class VeeamClient:
                 "checks": checks,
             }
         summary = session_summary(session)
+        started = time.time()
         logs = self.get_session_logs(session_id(session))
+        checks["session_logs"] = {
+            "ok": True,
+            "message": "/api/v1/sessions/{id}/logs query succeeded.",
+            "elapsed_ms": int((time.time() - started) * 1000),
+            "count": len(logs),
+        }
+        started = time.time()
         tasks = self.get_session_task_sessions(session_id(session))
+        checks["task_sessions"] = {
+            "ok": True,
+            "message": "/api/v1/sessions/{id}/taskSessions query succeeded.",
+            "elapsed_ms": int((time.time() - started) * 1000),
+            "count": len(tasks),
+        }
         summary = enrich_summary_with_logs(summary, logs, tasks)
+        summary = self.prefer_newer_console_log_summary(summary)
         summary["api_synced"] = True
         summary["source"] = "python_veeam_client"
         summary["session_match"] = True
@@ -536,8 +563,8 @@ class VeeamClient:
         )
         if not log_summary:
             return summary
-        current_time = veeam_time_sort_key(summary.get("ended_at"), summary.get("started_at"))
-        log_time = veeam_time_sort_key(log_summary.get("job_finished_at"), log_summary.get("ended_at"))
+        current_time = veeam_latest_time_sort_key(summary)
+        log_time = veeam_latest_time_sort_key(log_summary)
         if log_time < current_time:
             return summary
         merged = dict(summary)
@@ -1024,6 +1051,35 @@ def veeam_time_sort_key(*values: Any) -> float:
         if parsed:
             return parsed.timestamp()
     return 0.0
+
+
+def veeam_latest_time_sort_key(summary: dict[str, Any]) -> float:
+    """Return the newest visible Veeam timestamp from REST or console evidence."""
+    values: list[Any] = [
+        summary.get("job_finished_at"),
+        summary.get("updated_at"),
+        summary.get("updateTime"),
+        summary.get("ended_at"),
+        summary.get("endTime"),
+        summary.get("stopTime"),
+        summary.get("started_at"),
+        summary.get("startTime"),
+        summary.get("creationTime"),
+    ]
+    logs = summary.get("session_logs") if isinstance(summary.get("session_logs"), list) else []
+    for log in logs:
+        if isinstance(log, dict):
+            values.extend(
+                [
+                    log.get("job_finished_at"),
+                    log.get("updated_at"),
+                    log.get("ended_at"),
+                    log.get("endTime"),
+                    log.get("started_at"),
+                    log.get("startTime"),
+                ]
+            )
+    return max((veeam_time_sort_key(value) for value in values), default=0.0)
 
 
 def display_veeam_time(value: Any) -> str:

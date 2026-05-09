@@ -66,7 +66,7 @@ def latest_backup_copy_console_log_summary(
     if not started_dt and ended_dt:
         started_dt = ended_dt
     if not ended_dt and started_dt:
-        ended_dt = started_dt
+        ended_dt = child.get("last_progress_dt") or parent.get("last_activity_dt") or started_dt
     if not (started_dt and ended_dt):
         return {}
 
@@ -74,14 +74,26 @@ def latest_backup_copy_console_log_summary(
     transferred = child.get("transferred") or "0 B"
     backup_size = child.get("backup_size") or "-"
     status = child.get("status") or parent.get("status") or "Success"
+    if normalize_status(status) != "Success" and started_dt and ended_dt and ended_dt < started_dt:
+        ended_dt = parent.get("last_activity_dt") or child.get("last_progress_dt") or started_dt
     session_id = child.get("session_id") or parent.get("session_id") or ""
     duration = duration_text(started_dt, ended_dt)
 
-    actions = [
-        f"Backup copy for {full_name} started at {format_dt(started_dt)}",
-        f"{full_name} ({algorithm}) ({transferred}) processing finished at {format_dt(ended_dt)}: {transferred} transferred",
-    ]
-    if finished_dt:
+    actions = [f"Backup copy for {full_name} started at {format_dt(started_dt)}"]
+    normalized_status = normalize_status(status)
+    if normalized_status == "Success":
+        actions.append(
+            f"{full_name} ({algorithm}) ({transferred}) processing finished at {format_dt(ended_dt)}: {transferred} transferred"
+        )
+    else:
+        progress = child.get("progress_percent", 0)
+        speed = child.get("speed") or "0 KB/s"
+        actions.append(
+            f"{full_name} ({algorithm}) ({backup_size}) is running: {transferred} transferred at {speed}, progress {progress}%"
+        )
+    for error in child.get("errors", [])[:3]:
+        actions.append(f"WARN - Veeam console reported: {error}")
+    if finished_dt and normalized_status == "Success":
         actions.append(f"Job finished at {format_dt(finished_dt)}")
     actions.append(
         "OK - VBR REST 9419 is connected; latest Backup Copy console time was read from Veeam local logs."
@@ -95,11 +107,11 @@ def latest_backup_copy_console_log_summary(
         "job": job_name or display_name,
         "job_id": policy_job_id,
         "target": display_target,
-        "status": normalize_status(status),
-        "result": normalize_status(status),
-        "session_state": "BACKUP_COMPLETED" if normalize_status(status) == "Success" else "WAITING",
-        "progress_percent": 100 if normalize_status(status) == "Success" else 0,
-        "current_step": 2 if normalize_status(status) == "Success" else 1,
+        "status": normalized_status,
+        "result": normalized_status,
+        "session_state": "BACKUP_COMPLETED" if normalized_status == "Success" else "WAITING",
+        "progress_percent": 100 if normalized_status == "Success" else int(child.get("progress_percent", 0) or 0),
+        "current_step": 2 if normalized_status == "Success" else 1,
         "started_at": format_dt(started_dt),
         "ended_at": format_dt(ended_dt),
         "job_finished_at": format_dt(finished_dt) if finished_dt else format_dt(ended_dt),
@@ -125,10 +137,10 @@ def latest_backup_copy_console_log_summary(
         "session_logs": [
             {
                 "name": job_name or display_name,
-                "status": normalize_status(status),
+                "status": normalized_status,
                 "actions": actions,
                 "duration": duration,
-                "progress_percent": 100 if normalize_status(status) == "Success" else 0,
+                "progress_percent": 100 if normalized_status == "Success" else int(child.get("progress_percent", 0) or 0),
                 "started_at": format_dt(started_dt),
                 "ended_at": format_dt(ended_dt),
                 "backup_size": backup_size,
@@ -178,10 +190,13 @@ def parse_parent_session(text: str, policy_job_id: str) -> dict[str, Any]:
     session_creation: list[tuple[datetime, str, datetime]] = []
     session_end: list[tuple[datetime, str, datetime]] = []
     completions: list[tuple[datetime, str, str]] = []
+    working: list[tuple[datetime, str]] = []
+    last_activity: datetime | None = None
     for line in text.splitlines():
         line_dt = parse_log_line_dt(line)
         if not line_dt:
             continue
+        last_activity = line_dt
         creation_match = re.search(r"\[JobSession\]\s+Update session \[([^\]]+)\]\s+CreationTime:\s+(.+)$", line)
         if creation_match:
             display_dt = parse_display_time(creation_match.group(2)) or line_dt
@@ -194,6 +209,9 @@ def parse_parent_session(text: str, policy_job_id: str) -> dict[str, Any]:
         complete_match = re.search(r"Job session '([^']+)'.*status:\s+'([^']+)'", line)
         if complete_match:
             completions.append((line_dt, complete_match.group(1), complete_match.group(2)))
+        working_match = re.search(r"\[Session\]\s+Id '([^']+)'.*State 'Working'", line)
+        if working_match:
+            working.append((line_dt, working_match.group(1)))
     if session_creation:
         started, session_id, _ = max(session_creation, key=lambda item: item[0])
         result["started_dt"] = started
@@ -202,10 +220,19 @@ def parse_parent_session(text: str, policy_job_id: str) -> dict[str, Any]:
         ended, session_id, _ = max(session_end, key=lambda item: item[0])
         result["ended_dt"] = ended
         result["session_id"] = result.get("session_id") or session_id
-    if completions:
-        _, session_id, status = max(completions, key=lambda item: item[0])
+    latest_working = max(working, key=lambda item: item[0]) if working else None
+    latest_completion = max(completions, key=lambda item: item[0]) if completions else None
+    if latest_completion and not (latest_working and latest_working[0] > latest_completion[0]):
+        _, session_id, status = latest_completion
         result["status"] = status
         result["session_id"] = result.get("session_id") or session_id
+    elif latest_working or (result.get("started_dt") and not result.get("ended_dt")):
+        result["status"] = "Working"
+        if latest_working:
+            _, session_id = latest_working
+            result["session_id"] = result.get("session_id") or session_id
+    if last_activity:
+        result["last_activity_dt"] = last_activity
     if policy_job_id and policy_job_id.lower() not in text.lower():
         return {}
     return result
@@ -222,6 +249,10 @@ def parse_child_session(text: str) -> dict[str, Any]:
     backup_size = "-"
     transferred = "0 B"
     speed = "-"
+    progress_percent = 0
+    last_progress_dt: datetime | None = None
+    progress_events: list[tuple[datetime, int, str, str]] = []
+    errors: list[str] = []
     for line in text.splitlines():
         line_dt = parse_log_line_dt(line)
         if not line_dt:
@@ -236,9 +267,30 @@ def parse_child_session(text: str) -> dict[str, Any]:
         session_match = re.search(r"\[Session\]\s+Id '([^']+)'.*State 'Working'", line)
         if session_match:
             starts[session_match.group(1)] = line_dt
+        starting_match = re.search(r"Starting job '([^']+)', id '([^']+)'", line)
+        if starting_match:
+            starts[starting_match.group(2)] = line_dt
+            target_from_start = re.search(r" - ([^\\']+)$", starting_match.group(1))
+            if target_from_start:
+                target = target_from_start.group(1).strip()
         total_match = re.search(r"TotalSize '([^']+)'", line)
         if total_match:
             backup_size = format_log_size(total_match.group(1))
+        progress_match = re.search(
+            r"Job progress:\s+'(\d+)%',\s+'([^']+)'\s+of\s+'([^']+)'\s+bytes",
+            line,
+        )
+        if progress_match:
+            progress_percent = int(progress_match.group(1))
+            transferred = format_log_size(progress_match.group(2))
+            backup_size = format_log_size(progress_match.group(3))
+            last_progress_dt = line_dt
+            progress_events.append((line_dt, progress_percent, transferred, backup_size))
+        error_match = re.search(r"(Cannot create folder\..+|CreateDirectory\(.+|Failed to create directory '.+')", line)
+        if error_match:
+            message = error_match.group(1).strip()
+            if message not in errors:
+                errors.append(message)
         complete_match = re.search(
             r"Job session '([^']+)'.*status:\s+'([^']+)'.*'([^']+)'\s+of\s+'([^']+)'\s+bytes",
             line,
@@ -246,19 +298,40 @@ def parse_child_session(text: str) -> dict[str, Any]:
         if complete_match:
             session_id, status, raw_transferred, raw_total = complete_match.groups()
             completions.append((line_dt, session_id, status, raw_transferred, raw_total))
-    if completions:
-        ended_dt, session_id, status, raw_transferred, raw_total = max(completions, key=lambda item: item[0])
+    latest_start = max(starts.items(), key=lambda item: item[1]) if starts else None
+    latest_completion = max(completions, key=lambda item: item[0]) if completions else None
+    running_is_newer = bool(
+        latest_start
+        and latest_completion
+        and (latest_start[1] > latest_completion[0] or (last_progress_dt and last_progress_dt > latest_completion[0]))
+    )
+    if latest_completion and not running_is_newer:
+        ended_dt, session_id, status, raw_transferred, raw_total = latest_completion
         result["session_id"] = session_id
         result["status"] = status
         result["ended_dt"] = ended_dt
         result["started_dt"] = starts.get(session_id) or min(starts.values()) if starts else ended_dt
         transferred = format_log_size(raw_transferred)
         backup_size = format_log_size(raw_total) if raw_total != "0 B" else backup_size
+    elif latest_start:
+        session_id, started_dt = latest_start
+        current_progress = [item for item in progress_events if item[0] >= started_dt]
+        if current_progress:
+            last_progress_dt, progress_percent, transferred, backup_size = max(current_progress, key=lambda item: item[0])
+        result["session_id"] = session_id
+        result["status"] = "Working"
+        result["started_dt"] = started_dt
+        result["ended_dt"] = last_progress_dt or started_dt
     result["algorithm"] = algorithm or "Incremental"
     result["target"] = target
     result["backup_size"] = backup_size
     result["transferred"] = transferred
     result["speed"] = speed
+    result["progress_percent"] = progress_percent
+    if last_progress_dt:
+        result["last_progress_dt"] = last_progress_dt
+    if errors:
+        result["errors"] = errors[-3:]
     return result
 
 

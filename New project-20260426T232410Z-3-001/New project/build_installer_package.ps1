@@ -129,6 +129,13 @@ Web UI 상시 실행 서비스 등록:
 powershell -ExecutionPolicy Bypass -File .\tools\install_lockfix_webui_service.ps1
 ```
 
+주의:
+
+- `LOCK-FIX WebUI Service.exe`는 직접 더블클릭해서 실행하는 파일이 아닙니다.
+- 이 파일은 Windows 서비스로 등록된 뒤 서비스 관리자 또는 설치 스크립트가 실행합니다.
+- 직접 실행하면 Windows의 "서비스 시작 오류" 메시지가 표시될 수 있습니다.
+- Web UI 접속은 브라우저 주소 `http://127.0.0.1:8088` 또는 설치 후 생성되는 `LOCK-FIX Web UI.url` 바로가기를 사용합니다.
+
 ## 실제 전원 OFF 컨트롤러 설정
 
 LOCK-FIX는 기본 패키지에서 `power.type=command`를 사용하며, 최종 5단계에서 `tools\lockfix_power_control.ps1`을 호출합니다. 이 스크립트는 현장 PDU, 릴레이, 또는 스토리지 컨트롤러의 실제 OFF/ON 명령을 환경변수로 받아 실행합니다. 장비 정보가 설정되지 않으면 실제 전원 OFF가 완료된 것으로 처리하지 않고 오류 로그를 남깁니다.
@@ -196,10 +203,10 @@ LOCK-FIX Console.exe
 설치 완료 화면에 표시되는 접속 주소:
 
 ```text
-https://localhost:8443
+http://127.0.0.1:8088
 ```
 
-현재 PoC 실행 주소:
+현재 실행 주소:
 
 ```text
 http://127.0.0.1:8088
