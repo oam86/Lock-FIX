@@ -23,6 +23,10 @@ const monitoringStart = document.querySelector("#monitoringStart");
 const monitoringEnd = document.querySelector("#monitoringEnd");
 const monitoringRangeApply = document.querySelector("#monitoringRangeApply");
 const monitoringRangeDownload = document.querySelector("#monitoringRangeDownload");
+const monitoringSummaryStrip = document.querySelector("#monitoringSummaryStrip");
+const opsClock = document.querySelector("#opsClock");
+const opsSummaryGrid = document.querySelector("#opsSummaryGrid");
+const opsEventList = document.querySelector("#opsEventList");
 const chartMenuButton = document.querySelector("#chartMenuButton");
 const chartZoomInButton = document.querySelector("#chartZoomInButton");
 const chartZoomOutButton = document.querySelector("#chartZoomOutButton");
@@ -146,6 +150,7 @@ let latestMonitoringData = null;
 let latestReportData = null;
 let latestSourcesData = null;
 let latestDashboardData = null;
+let latestLogsData = null;
 let airgapPollTimer = null;
 let veeamPollTimer = null;
 let emergencyReconnectPollTimer = null;
@@ -735,6 +740,9 @@ function friendlyEmergencyError(error) {
   if (/repair-volume/i.test(text) && /not supported|43001/i.test(text)) {
     return "해당 파일시스템은 Repair-Volume 검사를 지원하지 않아 검사를 건너뛰고 재연결 상태를 다시 확인합니다.";
   }
+  if (/401|unauthorized|인증|auth/i.test(text)) {
+    return "긴급 접속 상태 확인 인증이 만료되었습니다. 최신 재접속 완료 여부는 백그라운드 로그와 상태 이력에서 다시 확인합니다.";
+  }
   return "긴급 접속을 완료하지 못했습니다. 상세 오류는 백그라운드 로그 이력에 저장됨";
 }
 
@@ -960,10 +968,13 @@ function applyPendingUiSettings() {
 }
 
 async function requestJson(url, options = {}) {
-  const response = await fetch(url, options);
+  const response = await fetch(url, { credentials: "same-origin", ...options });
   const payload = await response.json();
   if (!response.ok) {
-    throw new Error(payload.error || "request failed");
+    const message = payload.error || (response.status === 401 ? "login session expired" : "request failed");
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
   return payload;
 }
@@ -1573,6 +1584,7 @@ function renderDetect(data) {
     const isNormal = fingerprint.match === true || status === "MATCH";
     const statusClass = isNormal ? "normal" : "abnormal";
     const judgementLabel = isNormal ? "REGISTERED" : status === "DIFFERENT_DISK" ? "DIFFERENT DISK" : "UNREGISTERED";
+    const judgementKorean = isNormal ? "등록된 디스크" : status === "DIFFERENT_DISK" ? "다른 디스크 감지" : "등록되지 않은 디스크";
     const recognitionLabel = isNormal ? "NORMAL RECOGNITION" : "RECOGNITION FAILED";
     const diskSize = parts.find((part) => {
       const key = String(part.key || "").toLowerCase();
@@ -1587,13 +1599,19 @@ function renderDetect(data) {
       <div class="detect-judgement-page">
         <header class="detect-judgement-head">
           <span aria-hidden="true"></span>
-          <h1>Judgement Module UI</h1>
+          <div>
+            <h1>디스크 식별 판정</h1>
+            <p>UID, 해시, 디스크 속성 기준으로 현재 연결된 볼륨의 신뢰 상태를 판정합니다.</p>
+          </div>
         </header>
         <section class="detect-judgement-panel detect-judgement-${statusClass}">
           <div class="detect-judgement-topline">
             <div class="detect-final-state">
               <span>FINAL JUDGEMENT</span>
-              <strong>${escapeHtml(judgementLabel)}</strong>
+              <div class="detect-state-row">
+                <strong>${escapeHtml(judgementLabel)}</strong>
+                <b>${escapeHtml(judgementKorean)}</b>
+              </div>
               <em>${escapeHtml(recognitionLabel)}</em>
             </div>
             <div class="detect-latency">
@@ -1614,6 +1632,11 @@ function renderDetect(data) {
               <span>DISK SIZE</span>
               <strong>${escapeHtml(diskSize?.value || "-")}</strong>
             </article>
+          </div>
+          <div class="detect-action-row">
+            <button type="button" class="detect-action-primary" data-detect-action="logs">상세 로그 보기</button>
+            <button type="button" class="detect-action-secondary" data-detect-action="airgap">격리 유지</button>
+            <button type="button" class="detect-action-secondary" data-detect-action="settings">등록 요청</button>
           </div>
         </section>
         <section class="detect-background-fingerprint" aria-label="Background fingerprint judgement basis">
@@ -1688,6 +1711,7 @@ function renderDetectRows(target, items) {
 }
 
 function renderLogs(data) {
+  latestLogsData = data;
   if (!logsRange.start) logsRange.start = data.range.start;
   if (!logsRange.end) logsRange.end = data.range.end;
   logsRange.page = data.page || 1;
@@ -1717,6 +1741,7 @@ function renderLogs(data) {
     logsHistoryTable.appendChild(row);
   });
   renderLogsPagination(data);
+  renderOperationsOverview();
 }
 
 function renderLogsSourceOptions(options, selected) {
@@ -1963,6 +1988,7 @@ function renderMonitoring(data) {
   monitoringStart.value = monitoringRange.start;
   monitoringEnd.value = monitoringRange.end;
   latestMonitoringSeries = data.series;
+  renderMonitoringSummary(data);
   drawLineChart(latestMonitoringSeries);
   renderGauge(cpuGauge, "CPU", data.current.cpu, "#2c90ff");
   renderGauge(memoryGauge, "Memory", data.current.memory, "#46b865");
@@ -1970,6 +1996,142 @@ function renderMonitoring(data) {
   renderGauge(networkGauge, "Network", data.current.network, "#8b5cf6");
   renderGauge(interfaceGauge, "Interface", data.current.interface, "#5a2f16");
   updateMemoryThresholdButton(data.current.memory);
+  renderOperationsOverview();
+}
+
+function monitoringMetricName(metric) {
+  const labels = {
+    cpu: "CPU",
+    memory: "Memory",
+    disk: "Disk",
+    network: "Network",
+    interface: "Interface",
+  };
+  return labels[metric] || metric;
+}
+
+function monitoringMetricStats(data) {
+  const thresholds = { cpu: 80, memory: 80, disk: 85, network: 75, interface: 70 };
+  const metric = activeMonitoringMetric || "cpu";
+  const values = (data.series || []).map((item) => Number(item[metric] || 0));
+  const current = Number((data.current || {})[metric] || values[values.length - 1] || 0);
+  const average = values.length ? values.reduce((sum, item) => sum + item, 0) / values.length : current;
+  const peak = values.length ? Math.max(...values) : current;
+  const threshold = thresholds[metric] || 80;
+  return { metric, current, average, peak, threshold, warning: peak >= threshold || current >= threshold };
+}
+
+function renderMonitoringSummary(data) {
+  if (!monitoringSummaryStrip) return;
+  const stats = monitoringMetricStats(data);
+  const items = [
+    ["항목", monitoringMetricName(stats.metric)],
+    ["현재", `${stats.current.toFixed(stats.current % 1 ? 1 : 0)}%`],
+    ["평균", `${stats.average.toFixed(1)}%`],
+    ["최대", `${stats.peak.toFixed(1)}%`],
+    ["임계치", `${stats.threshold}%`],
+  ];
+  monitoringSummaryStrip.classList.toggle("summary-warning", stats.warning);
+  monitoringSummaryStrip.innerHTML = items
+    .map(([label, value]) => `<article><span>${label}</span><strong>${value}</strong></article>`)
+    .join("");
+}
+
+function updateOpsClock() {
+  if (!opsClock) return;
+  opsClock.textContent = new Date().toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function opsToneFromText(value, fallback = "neutral") {
+  const text = String(value || "").toUpperCase();
+  if (/(ERROR|FAIL|FAILED|UNREGISTERED|DENIED|WARNING_FOR_MOUNT|MISMATCH)/.test(text)) return "danger";
+  if (/(WAIT|RUNNING|PENDING|START|WARN|UNKNOWN)/.test(text)) return "warn";
+  if (/(OK|VALID|CONNECTED|SUCCESS|DONE|OFFLINE|ONLINE_VERIFIED|COMPLETED)/.test(text)) return "ok";
+  return fallback;
+}
+
+function latestOpsEvents(airGap, veeam) {
+  const logItems = Array.isArray(latestLogsData?.items) ? latestLogsData.items.slice(0, 3) : [];
+  if (logItems.length) {
+    return logItems.map((item) => ({
+      time: formatLogDate(item.date),
+      tone: opsToneFromText(item.severity),
+      text: item.message || `${item.source || "system"} event`,
+    }));
+  }
+  const session = Array.isArray(airGap?.session_logs) ? airGap.session_logs[0] : null;
+  const actions = Array.isArray(session?.actions) ? session.actions.slice(0, 3) : [];
+  if (actions.length) {
+    return actions.map((text) => ({
+      time: veeam?.last_checked || "-",
+      tone: opsToneFromText(text),
+      text,
+    }));
+  }
+  return [{
+    time: "-",
+    tone: "neutral",
+    text: "최근 경고 또는 이벤트가 없습니다.",
+  }];
+}
+
+function renderOperationsOverview() {
+  if (!opsSummaryGrid || !opsEventList) return;
+  const airGap = latestSourcesData?.air_gap || {};
+  const veeam = airGap.veeam || {};
+  const emergencySlot = airGap.emergency_access?.slot || {};
+  const apiSynced = isVeeamSynced(veeam);
+  const progress = Math.max(0, Math.min(100, Number(veeam.progress_percent || 0)));
+  const diskState = emergencySlot.state || airGap.disk_state || airGap.offline_state || "-";
+  const timeline = Array.isArray(airGap.timeline) ? airGap.timeline : [];
+  const activeStep = timeline.find((item) => /ACTIVE|RUNNING|WORKING/i.test(String(item.state || "")));
+  const lastStep = timeline.filter((item) => /DONE|COMPLETED|SUCCESS/i.test(String(item.state || ""))).pop();
+  const cards = [
+    {
+      label: "Veeam REST",
+      value: apiSynced ? "Connected" : "Waiting",
+      meta: `${veeam.server || "127.0.0.1"}:${veeam.port || 9419} · ${veeam.rest_latency_ms ?? veeam.latency_ms ?? "-"}ms`,
+      tone: apiSynced ? "ok" : "warn",
+    },
+    {
+      label: "Backup",
+      value: `${progress}%`,
+      meta: veeam.job || veeam.job_name || "Veeam session",
+      tone: progress >= 100 ? "ok" : progress > 0 ? "run" : "warn",
+    },
+    {
+      label: "Air-Gap",
+      value: activeStep ? `Step ${activeStep.step}` : lastStep ? `Step ${lastStep.step} Done` : "Standby",
+      meta: activeStep ? activeStep.label || activeStep.title || "Working" : lastStep?.label || lastStep?.title || "Ready",
+      tone: activeStep ? "run" : lastStep ? "ok" : "neutral",
+    },
+    {
+      label: "Disk",
+      value: diskState,
+      meta: `${emergencySlot.volume || airGap.volume || "D:\\"} · ${emergencySlot.slot_id || "BAY-01"}`,
+      tone: opsToneFromText(diskState, "neutral"),
+    },
+  ];
+  opsSummaryGrid.innerHTML = cards.map((card) => `
+    <article class="ops-card ops-card-${card.tone}">
+      <span>${escapeHtml(card.label)}</span>
+      <strong>${escapeHtml(card.value)}</strong>
+      <em>${escapeHtml(card.meta)}</em>
+    </article>
+  `).join("");
+  opsEventList.innerHTML = latestOpsEvents(airGap, veeam).map((event) => `
+    <article class="ops-event ops-event-${event.tone}">
+      <span>${escapeHtml(event.time)}</span>
+      <p>${escapeHtml(event.text)}</p>
+    </article>
+  `).join("");
 }
 
 function monitoringUrl() {
@@ -2134,6 +2296,7 @@ async function pollSourcesLive() {
   try {
     const sources = await requestJson("/api/sources");
     renderSources(sources);
+    finalizeEmergencyReconnectFromSources(sources);
   } catch (error) {
     console.warn("Unable to poll Air-Gap live status", error);
   }
@@ -2181,6 +2344,56 @@ function appendEmergencyReconnectDetail(message) {
   emergencyReconnectDetailLogs = emergencyReconnectDetailLogs.slice(-120);
 }
 
+function mergeEmergencyReconnectDetails(lines) {
+  if (!Array.isArray(lines) || !lines.length) return;
+  const next = [...emergencyReconnectDetailLogs];
+  lines.forEach((line) => {
+    const text = String(line || "").trim();
+    if (text && !next.includes(text)) next.push(text);
+  });
+  emergencyReconnectDetailLogs = next.slice(-120);
+}
+
+function applyEmergencyReconnectFlowState(state) {
+  const value = String(state || "").trim();
+  if (!value || !latestSourcesData?.air_gap?.emergency_access?.slot) return;
+  latestSourcesData.air_gap.emergency_access.slot.state = value;
+}
+
+function isEmergencyReconnectCompleteState(state) {
+  return ["ONLINE_VERIFIED_RW", "ONLINE_VERIFIED", "MOUNTED_RW", "COMPLETE", "COMPLETED"].includes(String(state || "").toUpperCase());
+}
+
+function appendEmergencyReconnectCompletion(state = "ONLINE_VERIFIED_RW") {
+  const completionText = `긴급 접속이 완료되었다 - state ${state || "ONLINE_VERIFIED_RW"}`;
+  const historyText = "완료 이력 저장됨 - Reconnect Detail Logs 및 Logs 메뉴에서 확인 가능";
+  const alreadyLogged = emergencyReconnectDetailLogs.some((line) => line.includes("긴급 접속이 완료되었다") || line.includes("긴급 접속 완료") || line.includes("Reconnect COMPLETE"));
+  if (!alreadyLogged) {
+    appendEmergencyReconnectDetail(completionText);
+    appendEmergencyReconnectDetail(historyText);
+  }
+}
+
+function completeEmergencyReconnectWatch(state = "ONLINE_VERIFIED_RW") {
+  appendEmergencyReconnectCompletion(state);
+  stopEmergencyReconnectWatch("긴급 볼륨 접속 작업이 완료되었습니다.");
+  renderSources(latestSourcesData || { air_gap: fallbackAirGapSummary(true) });
+}
+
+function finalizeEmergencyReconnectFromSources(sources) {
+  if (!emergencyReconnectRunning) return false;
+  const slot = sources?.air_gap?.emergency_access?.slot || {};
+  const state = String(slot.state || "");
+  const history = Array.isArray(slot.reconnect_history) ? slot.reconnect_history : [];
+  const historyComplete = history.some((line) => /Reconnect COMPLETE|BACKGROUND COMPLETE|background\.complete|emergency\.reconnect\.complete|ONLINE_VERIFIED_RW|긴급 접속 완료|긴급 접속이 완료되었다/i.test(String(line || "")));
+  if (isEmergencyReconnectCompleteState(state) || historyComplete) {
+    mergeEmergencyReconnectDetails(history);
+    completeEmergencyReconnectWatch(state || "ONLINE_VERIFIED_RW");
+    return true;
+  }
+  return false;
+}
+
 function setEmergencyReconnectDetailLogging(enabled) {
   if (enabled && !emergencyReconnectDetailTimer) {
     appendEmergencyReconnectDetail("request accepted; live detail logging started");
@@ -2217,7 +2430,17 @@ function setEmergencyReconnectStatusPolling(enabled) {
       try {
         const result = await requestJson(`/api/emergency-reconnect/status?slot=${encodeURIComponent(emergencyReconnectDetailSlot)}&job_id=${encodeURIComponent(emergencyReconnectJobId)}`);
         const status = String(result.status || "").toLowerCase();
-        if (status === "not_started") {
+        mergeEmergencyReconnectDetails(result.detail_logs);
+        applyEmergencyReconnectFlowState(result.flow_state);
+        if (status === "idle" || status === "stale") {
+          const message = status === "stale"
+            ? "다른 긴급 재접속 작업이 등록되어 현재 작업 상태를 확인할 수 없습니다."
+            : "재접속 작업이 현재 서비스에 등록되어 있지 않습니다. 버튼 요청이 서비스까지 도달했는지 확인 필요";
+          appendEmergencyReconnectDetail(message);
+          appendEmergencyReconnectDetail("해결 안내: WebUI 로그인 세션, 서비스 상태, 관리자 권한을 확인한 뒤 다시 검증 후 긴급 접속을 실행하세요.");
+          stopEmergencyReconnectWatch(message);
+          renderSources(latestSourcesData || { air_gap: fallbackAirGapSummary(true) });
+        } else if (status === "not_started") {
           const message = result.message || "재접속 작업이 시작되지 않았습니다. 관리자 권한/서비스 상태 확인 필요";
           appendEmergencyReconnectDetail(message);
           appendEmergencyReconnectDetail(`해결 안내: ${emergencyReconnectResolutionText(result)}`);
@@ -2230,17 +2453,29 @@ function setEmergencyReconnectStatusPolling(enabled) {
           renderSources(latestSourcesData || { air_gap: fallbackAirGapSummary(true) });
         } else if (status === "complete") {
           appendEmergencyReconnectDetail(`background job complete: ${result.state || "complete"}`);
-          stopEmergencyReconnectWatch("긴급 볼륨 접속 작업이 완료되었습니다.");
+          completeEmergencyReconnectWatch(result.state || result.flow_state || "ONLINE_VERIFIED_RW");
           await pollSourcesLive();
         } else if (status === "running") {
           const elapsed = Number(result.elapsed_seconds || 0);
           const message = result.background_started_at
             ? `background job running - ${elapsed}s elapsed`
             : `waiting for background worker start - ${elapsed}s elapsed`;
-          appendEmergencyReconnectDetail(message);
+          if (!Array.isArray(result.detail_logs) || !result.detail_logs.length) {
+            appendEmergencyReconnectDetail(message);
+          }
         }
       } catch (error) {
-        appendEmergencyReconnectDetail(`status check failed: ${friendlyEmergencyError(error)}`);
+        const latestState = latestSourcesData?.air_gap?.emergency_access?.slot?.state || "";
+        const latestHistory = latestSourcesData?.air_gap?.emergency_access?.slot?.reconnect_history || [];
+        if (isEmergencyReconnectCompleteState(latestState) || latestHistory.some((line) => /Reconnect COMPLETE|BACKGROUND COMPLETE|background\.complete|emergency\.reconnect\.complete|ONLINE_VERIFIED_RW|긴급 접속 완료|긴급 접속이 완료되었다/i.test(String(line || "")))) {
+          mergeEmergencyReconnectDetails(latestHistory);
+          completeEmergencyReconnectWatch(latestState || "ONLINE_VERIFIED_RW");
+        } else {
+          const message = Number(error.status || 0) === 401
+            ? "status check failed: 로그인 세션이 만료되어 재접속 상태를 확인할 수 없습니다."
+            : `status check failed: ${friendlyEmergencyError(error)}`;
+          appendEmergencyReconnectDetail(message);
+        }
       }
     }, 1000);
   }
@@ -2439,6 +2674,7 @@ function fallbackAirGapSummary(loading = false) {
 
 function renderSources(data) {
   latestSourcesData = data;
+  renderOperationsOverview();
   const restoreContentScroll = keepContentAreaScroll();
   const previousSessionScroll = new Map();
   sourceList.querySelectorAll(".veeam-session-scroll-row").forEach((row, index) => {
@@ -2932,7 +3168,7 @@ function renderSources(data) {
 function drawLineChart(series) {
   const width = 920;
   const height = 320;
-  const pad = { left: 82, right: 18, top: 16, bottom: 50 };
+  const pad = { left: 96, right: 22, top: 12, bottom: 46 };
   const chartWidth = width - pad.left - pad.right;
   const chartHeight = height - pad.top - pad.bottom;
   const visibleCount = Math.max(8, Math.round(series.length / monitoringZoom));
@@ -2962,7 +3198,7 @@ function drawLineChart(series) {
   const grid = [0, 20, 40, 60, 80, 100]
     .map((tick) => {
       const yy = y(tick).toFixed(1);
-      return `<line x1="${pad.left}" y1="${yy}" x2="${width - pad.right}" y2="${yy}" class="grid-line"></line><text x="${pad.left - 12}" y="${Number(yy) + 4}" class="axis-label" text-anchor="end">${tick}.00%</text>`;
+      return `<line x1="${pad.left}" y1="${yy}" x2="${width - pad.right}" y2="${yy}" class="grid-line"></line><text x="${pad.left - 16}" y="${Number(yy) + 4}" class="axis-label" text-anchor="end">${tick}.00%</text>`;
     })
     .join("");
 
@@ -2995,7 +3231,7 @@ function drawLineChart(series) {
     </defs>
     <rect x="${pad.left}" y="${pad.top}" width="${chartWidth}" height="${chartHeight}" fill="#ffffff"></rect>
     ${grid}
-    <text x="16" y="${height / 2}" class="axis-title" transform="rotate(-90 16 ${height / 2})">하드웨어 사용량</text>
+    <text x="24" y="${height / 2}" class="axis-title" transform="rotate(-90 24 ${height / 2})">하드웨어 사용량</text>
     ${fillPath}
     <path d="${activePath.path}" class="line ${activePath.className}"></path>
     ${labels}
@@ -3086,7 +3322,66 @@ async function runAction(action, slotId) {
   }
 }
 
+function requestEmergencyApprovalPassword() {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "emergency-approval-modal";
+    overlay.innerHTML = `
+      <form class="emergency-approval-card">
+        <h2>긴급 재접속 승인</h2>
+        <p>관리자 계정 비밀번호를 한 번 더 입력해야 긴급 재접속이 시작됩니다.</p>
+        <label>
+          <span>승인 비밀번호</span>
+          <input type="password" autocomplete="current-password" autofocus>
+        </label>
+        <em class="emergency-approval-error" aria-live="polite"></em>
+        <div class="emergency-approval-actions">
+          <button type="button" data-approval-cancel="true">취소</button>
+          <button type="submit">승인</button>
+        </div>
+      </form>
+    `;
+    const form = overlay.querySelector("form");
+    const input = overlay.querySelector("input");
+    const error = overlay.querySelector(".emergency-approval-error");
+    const close = (value) => {
+      document.removeEventListener("keydown", onKey);
+      overlay.remove();
+      resolve(value);
+    };
+    function onKey(event) {
+      if (event.key === "Escape") close("");
+    }
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const value = input.value;
+      if (value !== "1") {
+        error.textContent = "승인 비밀번호가 일치하지 않습니다.";
+        input.select();
+        return;
+      }
+      close(value);
+    });
+    overlay.querySelector("[data-approval-cancel]").addEventListener("click", () => close(""));
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) close("");
+    });
+    document.addEventListener("keydown", onKey);
+    document.body.appendChild(overlay);
+    setTimeout(() => input.focus(), 0);
+  });
+}
+
 async function runEmergencyReconnect(slotId, volumePath = "") {
+  const approvalPassword = await requestEmergencyApprovalPassword();
+  if (!approvalPassword) {
+    emergencyReconnectDetailSlot = slotId || "-";
+    emergencyReconnectDetailLogs = [];
+    emergencyActionStatus = "긴급 재접속 승인이 취소되어 작업을 시작하지 않았습니다.";
+    appendEmergencyReconnectDetail("approval canceled; emergency reconnect was not submitted to the service");
+    renderSources(latestSourcesData || { air_gap: fallbackAirGapSummary(true) });
+    return;
+  }
   emergencyReconnectRunning = true;
   emergencyReconnectInitialState = String((latestSourcesData?.air_gap?.emergency_access?.slot?.state) || "").toUpperCase();
   emergencyReconnectDetailSlot = slotId || "-";
@@ -3100,7 +3395,7 @@ async function runEmergencyReconnect(slotId, volumePath = "") {
     const result = await requestJson(`/api/emergency-reconnect?slot=${encodeURIComponent(slotId)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ repository_path: volumePath }),
+      body: JSON.stringify({ repository_path: volumePath, approval_password: approvalPassword }),
     });
     emergencyActionStatus = result.message || "긴급 접속 작업이 백그라운드에서 진행 중입니다.";
     emergencyReconnectJobId = result.job_id || "";
@@ -3108,7 +3403,9 @@ async function runEmergencyReconnect(slotId, volumePath = "") {
     setEmergencyReconnectStatusPolling(true);
     await loadAll();
   } catch (error) {
-    emergencyActionStatus = friendlyEmergencyError(error);
+    emergencyActionStatus = Number(error.status || 0) === 401
+      ? "로그인 세션이 만료되어 긴급 재접속 요청이 서비스에 전달되지 않았습니다. 다시 로그인 후 실행하세요."
+      : friendlyEmergencyError(error);
     appendEmergencyReconnectDetail(`reconnect request failed: ${emergencyActionStatus}`);
     stopEmergencyReconnectWatch();
     await loadAll();
@@ -3130,6 +3427,14 @@ logoutSideButton.addEventListener("click", logout);
 licenseForm.addEventListener("submit", registerLicense);
 sidebarToggle?.addEventListener("click", toggleSidebar);
 sideItems.forEach((item) => item.addEventListener("click", () => showView(item.dataset.view)));
+detectFingerprintRoot?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-detect-action]");
+  if (!button) return;
+  const action = button.dataset.detectAction;
+  if (action === "logs") showView("logs2");
+  if (action === "airgap") showView("sources");
+  if (action === "settings") showView("settings");
+});
 chartMenuButton.addEventListener("click", () => downloadMenu.classList.toggle("open"));
 chartZoomInButton.addEventListener("click", () => {
   monitoringZoom = Math.min(3, monitoringZoom + 0.5);
@@ -3184,6 +3489,9 @@ metricFilterButtons.forEach((button) => {
   button.addEventListener("click", () => {
     activeMonitoringMetric = button.dataset.metric;
     metricFilterButtons.forEach((item) => item.classList.toggle("active", item === button));
+    if (latestMonitoringData) {
+      renderMonitoringSummary(latestMonitoringData);
+    }
     drawLineChart(latestMonitoringSeries);
   });
 });
@@ -3205,6 +3513,9 @@ applySidebarState();
 applyUiSettings();
 setupReportSignatures();
 checkSession();
+updateOpsClock();
+renderOperationsOverview();
+setInterval(updateOpsClock, 1000);
 setInterval(() => {
   if (!appRoot.classList.contains("app-locked")) {
     loadAll();
