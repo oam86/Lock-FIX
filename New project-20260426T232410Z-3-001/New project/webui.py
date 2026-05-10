@@ -10,6 +10,7 @@ import platform
 import re
 import secrets
 import shutil
+import smtplib
 import ssl
 import hashlib
 import socket
@@ -19,6 +20,7 @@ import time
 import uuid
 import zipfile
 from datetime import datetime, timedelta
+from email.message import EmailMessage
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib import error as urlerror
@@ -38,6 +40,10 @@ from lockfix.veeam_diagnostics import run_veeam_diagnostics
 ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "web" / "static"
 DEFAULT_CONFIG = ROOT / "config" / "lockfix.example.json"
+LOGIN_WARNING_THRESHOLD = 3
+LOGIN_LOCK_THRESHOLD = 5
+LOGIN_TEMP_PASSWORD_TTL_SECONDS = 15 * 60
+LOGIN_TEMP_PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
 class WebContext:
@@ -50,6 +56,8 @@ class WebContext:
         self.report_extras_path = ROOT / "runtime" / "report_extras.json"
         self.emergency_jobs = {}
         self.emergency_jobs_lock = threading.Lock()
+        self.login_security_path = ROOT / "runtime" / "login_security.json"
+        self.login_security_lock = threading.Lock()
 
     @property
     def app_config(self):
@@ -62,6 +70,186 @@ class WebContext:
     @property
     def controller(self) -> LockFixController:
         return LockFixController(self.config)
+
+    def login_security_now(self) -> str:
+        return datetime.now().isoformat(timespec="seconds")
+
+    def login_security_hash(self, value: str) -> str:
+        return hashlib.sha256(str(value or "").encode("utf-8")).hexdigest()
+
+    def login_security_key(self, user: str) -> str:
+        return str(user or "").strip().lower() or "unknown"
+
+    def login_security_state(self) -> dict:
+        try:
+            state = json.loads(self.login_security_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            state = {}
+        if not isinstance(state, dict):
+            state = {}
+        state.setdefault("users", {})
+        return state
+
+    def save_login_security_state(self, state: dict) -> None:
+        self.login_security_path.parent.mkdir(parents=True, exist_ok=True)
+        self.login_security_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def login_temp_expired(self, temporary: dict) -> bool:
+        expires_at = str(temporary.get("expires_at") or "")
+        try:
+            return datetime.fromisoformat(expires_at) <= datetime.now()
+        except ValueError:
+            return True
+
+    def generate_login_temp_password(self) -> str:
+        return "".join(secrets.choice(LOGIN_TEMP_PASSWORD_ALPHABET) for _ in range(8))
+
+    def register_login_failure(self, user: str, client_ip: str) -> dict:
+        with self.login_security_lock:
+            state = self.login_security_state()
+            users = state.setdefault("users", {})
+            key = self.login_security_key(user)
+            record = users.get(key) if isinstance(users.get(key), dict) else {}
+            now = self.login_security_now()
+            failure_count = int(record.get("failure_count") or 0) + 1
+            record.update(
+                {
+                    "user": str(user or "unknown"),
+                    "client_ip": client_ip,
+                    "failure_count": failure_count,
+                    "last_failed_at": now,
+                    "updated_at": now,
+                }
+            )
+            result = {
+                "user": record["user"],
+                "client_ip": client_ip,
+                "failure_count": failure_count,
+                "last_failed_at": now,
+                "warning": failure_count == LOGIN_WARNING_THRESHOLD,
+                "locked": failure_count >= LOGIN_LOCK_THRESHOLD,
+                "approval_required": failure_count >= LOGIN_LOCK_THRESHOLD,
+                "approval_status": "NONE",
+            }
+            temporary = record.get("temporary") if isinstance(record.get("temporary"), dict) else {}
+            if failure_count >= LOGIN_LOCK_THRESHOLD:
+                should_issue = failure_count == LOGIN_LOCK_THRESHOLD or not temporary or self.login_temp_expired(temporary)
+                if should_issue:
+                    token = secrets.token_urlsafe(32)
+                    temp_password = self.generate_login_temp_password()
+                    expires_at = (datetime.now() + timedelta(seconds=LOGIN_TEMP_PASSWORD_TTL_SECONDS)).isoformat(
+                        timespec="seconds"
+                    )
+                    temporary = {
+                        "token_hash": self.login_security_hash(token),
+                        "password_hash": self.login_security_hash(temp_password),
+                        "created_at": now,
+                        "expires_at": expires_at,
+                        "approved": False,
+                        "approved_at": "",
+                        "approved_by": "",
+                        "approval_status": "PENDING",
+                    }
+                    record["temporary"] = temporary
+                    result.update(
+                        {
+                            "approval_status": "PENDING",
+                            "approval_token": token,
+                            "temporary_password": temp_password,
+                            "temporary_expires_at": expires_at,
+                            "temporary_password_digest": temporary["password_hash"][:16],
+                        }
+                    )
+                else:
+                    result.update(
+                        {
+                            "approval_status": str(temporary.get("approval_status") or "PENDING"),
+                            "temporary_expires_at": str(temporary.get("expires_at") or ""),
+                        }
+                    )
+            users[key] = record
+            self.save_login_security_state(state)
+            return result
+
+    def reset_login_failures(self, user: str, client_ip: str, reason: str) -> dict:
+        with self.login_security_lock:
+            state = self.login_security_state()
+            users = state.setdefault("users", {})
+            key = self.login_security_key(user)
+            record = users.get(key) if isinstance(users.get(key), dict) else {"user": user}
+            record.update(
+                {
+                    "user": str(user or "unknown"),
+                    "client_ip": client_ip,
+                    "failure_count": 0,
+                    "last_success_at": self.login_security_now(),
+                    "last_success_reason": reason,
+                    "temporary": {},
+                }
+            )
+            users[key] = record
+            self.save_login_security_state(state)
+            return record
+
+    def approve_login_temp_password(self, user: str, token: str, approved_by: str, client_ip: str) -> dict:
+        with self.login_security_lock:
+            state = self.login_security_state()
+            record = state.setdefault("users", {}).get(self.login_security_key(user))
+            temporary = record.get("temporary") if isinstance(record, dict) else {}
+            if not isinstance(temporary, dict) or not temporary:
+                return {"ok": False, "reason": "not_found"}
+            if self.login_temp_expired(temporary):
+                temporary["approval_status"] = "EXPIRED"
+                self.save_login_security_state(state)
+                return {"ok": False, "reason": "expired", "expires_at": temporary.get("expires_at", "")}
+            if not secrets.compare_digest(str(temporary.get("token_hash") or ""), self.login_security_hash(token)):
+                return {"ok": False, "reason": "invalid_token"}
+            now = self.login_security_now()
+            temporary.update(
+                {
+                    "approved": True,
+                    "approved_at": now,
+                    "approved_by": approved_by,
+                    "approval_status": "APPROVED",
+                    "approved_from": client_ip,
+                }
+            )
+            self.save_login_security_state(state)
+            return {
+                "ok": True,
+                "user": record.get("user", user),
+                "approved_at": now,
+                "approved_by": approved_by,
+                "expires_at": temporary.get("expires_at", ""),
+            }
+
+    def verify_login_temp_password(self, user: str, password: str) -> dict:
+        with self.login_security_lock:
+            state = self.login_security_state()
+            record = state.setdefault("users", {}).get(self.login_security_key(user))
+            temporary = record.get("temporary") if isinstance(record, dict) else {}
+            if not isinstance(temporary, dict) or not temporary:
+                return {"ok": False, "reason": "not_found"}
+            if self.login_temp_expired(temporary):
+                temporary["approval_status"] = "EXPIRED"
+                self.save_login_security_state(state)
+                return {"ok": False, "reason": "expired", "expires_at": temporary.get("expires_at", "")}
+            if not secrets.compare_digest(str(temporary.get("password_hash") or ""), self.login_security_hash(password)):
+                return {"ok": False, "reason": "password_mismatch"}
+            if not temporary.get("approved"):
+                return {
+                    "ok": False,
+                    "reason": "approval_pending",
+                    "approval_status": str(temporary.get("approval_status") or "PENDING"),
+                    "expires_at": temporary.get("expires_at", ""),
+                }
+            return {
+                "ok": True,
+                "user": record.get("user", user),
+                "approved_by": temporary.get("approved_by", "administrator"),
+                "approved_at": temporary.get("approved_at", ""),
+                "expires_at": temporary.get("expires_at", ""),
+            }
 
     def start_emergency_reconnect(self, slot_id: str, repository_path: str) -> dict:
         with self.emergency_jobs_lock:
@@ -267,6 +455,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 self.serve_file(STATIC_DIR / parsed.path[len("/static/") :])
             elif parsed.path == "/api/session":
                 self.send_json({"authenticated": self.is_authenticated(), "license": self.license_status()})
+            elif parsed.path == "/api/security-temp-password/approve":
+                self.approve_security_temp_password(parsed.query)
             elif parsed.path == "/open-latest-package-folder":
                 self.open_latest_package_folder()
             elif parsed.path == "/api/console/status":
@@ -382,15 +572,171 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 payload = self.read_json_body()
                 email = str(payload.get("email", "")).strip()
                 password = str(payload.get("password", ""))
+                client_ip = self.client_ip()
+                temp_login = self.context.verify_login_temp_password(email, password)
                 if secrets.compare_digest(email, "admin") and secrets.compare_digest(password, "1"):
+                    self.context.reset_login_failures(email, client_ip, "primary_password")
+                    self.context.controller.audit.write(
+                        "auth.login.success",
+                        user=email,
+                        client_ip=client_ip,
+                        auth_method="primary_password",
+                        result="SUCCESS",
+                        message="LOCK-FIX login succeeded with primary password.",
+                    )
                     token = secrets.token_urlsafe(32)
                     self.context.sessions[token] = time.time()
                     self.send_json(
                         {"authenticated": True},
                         headers={"Set-Cookie": f"lockfix_session={token}; HttpOnly; SameSite=Lax; Path=/"},
                     )
+                elif temp_login.get("ok"):
+                    self.context.reset_login_failures(email, client_ip, "approved_temporary_password")
+                    self.context.controller.audit.write(
+                        "auth.login.temp.success",
+                        user=email,
+                        client_ip=client_ip,
+                        approved_by=temp_login.get("approved_by", "administrator"),
+                        approved_at=temp_login.get("approved_at", ""),
+                        expires_at=temp_login.get("expires_at", ""),
+                        result="SUCCESS",
+                        message="LOCK-FIX login succeeded with an administrator-approved temporary password.",
+                    )
+                    token = secrets.token_urlsafe(32)
+                    self.context.sessions[token] = time.time()
+                    self.send_json(
+                        {"authenticated": True},
+                        headers={"Set-Cookie": f"lockfix_session={token}; HttpOnly; SameSite=Lax; Path=/"},
+                    )
+                elif temp_login.get("reason") == "approval_pending":
+                    self.context.controller.audit.write(
+                        "auth.login.temp.pending",
+                        user=email,
+                        client_ip=client_ip,
+                        approval_status=temp_login.get("approval_status", "PENDING"),
+                        expires_at=temp_login.get("expires_at", ""),
+                        result="WAITING_APPROVAL",
+                        message="Temporary password was entered before administrator approval.",
+                    )
+                    self.send_json(
+                        {
+                            "authenticated": False,
+                            "error": "관리자 승인 대기 중입니다. 관리자 메일 승인 후 다시 로그인하세요.",
+                            "approval_required": True,
+                            "approval_status": "PENDING",
+                        },
+                        status=401,
+                    )
                 else:
-                    self.send_json({"authenticated": False, "error": "Invalid account."}, status=401)
+                    failure = self.context.register_login_failure(email, client_ip)
+                    self.context.controller.audit.write(
+                        "auth.login.failed",
+                        user=email or "unknown",
+                        client_ip=client_ip,
+                        failure_count=failure["failure_count"],
+                        last_failed_at=failure["last_failed_at"],
+                        threshold_warning=LOGIN_WARNING_THRESHOLD,
+                        threshold_lock=LOGIN_LOCK_THRESHOLD,
+                        result="FAILED",
+                        risk="HIGH" if failure["failure_count"] >= LOGIN_LOCK_THRESHOLD else "WARNING",
+                        message="LOCK-FIX password validation failed.",
+                    )
+                    if failure.get("warning"):
+                        mail = self.send_security_email(
+                            "LOCK-FIX 로그인 실패 3회 경고",
+                            "\n".join(
+                                [
+                                    "LOCK-FIX 로그인 실패가 3회 감지되었습니다.",
+                                    f"사용자: {email or 'unknown'}",
+                                    f"접속 위치: {client_ip}",
+                                    f"실패 횟수: {failure['failure_count']}",
+                                    f"시간: {failure['last_failed_at']}",
+                                    "관리자 확인이 필요합니다.",
+                                ]
+                            ),
+                            user=email,
+                            reason="login_failure_warning",
+                        )
+                        self.context.controller.audit.write(
+                            "auth.login.warning.threshold",
+                            user=email or "unknown",
+                            client_ip=client_ip,
+                            failure_count=failure["failure_count"],
+                            smtp_status=mail["status"],
+                            admin_email=mail["admin_email"],
+                            result="WARNING",
+                            risk="WARNING",
+                            message="LOCK-FIX password failures reached the warning threshold. Administrator alert email was attempted.",
+                        )
+                    if failure.get("locked"):
+                        approval_link = ""
+                        mail = {"status": "PENDING_ALREADY_ISSUED", "admin_email": self.security_admin_email()}
+                        if failure.get("approval_token") and failure.get("temporary_password"):
+                            approval_link = self.security_approval_url(email, failure["approval_token"])
+                            mail = self.send_security_email(
+                                "LOCK-FIX 임시 비밀번호 관리자 승인 요청",
+                                "\n".join(
+                                    [
+                                        "LOCK-FIX 로그인 실패가 5회 이상 발생하여 관리자 승인이 필요합니다.",
+                                        f"사용자: {email or 'unknown'}",
+                                        f"접속 위치: {client_ip}",
+                                        f"실패 횟수: {failure['failure_count']}",
+                                        f"임시 비밀번호: {failure['temporary_password']}",
+                                        f"만료 시간: {failure.get('temporary_expires_at', '')}",
+                                        "",
+                                        "아래 링크를 열어 임시 비밀번호 사용을 승인합니다.",
+                                        approval_link,
+                                    ]
+                                ),
+                                user=email,
+                                reason="login_temporary_password_approval",
+                            )
+                        self.context.controller.audit.write(
+                            "auth.temp_password.requested",
+                            user=email or "unknown",
+                            client_ip=client_ip,
+                            failure_count=failure["failure_count"],
+                            approval_status=failure.get("approval_status", "PENDING"),
+                            temporary_expires_at=failure.get("temporary_expires_at", ""),
+                            temporary_password_digest=failure.get("temporary_password_digest", ""),
+                            smtp_status=mail["status"],
+                            admin_email=mail["admin_email"],
+                            result="WAITING_APPROVAL",
+                            risk="HIGH",
+                            message="Administrator approval is required before temporary password login is allowed.",
+                        )
+                        self.context.controller.audit.write(
+                            "auth.login.locked",
+                            user=email or "unknown",
+                            client_ip=client_ip,
+                            failure_count=failure["failure_count"],
+                            approval_status=failure.get("approval_status", "PENDING"),
+                            smtp_status=mail["status"],
+                            admin_email=mail["admin_email"],
+                            result="LOCKED",
+                            risk="HIGH",
+                            message="LOCK-FIX account is waiting for administrator-approved temporary password login.",
+                        )
+                        self.send_json(
+                            {
+                                "authenticated": False,
+                                "error": "로그인 실패 5회 이상으로 관리자 승인이 필요합니다. 관리자 메일 승인 후 임시 비밀번호로 로그인하세요.",
+                                "approval_required": True,
+                                "approval_status": failure.get("approval_status", "PENDING"),
+                            },
+                            status=401,
+                        )
+                    else:
+                        self.send_json(
+                            {
+                                "authenticated": False,
+                                "error": "LOCK-FIX 비밀번호가 일치하지 않습니다.",
+                                "failure_count": failure["failure_count"],
+                                "warning_threshold": LOGIN_WARNING_THRESHOLD,
+                                "lock_threshold": LOGIN_LOCK_THRESHOLD,
+                            },
+                            status=401,
+                        )
             elif parsed.path == "/api/qr-login":
                 token = secrets.token_urlsafe(24)
                 self.context.qr_tokens[token] = {"created_at": time.time(), "approved": False}
@@ -500,6 +846,135 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             return {}
         raw = self.rfile.read(length).decode("utf-8")
         return json.loads(raw or "{}")
+
+    def client_ip(self) -> str:
+        forwarded = str(self.headers.get("X-Forwarded-For") or "").split(",", 1)[0].strip()
+        if forwarded:
+            return forwarded
+        return str(self.client_address[0]) if self.client_address else "unknown"
+
+    def security_admin_email(self) -> str:
+        return (
+            os.environ.get("LOCKFIX_ADMIN_EMAIL")
+            or os.environ.get("LOCKFIX_SMTP_TO")
+            or os.environ.get("SMTP_TO")
+            or "rich.kim@oam.co.kr"
+        )
+
+    def security_approval_url(self, user: str, token: str) -> str:
+        host = self.headers.get("Host") or "127.0.0.1:8088"
+        scheme = self.headers.get("X-Forwarded-Proto") or "http"
+        query = urlencode({"user": user or "unknown", "token": token})
+        return f"{scheme}://{host}/api/security-temp-password/approve?{query}"
+
+    def send_security_email(self, subject: str, body: str, user: str = "", reason: str = "") -> dict:
+        admin_email = self.security_admin_email()
+        smtp_host = os.environ.get("LOCKFIX_SMTP_HOST") or os.environ.get("SMTP_HOST") or ""
+        smtp_port = int(os.environ.get("LOCKFIX_SMTP_PORT") or os.environ.get("SMTP_PORT") or "587")
+        smtp_user = os.environ.get("LOCKFIX_SMTP_USER") or os.environ.get("SMTP_USER") or ""
+        smtp_password = os.environ.get("LOCKFIX_SMTP_PASSWORD") or os.environ.get("SMTP_PASSWORD") or ""
+        smtp_from = os.environ.get("LOCKFIX_SMTP_FROM") or smtp_user or f"lockfix@{socket.gethostname()}"
+        base_payload = {
+            "user": user or "unknown",
+            "admin_email": admin_email,
+            "reason": reason,
+            "smtp_host": smtp_host or "NOT_CONFIGURED",
+        }
+        if not smtp_host:
+            self.context.controller.audit.write(
+                "auth.security_mail.skipped",
+                **base_payload,
+                smtp_status="SMTP_NOT_CONFIGURED",
+                result="SKIPPED",
+                risk="WARNING",
+                message="SMTP host is not configured. Security audit record was kept, but email could not be sent.",
+            )
+            return {"ok": False, "status": "SMTP_NOT_CONFIGURED", "admin_email": admin_email}
+        try:
+            message = EmailMessage()
+            message["Subject"] = subject
+            message["From"] = smtp_from
+            message["To"] = admin_email
+            message.set_content(body)
+            use_ssl = os.environ.get("LOCKFIX_SMTP_SSL", "").lower() in {"1", "true", "yes"} or smtp_port == 465
+            use_starttls = os.environ.get("LOCKFIX_SMTP_STARTTLS", "true").lower() not in {"0", "false", "no"}
+            if use_ssl:
+                with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10, context=ssl.create_default_context()) as server:
+                    if smtp_user or smtp_password:
+                        server.login(smtp_user, smtp_password)
+                    server.send_message(message)
+            else:
+                with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+                    if use_starttls:
+                        server.starttls(context=ssl.create_default_context())
+                    if smtp_user or smtp_password:
+                        server.login(smtp_user, smtp_password)
+                    server.send_message(message)
+        except Exception as exc:
+            self.context.controller.audit.write(
+                "auth.security_mail.error",
+                **base_payload,
+                smtp_status="ERROR",
+                error=str(exc),
+                result="FAILED",
+                risk="HIGH",
+                message="SMTP security alert delivery failed. Check SMTP host, port, credentials, and firewall.",
+            )
+            return {"ok": False, "status": "ERROR", "admin_email": admin_email, "error": str(exc)}
+        self.context.controller.audit.write(
+            "auth.security_mail.sent",
+            **base_payload,
+            smtp_status="SENT",
+            result="SUCCESS",
+            risk="WARNING",
+            message="Security alert email was sent to the administrator.",
+        )
+        return {"ok": True, "status": "SENT", "admin_email": admin_email}
+
+    def approve_security_temp_password(self, query: str) -> None:
+        params = parse_qs(query)
+        user = str(params.get("user", [""])[0]).strip()
+        token = str(params.get("token", [""])[0]).strip()
+        result = self.context.approve_login_temp_password(
+            user,
+            token,
+            approved_by="administrator",
+            client_ip=self.client_ip(),
+        )
+        self.context.controller.audit.write(
+            "auth.temp_password.approved" if result.get("ok") else "auth.temp_password.approval_failed",
+            user=user or "unknown",
+            client_ip=self.client_ip(),
+            approved_by="administrator",
+            approval_status="APPROVED" if result.get("ok") else "FAILED",
+            approved_at=result.get("approved_at", ""),
+            expires_at=result.get("expires_at", ""),
+            result="SUCCESS" if result.get("ok") else "FAILED",
+            risk="WARNING" if result.get("ok") else "HIGH",
+            message=(
+                "Temporary password login was approved by administrator email link."
+                if result.get("ok")
+                else f"Temporary password approval failed: {result.get('reason', 'unknown')}"
+            ),
+        )
+        if result.get("ok"):
+            self.send_html(
+                "<!doctype html><meta charset='utf-8'><title>LOCK-FIX Approval</title>"
+                "<body style='font-family:Malgun Gothic,Arial,sans-serif;padding:32px'>"
+                "<h2>LOCK-FIX 임시 비밀번호 승인 완료</h2>"
+                "<p>관리자 승인이 완료되었습니다. 사용자는 메일에 전달된 임시 비밀번호로 로그인할 수 있습니다.</p>"
+                f"<p>만료 시간: {escape(result.get('expires_at', ''))}</p>"
+                "</body>"
+            )
+        else:
+            self.send_html(
+                "<!doctype html><meta charset='utf-8'><title>LOCK-FIX Approval Failed</title>"
+                "<body style='font-family:Malgun Gothic,Arial,sans-serif;padding:32px'>"
+                "<h2>LOCK-FIX 임시 비밀번호 승인 실패</h2>"
+                f"<p>사유: {escape(str(result.get('reason', 'unknown')))}</p>"
+                "</body>",
+                status=400,
+            )
 
     def report_customer_record(self) -> dict:
         try:

@@ -63,6 +63,7 @@
           <button class="side-item" data-view="dashboard"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"></rect><rect x="13" y="4" width="7" height="7" rx="1.5"></rect><rect x="4" y="13" width="7" height="7" rx="1.5"></rect><rect x="13" y="13" width="7" height="7" rx="1.5"></rect></svg></span><span data-i18n="nav.dashboard">Dashboard</span></button>
           <button class="side-item" data-view="detect2"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="m16 16 4 4"></path></svg></span><span data-i18n="nav.detect">Detect</span></button>
           <button class="side-item" data-view="notification2"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20a2.3 2.3 0 0 0 2.2-1.6H9.8A2.3 2.3 0 0 0 12 20Z"></path><path d="M18 16H6l1.2-2V10a4.8 4.8 0 0 1 9.6 0v4L18 16Z"></path></svg></span><span data-i18n="nav.notification">Notification</span></button>
+          <button class="side-item" data-view="securityAudit"><span class="nav-icon security-audit-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 19 6.7v5.4c0 4.2-2.8 7.1-7 8.4-4.2-1.3-7-4.2-7-8.4V6.7Z"></path><path d="M9 10.2h6"></path><path d="M9 13h6"></path><path d="M9 15.8h4"></path></svg></span><span data-i18n="nav.securityAudit">Security Audit</span></button>
           <button class="side-item" data-view="logs2"><span class="nav-icon logs-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="log-dot" cx="6.5" cy="7" r="1.55"></circle><circle class="log-dot" cx="6.5" cy="12" r="1.55"></circle><circle class="log-dot" cx="6.5" cy="17" r="1.55"></circle><path d="M11 7h8"></path><path d="M11 12h8"></path><path d="M11 17h8"></path></svg></span><span data-i18n="nav.logs">Logs</span></button>
           <button class="side-item" data-view="contact"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 5.5 10 8l-2 2.4a10.5 10.5 0 0 0 5.6 5.6L16 14l2.5 2.5c.5.5.5 1.3 0 1.8l-1 1c-.7.7-1.7.9-2.6.6A17.2 17.2 0 0 1 4.1 9.1c-.3-.9-.1-1.9.6-2.6l1-1c.5-.5 1.3-.5 1.8 0Z"></path></svg></span><span data-i18n="nav.contact">Contact Service</span></button>
           <button class="side-item" data-view="license2"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 7v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7Z"></path><path d="m9 12 2 2 4-5"></path></svg></span><span data-i18n="nav.license">License</span></button>
@@ -521,6 +522,55 @@
               <tbody id="notificationTable"></tbody>
             </table>
           </div>
+        </section>
+      </section>
+      <section class="view security-audit-view" id="securityAuditView">
+        <div class="monitoring-header security-audit-header">
+          <div>
+            <h1>보안 감사</h1>
+            <p>격리, 승인, 재접속, 무결성 검증 이력을 관리자 관점에서 간단하게 확인합니다.</p>
+          </div>
+        </div>
+        <section class="security-audit-summary" id="securityAuditSummary" aria-live="polite"></section>
+        <section class="security-audit-filters" aria-label="보안 감사 필터">
+          <label><span>기간 시작</span><input id="securityAuditStart" type="date" /></label>
+          <label><span>기간 종료</span><input id="securityAuditEnd" type="date" /></label>
+          <label><span>이벤트 유형</span><select id="securityAuditType"><option value="">전체</option></select></label>
+          <label><span>장치</span><select id="securityAuditDevice"><option value="">전체</option></select></label>
+          <label><span>사용자</span><input id="securityAuditUser" type="text" placeholder="system, admin" /></label>
+          <label><span>성공/실패</span><select id="securityAuditResult"><option value="">전체</option><option value="성공">성공</option><option value="진행">진행</option><option value="실패">실패</option></select></label>
+          <label><span>위험도</span><select id="securityAuditRisk"><option value="">전체</option><option value="높음">높음</option><option value="주의">주의</option><option value="낮음">낮음</option></select></label>
+          <div class="security-audit-filter-actions">
+            <button type="button" id="securityAuditApply">적용</button>
+            <button type="button" id="securityAuditReset">초기화</button>
+          </div>
+        </section>
+        <section class="security-audit-layout">
+          <article class="security-audit-table-panel">
+            <div class="security-audit-panel-head">
+              <strong>감사 로그</strong>
+              <span id="securityAuditCount">0건</span>
+            </div>
+            <div class="security-audit-table-wrap">
+              <table class="security-audit-table">
+                <thead>
+                  <tr>
+                    <th>시간</th>
+                    <th>이벤트</th>
+                    <th>대상 장치</th>
+                    <th>사용자</th>
+                    <th>승인자</th>
+                    <th>결과</th>
+                    <th>상세 보기</th>
+                  </tr>
+                </thead>
+                <tbody id="securityAuditTable"></tbody>
+              </table>
+            </div>
+          </article>
+          <aside class="security-audit-detail-panel" id="securityAuditDetail">
+            <div class="security-audit-empty">감사 로그를 선택하면 상세 정보가 표시됩니다.</div>
+          </aside>
         </section>
       </section>
       <section class="view source-view" id="sourcesView">

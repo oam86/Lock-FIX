@@ -70,6 +70,19 @@ const notificationAuditAnomalyCount = document.querySelector("#notificationAudit
 const notificationAuditAnomalyStatus = document.querySelector("#notificationAuditAnomalyStatus");
 const notificationAuditLastDetected = document.querySelector("#notificationAuditLastDetected");
 const notificationAuditTable = document.querySelector("#notificationAuditTable");
+const securityAuditSummary = document.querySelector("#securityAuditSummary");
+const securityAuditStart = document.querySelector("#securityAuditStart");
+const securityAuditEnd = document.querySelector("#securityAuditEnd");
+const securityAuditType = document.querySelector("#securityAuditType");
+const securityAuditDevice = document.querySelector("#securityAuditDevice");
+const securityAuditUser = document.querySelector("#securityAuditUser");
+const securityAuditResult = document.querySelector("#securityAuditResult");
+const securityAuditRisk = document.querySelector("#securityAuditRisk");
+const securityAuditApply = document.querySelector("#securityAuditApply");
+const securityAuditReset = document.querySelector("#securityAuditReset");
+const securityAuditCount = document.querySelector("#securityAuditCount");
+const securityAuditTable = document.querySelector("#securityAuditTable");
+const securityAuditDetail = document.querySelector("#securityAuditDetail");
 const detectStart = document.querySelector("#detectStart");
 const detectEnd = document.querySelector("#detectEnd");
 const detectCards = document.querySelector("#detectCards");
@@ -151,6 +164,17 @@ let latestReportData = null;
 let latestSourcesData = null;
 let latestDashboardData = null;
 let latestLogsData = null;
+let latestAuditData = [];
+let securityAuditSelectedId = "";
+let securityAuditFilters = {
+  start: "",
+  end: "",
+  event: "",
+  device: "",
+  user: "",
+  result: "",
+  risk: "",
+};
 let airgapPollTimer = null;
 let veeamPollTimer = null;
 let emergencyReconnectPollTimer = null;
@@ -194,6 +218,7 @@ const translations = {
     "nav.dashboard": "Dashboard",
     "nav.detect": "Detect",
     "nav.notification": "Notification",
+    "nav.securityAudit": "Security Audit",
     "nav.logs": "Logs",
     "nav.contact": "Contact Service",
     "nav.license": "License",
@@ -308,6 +333,7 @@ const translations = {
     "nav.dashboard": "대시보드",
     "nav.detect": "탐지 내역",
     "nav.notification": "알림",
+    "nav.securityAudit": "보안 감사",
     "nav.logs": "로그",
     "nav.contact": "고객 센터",
     "nav.license": "라이선스",
@@ -1034,7 +1060,7 @@ async function login(event) {
       setAuthenticated(false);
     }
   } catch (error) {
-    loginError.textContent = "Account or password is not valid.";
+    loginError.textContent = error.message || "Account or password is not valid.";
   }
 }
 
@@ -1067,6 +1093,9 @@ function showView(name) {
       console.warn("Unable to reload report view", error);
       reportAnalysis.textContent = error.message;
     });
+  }
+  if (name === "securityAudit") {
+    renderSecurityAudit(latestAuditData);
   }
   if (name === "settings") {
     reloadConsoleStatus().catch((error) => {
@@ -2200,7 +2229,11 @@ function updateMemoryThresholdButton(value) {
 
 function renderLoadedData(key, value) {
   if (key === "summary") renderSlots(value);
-  if (key === "audit") renderAudit(value.items);
+  if (key === "audit") {
+    latestAuditData = Array.isArray(value.items) ? value.items : [];
+    renderAudit(latestAuditData);
+    renderSecurityAudit(latestAuditData);
+  }
   if (key === "integrated") renderIntegrated(value);
   if (key === "monitoring") renderMonitoring(value);
   if (key === "sources") renderSources(value);
@@ -2919,7 +2952,8 @@ function renderSources(data) {
   ];
   const reconnectDisplayOrder = [...reconnectRuntimeOrder].reverse();
   const reconnectReportedState = String(emergencySlot.state || "").toUpperCase();
-  const reconnectFlowIsActive = emergencyReconnectRunning || emergencyReconnectDetailLogs.length > 0;
+  const reconnectIsComplete = isEmergencyReconnectCompleteState(reconnectReportedState);
+  const reconnectFlowIsActive = emergencyReconnectRunning || emergencyReconnectDetailLogs.length > 0 || reconnectIsComplete;
   const reconnectCurrentState = reconnectFlowIsActive && reconnectRuntimeOrder.includes(reconnectReportedState)
     ? reconnectReportedState
     : (emergencyReconnectRunning ? "RECONNECT_REQUESTED" : "");
@@ -2940,6 +2974,7 @@ function renderSources(data) {
   const reconnectStepClass = (state) => {
     if (!reconnectFlowIsActive) return "pending";
     const index = reconnectRuntimeOrder.indexOf(state);
+    if (reconnectIsComplete && reconnectCurrentIndex >= 0 && index >= 0 && index <= reconnectCurrentIndex) return "done";
     if (state === reconnectCurrentState) return "current";
     if (reconnectCurrentIndex >= 0 && index >= 0 && index < reconnectCurrentIndex) return "done";
     return "pending";
@@ -3259,6 +3294,306 @@ function renderGauge(target, label, value, color) {
   `;
 }
 
+function auditRecordText(record) {
+  try {
+    return JSON.stringify(record || {}, null, 0);
+  } catch (error) {
+    return String(record || "");
+  }
+}
+
+function auditRecordTime(record) {
+  return formatLogDate(record?.ts || record?.time || record?.date || record?.timestamp || "");
+}
+
+function auditDateValue(value) {
+  const text = String(value || "").replace(" ", "T").slice(0, 19);
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function auditDateKey(value) {
+  const date = auditDateValue(value);
+  if (!date) return "";
+  const pad = (item) => String(item).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function auditEventLabel(record) {
+  const event = String(record?.event || "").toLowerCase();
+  const text = auditRecordText(record).toLowerCase();
+  if (event.includes("auth.login.warning.threshold")) return "로그인 3회 실패 경고";
+  if (event.includes("auth.login.locked")) return "관리자 승인 필요";
+  if (event.includes("auth.temp_password.requested")) return "임시 비밀번호 승인 요청";
+  if (event.includes("auth.temp_password.approved")) return "임시 비밀번호 승인";
+  if (event.includes("auth.login.temp.success")) return "임시 비밀번호 로그인";
+  if (event.includes("auth.login.failed")) return "로그인 실패";
+  if (event.includes("auth.login.success")) return "로그인 성공";
+  if (event.includes("auth.security_mail")) return "보안 메일 발송";
+  if (event.includes("emergency.reconnect")) return "긴급 재접속";
+  if (event.includes("disk.online.approval.cleared")) return "승인 해제";
+  if (event.includes("disk.online") || event.includes("mount_rw")) return "승인 기반 온라인";
+  if (event.includes("disk.offline") || event.includes("isolation") || event.includes("power.command.off")) return "격리/오프라인";
+  if (event.includes("unauthorized") || text.includes("unauthorized") || text.includes("reblocked")) return "차단된 재연결";
+  if (event.includes("verify.hash") || text.includes("hash")) return "무결성 검증";
+  if (event.includes("verify.uid") || text.includes("uid")) return "UID 검증";
+  if (event.includes("veeam")) return "Veeam 백업";
+  if (event.includes("license")) return "라이선스";
+  if (event.includes("state.transition")) return "상태 전환";
+  return record?.event || "감사 이벤트";
+}
+
+function auditDevice(record) {
+  const text = auditRecordText(record);
+  const bay = text.match(/BAY-\d+/i)?.[0];
+  const drive = text.match(/[A-Z]:\\/i)?.[0];
+  return record?.slot_id || record?.device || record?.drive_letter || record?.target_device || bay || drive || "-";
+}
+
+function auditUser(record) {
+  return record?.user || record?.actor || record?.account || record?.requested_by || "system";
+}
+
+function auditApprover(record) {
+  const event = String(record?.event || "").toLowerCase();
+  if (record?.approver || record?.approved_by) return record.approver || record.approved_by;
+  if (event.includes("auth.temp_password") || event.includes("auth.login.locked")) return "administrator";
+  if (record?.approved_until || event.includes("approved")) return "administrator";
+  return "-";
+}
+
+function auditResult(record) {
+  const event = String(record?.event || "").toLowerCase();
+  const state = String(record?.state || "").toLowerCase();
+  const text = auditRecordText(record).toLowerCase();
+  if (event.includes("auth.login.locked") || event.includes("auth.temp_password.requested")) return "진행";
+  if (event.includes("auth.login.failed")) return "실패";
+  if (event.includes("auth.security_mail.skipped")) return "진행";
+  if (event.includes("error") || event.includes("failed") || event.includes("denied") || state === "error" || text.includes("access denied") || text.includes("액세스 거부")) return "실패";
+  if (event.includes(".start") || event.includes(".tick") || event.includes("heartbeat") || state === "running") return "진행";
+  return "성공";
+}
+
+function auditRisk(record) {
+  const event = String(record?.event || "").toLowerCase();
+  const text = auditRecordText(record).toLowerCase();
+  const failureCount = Number(record?.failure_count || 0);
+  if (event.includes("auth.login.locked") || event.includes("auth.temp_password.requested") || failureCount >= 5) return "높음";
+  if (event.includes("auth.login.warning") || event.includes("auth.login.failed") || failureCount >= 3) return "주의";
+  if (event.includes("unauthorized") || event.includes("denied") || event.includes("quarantine") || text.includes("mismatch") || text.includes("불일치")) return "높음";
+  if (event.includes("error") || event.includes("failed") || event.includes("timeout") || text.includes("access denied") || text.includes("액세스 거부")) return "주의";
+  return "낮음";
+}
+
+function auditBackupJob(record) {
+  const text = auditRecordText(record);
+  return record?.job_name || record?.job || record?.backup_job || text.match(/Backup Copy Job [^\\"]+/i)?.[0] || "-";
+}
+
+function auditBeforeAfter(record) {
+  const before = record?.before_state || record?.previous_state || record?.from_state || "-";
+  const after = record?.after_state || record?.state || record?.to_state || "-";
+  if (before === "-" && after === "-") return "-";
+  return `${before} -> ${after}`;
+}
+
+function auditIntegrityResult(record) {
+  const event = String(record?.event || "").toLowerCase();
+  const text = auditRecordText(record).toLowerCase();
+  if (record?.hash_status) return String(record.hash_status);
+  if (record?.uid_status) return String(record.uid_status);
+  if (text.includes("mismatch") || text.includes("불일치")) return "MISMATCH";
+  if (event.includes("verify.hash") || text.includes("hash") || text.includes("valid")) return "VALID";
+  return "-";
+}
+
+function auditLoginSecurity(record) {
+  const event = String(record?.event || "").toLowerCase();
+  const isAuth = event.includes("auth.login") || event.includes("auth.temp_password") || event.includes("auth.security_mail");
+  return {
+    visible: isAuth,
+    failureCount: record?.failure_count ?? "-",
+    lastFailedAt: formatLogDate(record?.last_failed_at || record?.ts || record?.time || ""),
+    smtpStatus: record?.smtp_status || record?.mail_status || "-",
+    adminEmail: record?.admin_email || "-",
+    approvalStatus: record?.approval_status || (event.includes("approved") ? "APPROVED" : event.includes("requested") || event.includes("locked") ? "PENDING" : "-"),
+    temporaryExpiresAt: formatLogDate(record?.temporary_expires_at || record?.expires_at || ""),
+    temporaryDigest: record?.temporary_password_digest || "-",
+    clientIp: record?.client_ip || "-",
+    authMethod: record?.auth_method || (event.includes("temp") ? "temporary_password" : "-"),
+  };
+}
+
+function normalizeSecurityAuditRecord(record, index) {
+  const id = `${index}-${record?.ts || ""}-${record?.event || ""}`;
+  const detail = record?.message || record?.resolution || record?.error || record?.output || auditRecordText(record);
+  return {
+    id,
+    source: record || {},
+    time: auditRecordTime(record),
+    eventCode: record?.event || "audit.event",
+    event: auditEventLabel(record),
+    device: auditDevice(record),
+    user: auditUser(record),
+    approver: auditApprover(record),
+    result: auditResult(record),
+    risk: auditRisk(record),
+    detail: detail || "-",
+    backupJob: auditBackupJob(record),
+    beforeAfter: auditBeforeAfter(record),
+    approvalReason: record?.reason || record?.approval_reason || record?.message || "-",
+    integrity: auditIntegrityResult(record),
+    loginSecurity: auditLoginSecurity(record),
+  };
+}
+
+function securityAuditMatchesFilters(item) {
+  const dateKey = auditDateKey(item.time);
+  if (securityAuditFilters.start && dateKey && dateKey < securityAuditFilters.start) return false;
+  if (securityAuditFilters.end && dateKey && dateKey > securityAuditFilters.end) return false;
+  if (securityAuditFilters.event && item.event !== securityAuditFilters.event) return false;
+  if (securityAuditFilters.device && item.device !== securityAuditFilters.device) return false;
+  if (securityAuditFilters.user && !String(item.user).toLowerCase().includes(securityAuditFilters.user.toLowerCase())) return false;
+  if (securityAuditFilters.result && item.result !== securityAuditFilters.result) return false;
+  if (securityAuditFilters.risk && item.risk !== securityAuditFilters.risk) return false;
+  return true;
+}
+
+function renderSecurityAuditOptions(items) {
+  const fillSelect = (select, values, current) => {
+    if (!select) return;
+    const unique = [...new Set(values.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)));
+    select.innerHTML = [`<option value="">전체</option>`]
+      .concat(unique.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`))
+      .join("");
+    select.value = current || "";
+  };
+  fillSelect(securityAuditType, items.map((item) => item.event), securityAuditFilters.event);
+  fillSelect(securityAuditDevice, items.map((item) => item.device).filter((item) => item !== "-"), securityAuditFilters.device);
+}
+
+function renderSecurityAuditSummary(items) {
+  if (!securityAuditSummary) return;
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+  const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const todayItems = items.filter((item) => auditDateKey(item.time) === todayKey);
+  const countBy = (matcher) => todayItems.filter(matcher).length;
+  const cards = [
+    {
+      label: "오늘 격리 성공",
+      value: countBy((item) => item.result === "성공" && /격리|오프라인|offline/i.test(`${item.event} ${item.eventCode}`)),
+      tone: "success",
+    },
+    {
+      label: "승인 해제",
+      value: countBy((item) => /승인 해제|approval\.cleared/i.test(`${item.event} ${item.eventCode}`)),
+      tone: "info",
+    },
+    {
+      label: "차단된 재연결 시도",
+      value: countBy((item) => /차단|unauthorized|reblocked/i.test(`${item.event} ${item.detail}`)),
+      tone: "warning",
+    },
+    {
+      label: "무단 탈거 감지",
+      value: countBy((item) => /무단 탈거|unauthorized removal|removed|탈거/i.test(`${item.event} ${item.detail}`)),
+      tone: "danger",
+    },
+  ];
+  securityAuditSummary.innerHTML = cards.map((card) => `
+    <article class="security-audit-card security-audit-card-${card.tone}">
+      <span>${escapeHtml(card.label)}</span>
+      <strong>${card.value}건</strong>
+      <em>오늘 기준</em>
+    </article>
+  `).join("");
+}
+
+function renderSecurityAuditDetail(item) {
+  if (!securityAuditDetail) return;
+  if (!item) {
+    securityAuditDetail.innerHTML = `<div class="security-audit-empty">감사 로그를 선택하면 상세 정보가 표시됩니다.</div>`;
+    return;
+  }
+  const flow = item.loginSecurity?.visible
+    ? ["로그인 시도", "실패 횟수 집계", "SMTP 알림", "관리자 승인", "감사 로그 저장"]
+    : ["이벤트 접수", "정책 확인", "장치 상태 확인", "무결성 검증", "감사 로그 저장"];
+  const loginSecurityHtml = item.loginSecurity?.visible ? `
+      <div><dt>로그인 실패 횟수</dt><dd>${escapeHtml(item.loginSecurity.failureCount)}</dd></div>
+      <div><dt>최근 실패 시간</dt><dd>${escapeHtml(item.loginSecurity.lastFailedAt || "-")}</dd></div>
+      <div><dt>접속 위치</dt><dd>${escapeHtml(item.loginSecurity.clientIp)}</dd></div>
+      <div><dt>SMTP 알림 상태</dt><dd>${escapeHtml(item.loginSecurity.smtpStatus)}</dd></div>
+      <div><dt>관리자 메일</dt><dd>${escapeHtml(item.loginSecurity.adminEmail)}</dd></div>
+      <div><dt>임시 비밀번호 승인</dt><dd>${escapeHtml(item.loginSecurity.approvalStatus)}</dd></div>
+      <div><dt>임시 비밀번호 만료</dt><dd>${escapeHtml(item.loginSecurity.temporaryExpiresAt || "-")}</dd></div>
+      <div><dt>임시 비밀번호 식별값</dt><dd>${escapeHtml(item.loginSecurity.temporaryDigest)}</dd></div>
+    ` : "";
+  securityAuditDetail.innerHTML = `
+    <div class="security-audit-detail-head">
+      <span class="security-audit-risk security-audit-risk-${item.risk}">${escapeHtml(item.risk)}</span>
+      <strong>${escapeHtml(item.event)}</strong>
+      <em>${escapeHtml(item.time || "-")}</em>
+    </div>
+    <div class="security-audit-flow">
+      ${flow.map((step, index) => `<span class="${index < 2 || item.result !== "실패" ? "done" : "pending"}">${escapeHtml(step)}</span>`).join("")}
+    </div>
+    <dl class="security-audit-detail-list">
+      ${loginSecurityHtml}
+      <div><dt>백업 작업명</dt><dd>${escapeHtml(item.backupJob)}</dd></div>
+      <div><dt>격리 전/후 상태</dt><dd>${escapeHtml(item.beforeAfter)}</dd></div>
+      <div><dt>승인 사유</dt><dd>${escapeHtml(item.approvalReason)}</dd></div>
+      <div><dt>무결성 검증 결과</dt><dd>${escapeHtml(item.integrity)}</dd></div>
+      <div><dt>이벤트 원문</dt><dd>${escapeHtml(item.eventCode)}</dd></div>
+      <div class="wide"><dt>상세 내용</dt><dd>${escapeHtml(item.detail)}</dd></div>
+    </dl>
+  `;
+}
+
+function renderSecurityAudit(items = []) {
+  if (!securityAuditSummary || !securityAuditTable) return;
+  const normalized = (Array.isArray(items) ? items : []).map(normalizeSecurityAuditRecord);
+  renderSecurityAuditSummary(normalized);
+  renderSecurityAuditOptions(normalized);
+  if (securityAuditStart) securityAuditStart.value = securityAuditFilters.start;
+  if (securityAuditEnd) securityAuditEnd.value = securityAuditFilters.end;
+  if (securityAuditUser) securityAuditUser.value = securityAuditFilters.user;
+  if (securityAuditResult) securityAuditResult.value = securityAuditFilters.result;
+  if (securityAuditRisk) securityAuditRisk.value = securityAuditFilters.risk;
+
+  const filtered = normalized.filter(securityAuditMatchesFilters);
+  if (securityAuditCount) securityAuditCount.textContent = `${filtered.length}건`;
+  if (!filtered.some((item) => item.id === securityAuditSelectedId)) {
+    securityAuditSelectedId = filtered[0]?.id || "";
+  }
+  const selected = filtered.find((item) => item.id === securityAuditSelectedId) || filtered[0];
+
+  securityAuditTable.replaceChildren();
+  if (!filtered.length) {
+    const row = document.createElement("tr");
+    row.innerHTML = `<td colspan="7" class="security-audit-empty-row">조건에 맞는 보안 감사 로그가 없습니다.</td>`;
+    securityAuditTable.appendChild(row);
+    renderSecurityAuditDetail(null);
+    return;
+  }
+
+  filtered.forEach((item) => {
+    const row = document.createElement("tr");
+    row.className = item.id === selected?.id ? "selected" : "";
+    row.innerHTML = `
+      <td>${escapeHtml(item.time || "-")}</td>
+      <td><strong>${escapeHtml(item.event)}</strong><em>${escapeHtml(item.eventCode)}</em></td>
+      <td>${escapeHtml(item.device)}</td>
+      <td>${escapeHtml(item.user)}</td>
+      <td>${escapeHtml(item.approver)}</td>
+      <td><span class="security-audit-result security-audit-result-${item.result}">${escapeHtml(item.result)}</span></td>
+      <td><button type="button" data-security-audit-id="${escapeHtml(item.id)}">보기</button></td>
+    `;
+    securityAuditTable.appendChild(row);
+  });
+  renderSecurityAuditDetail(selected);
+}
+
 function renderAudit(items) {
   auditTable.replaceChildren();
   if (!items.length) {
@@ -3483,6 +3818,30 @@ logsSearch?.addEventListener("keydown", async (event) => {
   logsRange.source = logsSourceFilter?.value || "";
   logsRange.page = 1;
   await reloadLogs();
+});
+securityAuditApply?.addEventListener("click", () => {
+  securityAuditFilters = {
+    start: securityAuditStart?.value || "",
+    end: securityAuditEnd?.value || "",
+    event: securityAuditType?.value || "",
+    device: securityAuditDevice?.value || "",
+    user: securityAuditUser?.value.trim() || "",
+    result: securityAuditResult?.value || "",
+    risk: securityAuditRisk?.value || "",
+  };
+  securityAuditSelectedId = "";
+  renderSecurityAudit(latestAuditData);
+});
+securityAuditReset?.addEventListener("click", () => {
+  securityAuditFilters = { start: "", end: "", event: "", device: "", user: "", result: "", risk: "" };
+  securityAuditSelectedId = "";
+  renderSecurityAudit(latestAuditData);
+});
+securityAuditTable?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-security-audit-id]");
+  if (!button) return;
+  securityAuditSelectedId = button.dataset.securityAuditId || "";
+  renderSecurityAudit(latestAuditData);
 });
 reportRefreshButton?.addEventListener("click", reloadReport);
 metricFilterButtons.forEach((button) => {

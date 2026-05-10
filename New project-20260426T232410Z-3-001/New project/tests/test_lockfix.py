@@ -347,6 +347,55 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("fill: currentColor;", css_source)
         self.assertNotIn("transform: scale(2.25);", css_source)
 
+    def test_security_audit_menu_is_separate_operational_view(self) -> None:
+        root = Path.cwd()
+        index_source = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        app_source = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
+        css_source = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('data-view="securityAudit"', index_source)
+        self.assertIn('id="securityAuditView"', index_source)
+        self.assertIn('id="securityAuditSummary"', index_source)
+        self.assertIn('id="securityAuditTable"', index_source)
+        self.assertIn('id="securityAuditDetail"', index_source)
+        self.assertIn('"nav.securityAudit": "보안 감사"', app_source)
+        self.assertIn("function renderSecurityAudit", app_source)
+        self.assertIn("function normalizeSecurityAuditRecord", app_source)
+        self.assertIn("로그인 실패 횟수", app_source)
+        self.assertIn("auth.login.locked", app_source)
+        self.assertIn(".security-audit-layout", css_source)
+        self.assertIn(".security-audit-detail-panel", css_source)
+
+    def test_login_security_thresholds_issue_admin_approval_temporary_password(self) -> None:
+        tmp_path = self.make_workspace()
+        context = webui.WebContext(write_config(tmp_path))
+        context.login_security_path = tmp_path / "login_security.json"
+
+        first = context.register_login_failure("admin", "127.0.0.1")
+        second = context.register_login_failure("admin", "127.0.0.1")
+        third = context.register_login_failure("admin", "127.0.0.1")
+        fourth = context.register_login_failure("admin", "127.0.0.1")
+        fifth = context.register_login_failure("admin", "127.0.0.1")
+
+        self.assertEqual(first["failure_count"], 1)
+        self.assertFalse(second["warning"])
+        self.assertTrue(third["warning"])
+        self.assertFalse(fourth.get("locked", False) and bool(fourth.get("approval_token")))
+        self.assertTrue(fifth["locked"])
+        self.assertEqual(fifth["approval_status"], "PENDING")
+        self.assertIn("approval_token", fifth)
+        self.assertIn("temporary_password", fifth)
+        self.assertEqual(context.verify_login_temp_password("admin", fifth["temporary_password"])["reason"], "approval_pending")
+
+        approved = context.approve_login_temp_password(
+            "admin",
+            fifth["approval_token"],
+            approved_by="administrator",
+            client_ip="127.0.0.1",
+        )
+        self.assertTrue(approved["ok"])
+        self.assertTrue(context.verify_login_temp_password("admin", fifth["temporary_password"])["ok"])
+
     def test_webui_sidebar_is_compact_to_prioritize_content(self) -> None:
         root = Path.cwd()
         index_source = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -790,6 +839,9 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("Reconnect State Flow", source)
         self.assertIn("ONLINE_VERIFIED_RW", source)
         self.assertIn("RECONNECT_REQUESTED", source)
+        self.assertIn("const reconnectIsComplete = isEmergencyReconnectCompleteState(reconnectReportedState)", source)
+        self.assertIn("emergencyReconnectDetailLogs.length > 0 || reconnectIsComplete", source)
+        self.assertIn("index <= reconnectCurrentIndex) return \"done\"", source)
         self.assertIn("emergency-reconnect-flow", source)
         self.assertIn("completeEmergencyReconnectWatch", source)
         self.assertIn("긴급 접속 완료", source)
