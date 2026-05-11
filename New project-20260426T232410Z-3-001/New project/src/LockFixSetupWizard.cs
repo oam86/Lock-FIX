@@ -490,13 +490,24 @@ namespace LockFix
                 HttpWebResponse response = ex.Response as HttpWebResponse;
                 if (response != null)
                 {
+                    string responseBody = ReadWebExceptionBody(ex);
                     if (response.StatusCode == HttpStatusCode.Unauthorized)
                     {
                         message = "401 authentication failed: check the Veeam REST username and password.";
                     }
                     else if (response.StatusCode == HttpStatusCode.Forbidden)
                     {
-                        message = "403 permission denied: grant this account at least Veeam Backup Viewer permission.";
+                        if (responseBody.IndexOf("product edition", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            message =
+                                "403 product edition blocked: Veeam accepted the account, but this Veeam product edition/license does not allow the REST API.\n\n" +
+                                "Veeam response: " + responseBody + "\n\n" +
+                                "Use a Veeam Backup & Replication edition/license that supports the REST API, then run setup again.";
+                        }
+                        else
+                        {
+                            message = "403 permission denied: grant this account at least Veeam Backup Viewer permission.";
+                        }
                     }
                     else if (response.StatusCode == HttpStatusCode.NotFound)
                     {
@@ -563,13 +574,44 @@ namespace LockFix
                 HttpWebResponse response = ex.Response as HttpWebResponse;
                 if (response != null)
                 {
+                    string responseBody = ReadWebExceptionBody(ex);
                     message = "HTTP " + ((int)response.StatusCode).ToString() + " " + response.StatusDescription;
+                    if (!String.IsNullOrWhiteSpace(responseBody))
+                    {
+                        message += ": " + responseBody;
+                    }
                 }
                 else
                 {
                     message = ex.Message;
                 }
                 return false;
+            }
+        }
+
+        private string ReadWebExceptionBody(WebException ex)
+        {
+            try
+            {
+                if (ex.Response == null)
+                {
+                    return "";
+                }
+                using (Stream stream = ex.Response.GetResponseStream())
+                {
+                    if (stream == null)
+                    {
+                        return "";
+                    }
+                    using (StreamReader reader = new StreamReader(stream))
+                    {
+                        return reader.ReadToEnd().Trim();
+                    }
+                }
+            }
+            catch
+            {
+                return "";
             }
         }
 

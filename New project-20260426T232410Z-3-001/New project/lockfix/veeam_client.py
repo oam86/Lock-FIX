@@ -766,13 +766,27 @@ class VeeamEnterpriseManagerClient:
 
 
 def map_http_error(exc: urlerror.HTTPError) -> VeeamError:
+    body = ""
+    try:
+        body = exc.read().decode("utf-8", errors="replace").strip()
+    except Exception:
+        body = ""
     if exc.code == 401:
-        return VeeamAuthenticationError("401: authentication failed. Check Veeam username/password or token.")
+        detail = f" Veeam response: {body}" if body else ""
+        return VeeamAuthenticationError(f"401: authentication failed. Check Veeam username/password or token.{detail}")
     if exc.code == 403:
-        return VeeamPermissionError("403: Veeam permission denied. Grant Veeam Backup Viewer or higher.")
+        if "product edition" in body.lower():
+            return VeeamPermissionError(
+                "403: Veeam accepted the account, but this product edition/license does not allow the REST API. "
+                f"Veeam response: {body}"
+            )
+        detail = f" Veeam response: {body}" if body else ""
+        return VeeamPermissionError(f"403: Veeam permission denied. Grant Veeam Backup Viewer or higher.{detail}")
     if exc.code == 404:
-        return VeeamNotFoundError("404: Veeam API URL or x-api-version path is invalid.")
-    return VeeamError(f"HTTP {exc.code}: Veeam API request failed.")
+        detail = f" Veeam response: {body}" if body else ""
+        return VeeamNotFoundError(f"404: Veeam API URL or x-api-version path is invalid.{detail}")
+    detail = f" Veeam response: {body}" if body else ""
+    return VeeamError(f"HTTP {exc.code}: Veeam API request failed.{detail}")
 
 
 def list_items(data: dict[str, Any]) -> list[dict[str, Any]]:
