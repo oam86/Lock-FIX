@@ -141,10 +141,21 @@ class ApprovalStore:
         policy = self.policy_for(request_type)
         if not policy.get("enabled", True):
             raise PermissionError(f"approval policy disabled: {request_type}")
+        normalized_type = str(policy["requestType"])
+        request_metadata = dict(metadata or {})
+        if normalized_type == "EMERGENCY_UNLOCK" and not str(request_metadata.get("reason") or "").strip():
+            self.audit_event(
+                "approval.request.rejected",
+                request_type=normalized_type,
+                requesterUserId=str(requester_user_id or "unknown"),
+                targetId=str(target_id or ""),
+                reason="emergency unlock reason is required",
+            )
+            raise ValueError("reason is required for EMERGENCY_UNLOCK")
         now = utc_now()
         request = ApprovalRequest(
             id=uuid.uuid4().hex,
-            requestType=str(policy["requestType"]),
+            requestType=normalized_type,
             requesterUserId=str(requester_user_id or "unknown"),
             targetId=str(target_id or ""),
             status=PENDING,
@@ -153,7 +164,7 @@ class ApprovalStore:
             expiresAt=iso(now + timedelta(minutes=max(1, int(policy.get("expiresInMinutes") or 30)))),
             createdAt=iso(now),
             updatedAt=iso(now),
-            metadata=dict(metadata or {}),
+            metadata=request_metadata,
         )
         record = asdict(request)
         data["requests"].append(record)

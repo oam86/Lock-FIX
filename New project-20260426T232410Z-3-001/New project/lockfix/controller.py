@@ -303,7 +303,18 @@ class LockFixController:
 
     def emergency_reconnect(self, slot_id: str, verification_hash: str = "", repository_path: str = "") -> LockFixState:
         self.audit.write("emergency.unlock.request", slot_id=slot_id, resourceType="EMERGENCY", resourceId=slot_id)
-        self.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)
+        emergency_approval = self.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)
+        emergency_reason = str((emergency_approval.get("metadata") or {}).get("reason") or "").strip()
+        if not emergency_reason:
+            self.audit.write(
+                "emergency.unlock.denied",
+                slot_id=slot_id,
+                resourceType="EMERGENCY",
+                resourceId=slot_id,
+                result="FAILED",
+                reason="emergency unlock reason is required",
+            )
+            raise PermissionError("emergency unlock reason is required")
         slot = self.config.slot(slot_id)
         storage_state = self.disk.read_storage_state(slot)
         remembered_path = str(storage_state.get("accessPath") or "").strip()
@@ -330,6 +341,7 @@ class LockFixController:
             mount_point=str(slot.mount_point),
             device=slot.device,
             repository_path=reconnect_path,
+            emergency_reason=emergency_reason,
             verification_source="local_secure_store" if not provided else "manual_compatibility",
             stored_hash_hmac=current_hash_hmac[:16],
         )
@@ -360,6 +372,7 @@ class LockFixController:
             "emergency.reconnect.approved",
             slot_id=slot_id,
             repository_path=reconnect_path,
+            emergency_reason=emergency_reason,
             expected_hash_digest=expected_digest,
             hash_source="local_secure_store",
         )
@@ -397,6 +410,22 @@ class LockFixController:
             message="emergency reconnect completed",
         )
         return state
+
+    def hardware_power_off(self, slot_id: str) -> None:
+        self.audit.write("hardware.power_off.requested", slot_id=slot_id, resourceType="HARDWARE_POWER", resourceId=slot_id)
+        self.approvals.require_approved("HARDWARE_POWER_OFF", slot_id)
+        slot = self.config.slot(slot_id)
+        build_power_controller(self.runner, slot.power, self.audit).off(slot_id)
+
+    def hardware_power_on(self, slot_id: str) -> None:
+        self.audit.write("hardware.power_on.requested", slot_id=slot_id, resourceType="HARDWARE_POWER", resourceId=slot_id)
+        self.approvals.require_approved("HARDWARE_POWER_ON", slot_id)
+        slot = self.config.slot(slot_id)
+        build_power_controller(self.runner, slot.power, self.audit).on(slot_id)
+
+    def require_policy_change_approval(self, target_id: str = "policy") -> dict:
+        self.audit.write("policy.change.requested", resourceType="POLICY", resourceId=target_id)
+        return self.approvals.require_approved("POLICY_CHANGE", target_id)
 
     def isolation_proof(self, slot_id: str, repository_path: str = "") -> dict[str, object]:
         slot = self.repository_slot(self.config.slot(slot_id), repository_path)

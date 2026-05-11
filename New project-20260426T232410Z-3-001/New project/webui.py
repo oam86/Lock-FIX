@@ -274,11 +274,6 @@ class WebContext:
             running = self.emergency_jobs.get(slot_id)
             if running and running.get("status") == "running":
                 return dict(running)
-            approved_until = self.controller.grant_online_approval(
-                slot_id,
-                ttl_seconds=900,
-                reason="admin_emergency_reconnect_requested",
-            )
             job = {
                 "job_id": uuid.uuid4().hex,
                 "slot_id": slot_id,
@@ -286,7 +281,7 @@ class WebContext:
                 "status": "running",
                 "started_at": datetime.now().isoformat(timespec="seconds"),
                 "background_started_at": "",
-                "approved_until": approved_until,
+                "approved_until": "",
                 "message": "Emergency reconnect job started in background.",
             }
             self.emergency_jobs[slot_id] = job
@@ -606,7 +601,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             self.send_json({"error": str(exc), "permission": exc.permission.value, "role": exc.role.value}, status=403)
         except PermissionError as exc:
             self.audit_unauthorized_access(str(exc))
-            self.send_json({"error": str(exc)}, status=401)
+            self.send_json({"error": str(exc)}, status=self.permission_error_status(exc))
         except KeyError as exc:
             self.send_json({"error": str(exc)}, status=404)
         except ValueError as exc:
@@ -842,6 +837,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 payload = self.read_json_body()
                 slot_id = self.query_slot(parsed.query)
                 slot = self.context.config.slot(slot_id)
+                self.context.controller.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)
+                self.context.controller.approvals.require_approved("DISK_ONLINE", slot_id)
                 approval_password = str(payload.get("approval_password") or "")
                 if not secrets.compare_digest(approval_password, "1"):
                     self.context.controller.audit.write(
@@ -895,7 +892,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             self.send_json({"error": str(exc), "permission": exc.permission.value, "role": exc.role.value}, status=403)
         except PermissionError as exc:
             self.audit_unauthorized_access(str(exc))
-            self.send_json({"error": str(exc)}, status=401)
+            self.send_json({"error": str(exc)}, status=self.permission_error_status(exc))
         except KeyError as exc:
             self.send_json({"error": str(exc)}, status=404)
         except ValueError as exc:
@@ -922,7 +919,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             self.send_json({"error": str(exc), "permission": exc.permission.value, "role": exc.role.value}, status=403)
         except PermissionError as exc:
             self.audit_unauthorized_access(str(exc))
-            self.send_json({"error": str(exc)}, status=401)
+            self.send_json({"error": str(exc)}, status=self.permission_error_status(exc))
         except KeyError as exc:
             self.send_json({"error": str(exc)}, status=404)
         except ValueError as exc:
@@ -1315,6 +1312,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         if record:
             return Role.SUPER_ADMIN
         return Role.AUDITOR
+
+    def permission_error_status(self, exc: PermissionError) -> int:
+        return 401 if "authentication required" in str(exc).lower() else 403
 
     def current_permissions(self) -> list[str]:
         policy = load_role_permissions(self.context.rbac_policy_path)

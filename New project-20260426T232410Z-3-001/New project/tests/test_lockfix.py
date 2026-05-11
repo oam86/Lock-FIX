@@ -76,7 +76,8 @@ class LockFixTests(unittest.TestCase):
         return root
 
     def approve_operation(self, controller: LockFixController, request_type: str, slot_id: str = "BAY-01") -> dict:
-        request = controller.approvals.create_request(request_type, "requester", target_id=slot_id)
+        metadata = {"reason": "unit test emergency unlock"} if request_type == "EMERGENCY_UNLOCK" else {}
+        request = controller.approvals.create_request(request_type, "requester", target_id=slot_id, metadata=metadata)
         required = int(request["requiredApprovals"])
         approvers = [
             ("approver-1", Role.SUPER_ADMIN),
@@ -387,6 +388,27 @@ class LockFixTests(unittest.TestCase):
         with self.assertRaisesRegex(PermissionError, "duplicate"):
             store.decide(request["id"], "approver-a", Role.SECURITY_ADMIN, "APPROVED")
 
+    def test_emergency_unlock_approval_requires_reason_and_two_approvers(self) -> None:
+        tmp_path = self.make_workspace()
+        store = ApprovalStore(tmp_path / "approvals.json", AuditLogger(tmp_path / "audit.jsonl"))
+
+        with self.assertRaisesRegex(ValueError, "reason is required"):
+            store.create_request("EMERGENCY_UNLOCK", requester_user_id="creator", target_id="BAY-01")
+
+        request = store.create_request(
+            "EMERGENCY_UNLOCK",
+            requester_user_id="creator",
+            target_id="BAY-01",
+            metadata={"reason": "recover locked backup volume"},
+        )
+        first = store.decide(request["id"], "approver-a", Role.SUPER_ADMIN, "APPROVED")
+        second = store.decide(request["id"], "approver-b", Role.SECURITY_ADMIN, "APPROVED")
+
+        self.assertEqual(request["requiredApprovals"], 2)
+        self.assertEqual(first["request"]["status"], "PENDING")
+        self.assertEqual(second["request"]["status"], "APPROVED")
+        self.assertIn("recover locked backup volume", json.dumps(second["request"], ensure_ascii=False))
+
     def test_approval_expiration_updates_status_and_audit_log(self) -> None:
         tmp_path = self.make_workspace()
         store = ApprovalStore(tmp_path / "approvals.json", AuditLogger(tmp_path / "audit.jsonl"))
@@ -412,6 +434,35 @@ class LockFixTests(unittest.TestCase):
         state = controller.reconnect("BAY-01")
 
         self.assertIn(state, {LockFixState.ONLINE_VERIFIED_RW, LockFixState.QUARANTINE})
+
+    def test_controller_blocks_policy_and_hardware_power_until_approval_is_complete(self) -> None:
+        tmp_path = self.make_workspace()
+        controller = LockFixController(load_config(write_config(tmp_path)))
+
+        with self.assertRaisesRegex(PermissionError, "approval required"):
+            controller.require_policy_change_approval("rbac-policy")
+        with self.assertRaisesRegex(PermissionError, "approval required"):
+            controller.hardware_power_on("BAY-01")
+        with self.assertRaisesRegex(PermissionError, "approval required"):
+            controller.hardware_power_off("BAY-01")
+
+        self.approve_operation(controller, "POLICY_CHANGE", "rbac-policy")
+        self.approve_operation(controller, "HARDWARE_POWER_ON")
+        self.approve_operation(controller, "HARDWARE_POWER_OFF")
+
+        self.assertEqual(controller.require_policy_change_approval("rbac-policy")["status"], "APPROVED")
+        controller.hardware_power_on("BAY-01")
+        controller.hardware_power_off("BAY-01")
+
+    def test_webui_permission_errors_return_403_and_emergency_does_not_pregrant_online(self) -> None:
+        source = Path("webui.py").read_text(encoding="utf-8")
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+
+        self.assertEqual(handler.permission_error_status(PermissionError("approval required: DISK_ONLINE")), 403)
+        self.assertEqual(handler.permission_error_status(PermissionError("authentication required")), 401)
+        self.assertIn('self.context.controller.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)', source)
+        self.assertIn('self.context.controller.approvals.require_approved("DISK_ONLINE", slot_id)', source)
+        self.assertNotIn("reason=\"admin_emergency_reconnect_requested\"", source)
 
     def test_install_properties_can_enable_live_operation_mode(self) -> None:
         tmp_path = self.make_workspace()
