@@ -322,25 +322,79 @@ class LockFixTests(unittest.TestCase):
         app_source = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
         css_source = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
 
-        self.assertIn("Judgement Module UI", app_source)
+        self.assertIn("디스크 식별 판정", app_source)
+        self.assertIn("detect-action-row", app_source)
+        self.assertIn('data-detect-action="logs"', app_source)
+        self.assertIn('if (action === "logs") showView("logs2");', app_source)
         self.assertIn('statusClass = isNormal ? "normal" : "abnormal"', app_source)
         self.assertIn(".detect-judgement-normal", css_source)
         self.assertIn(".detect-judgement-abnormal", css_source)
+        self.assertIn(".detect-state-row", css_source)
+        self.assertIn(".detect-action-primary", css_source)
         self.assertIn("background: #ffffff;", css_source)
         self.assertIn("color: #16a34a", css_source)
         self.assertIn("color: #ef4444", css_source)
 
-    def test_logs_navigation_uses_lockfix_logs_icon_asset(self) -> None:
+    def test_logs_navigation_uses_simple_inline_logs_icon(self) -> None:
         root = Path.cwd()
         index_source = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
         css_source = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
 
-        self.assertTrue((root / "web" / "static" / "lockfix-logs-icon.png").exists())
         self.assertIn('class="nav-icon logs-nav-icon"', index_source)
-        self.assertIn('src="/static/lockfix-logs-icon.png?v=20260505-logs"', index_source)
-        self.assertIn(".logs-nav-icon img", css_source)
-        self.assertIn("transform: none;", css_source)
+        self.assertIn('class="log-dot"', index_source)
+        self.assertIn('d="M11 7h8"', index_source)
+        self.assertIn(".logs-nav-icon .log-dot", css_source)
+        self.assertIn("fill: currentColor;", css_source)
         self.assertNotIn("transform: scale(2.25);", css_source)
+
+    def test_security_audit_menu_is_separate_operational_view(self) -> None:
+        root = Path.cwd()
+        index_source = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        app_source = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
+        css_source = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('data-view="securityAudit"', index_source)
+        self.assertIn('id="securityAuditView"', index_source)
+        self.assertIn('id="securityAuditSummary"', index_source)
+        self.assertIn('id="securityAuditTable"', index_source)
+        self.assertIn('id="securityAuditDetail"', index_source)
+        self.assertIn('"nav.securityAudit": "보안 감사"', app_source)
+        self.assertIn("function renderSecurityAudit", app_source)
+        self.assertIn("function normalizeSecurityAuditRecord", app_source)
+        self.assertIn("로그인 실패 횟수", app_source)
+        self.assertIn("auth.login.locked", app_source)
+        self.assertIn(".security-audit-layout", css_source)
+        self.assertIn(".security-audit-detail-panel", css_source)
+
+    def test_login_security_thresholds_issue_admin_approval_temporary_password(self) -> None:
+        tmp_path = self.make_workspace()
+        context = webui.WebContext(write_config(tmp_path))
+        context.login_security_path = tmp_path / "login_security.json"
+
+        first = context.register_login_failure("admin", "127.0.0.1")
+        second = context.register_login_failure("admin", "127.0.0.1")
+        third = context.register_login_failure("admin", "127.0.0.1")
+        fourth = context.register_login_failure("admin", "127.0.0.1")
+        fifth = context.register_login_failure("admin", "127.0.0.1")
+
+        self.assertEqual(first["failure_count"], 1)
+        self.assertFalse(second["warning"])
+        self.assertTrue(third["warning"])
+        self.assertFalse(fourth.get("locked", False) and bool(fourth.get("approval_token")))
+        self.assertTrue(fifth["locked"])
+        self.assertEqual(fifth["approval_status"], "PENDING")
+        self.assertIn("approval_token", fifth)
+        self.assertIn("temporary_password", fifth)
+        self.assertEqual(context.verify_login_temp_password("admin", fifth["temporary_password"])["reason"], "approval_pending")
+
+        approved = context.approve_login_temp_password(
+            "admin",
+            fifth["approval_token"],
+            approved_by="administrator",
+            client_ip="127.0.0.1",
+        )
+        self.assertTrue(approved["ok"])
+        self.assertTrue(context.verify_login_temp_password("admin", fifth["temporary_password"])["ok"])
 
     def test_webui_sidebar_is_compact_to_prioritize_content(self) -> None:
         root = Path.cwd()
@@ -464,6 +518,69 @@ class LockFixTests(unittest.TestCase):
         self.assertTrue(emergency["authorization_hash_protected"])
         self.assertIn("current_uid_short", emergency)
         self.assertIn("hash_status", emergency)
+
+    def test_airgap_summary_does_not_block_on_unmounted_emergency_volume(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        raw["slots"][0]["device"] = str(tmp_path / "missing-drive")
+        raw["slots"][0]["mount_point"] = str(tmp_path / "missing-drive")
+        config_path.write_text(json.dumps(raw), encoding="utf-8")
+
+        class Probe:
+            context = webui.WebContext(config_path)
+
+        summary = webui.LockFixWebHandler.emergency_access_summary(Probe(), {})
+        emergency = summary["slot"]
+
+        self.assertEqual(emergency["hash_status"], "WAITING_FOR_MOUNT")
+        self.assertEqual(emergency["current_uid_short"], "")
+        self.assertTrue(emergency["eligible"])
+
+    def test_emergency_reconnect_status_returns_live_detail_logs(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        context = webui.WebContext(config_path)
+        job_id = "job-live-status"
+        with context.emergency_jobs_lock:
+            context.emergency_jobs["BAY-01"] = {
+                "job_id": job_id,
+                "slot_id": "BAY-01",
+                "repository_path": "D:\\",
+                "status": "running",
+                "started_at": webui.datetime.now().isoformat(timespec="seconds"),
+                "background_started_at": webui.datetime.now().isoformat(timespec="seconds"),
+                "approved_until": webui.datetime.now().isoformat(timespec="seconds"),
+                "message": "Emergency reconnect background worker is running.",
+            }
+        context.controller.audit.write("state.transition", slot_id="BAY-01", state="WAITING_DISK")
+
+        result = context.emergency_reconnect_status("BAY-01", job_id)
+        audit_text = context.config.audit_log_path.read_text(encoding="utf-8")
+
+        self.assertEqual(result["status"], "running")
+        self.assertEqual(result["flow_state"], "WAITING_DISK")
+        self.assertTrue(any("WAITING_DISK" in line for line in result["detail_logs"]))
+        self.assertIn("emergency.reconnect.heartbeat", audit_text)
+
+    def test_logs_menu_formats_emergency_reconnect_history(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+
+        class Probe:
+            context = webui.WebContext(config_path)
+
+        record = {
+            "event": "emergency.reconnect.heartbeat",
+            "slot_id": "BAY-01",
+            "background_started": True,
+            "message": "Emergency reconnect background worker is running.",
+        }
+
+        message = webui.LockFixWebHandler.format_log_audit_record(Probe(), record)
+
+        self.assertIn("LOCK-FIX Reconnect HEARTBEAT", message)
+        self.assertIn("BAY-01", message)
 
     def test_webui_audit_readers_tolerate_windows_non_utf8_output(self) -> None:
         tmp_path = self.make_workspace()
@@ -722,7 +839,22 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("Reconnect State Flow", source)
         self.assertIn("ONLINE_VERIFIED_RW", source)
         self.assertIn("RECONNECT_REQUESTED", source)
+        self.assertIn("const reconnectIsComplete = isEmergencyReconnectCompleteState(reconnectReportedState)", source)
+        self.assertIn("emergencyReconnectDetailLogs.length > 0 || reconnectIsComplete", source)
+        self.assertIn("index <= reconnectCurrentIndex) return \"done\"", source)
         self.assertIn("emergency-reconnect-flow", source)
+        self.assertIn("completeEmergencyReconnectWatch", source)
+        self.assertIn("긴급 접속 완료", source)
+        self.assertIn("긴급 접속이 완료되었다", source)
+        self.assertIn("완료 이력 저장됨", source)
+        self.assertIn("재접속 작업이 현재 서비스에 등록되어 있지 않습니다", source)
+        self.assertIn("로그인 세션이 만료되어 긴급 재접속 요청이 서비스에 전달되지 않았습니다", source)
+        self.assertIn('credentials: "same-origin"', source)
+        self.assertIn("requestEmergencyApprovalPassword", source)
+        self.assertIn("승인 비밀번호", source)
+        self.assertIn("approval_password", source)
+        self.assertIn(".emergency-approval-modal", css)
+        self.assertIn(".emergency-approval-card", css)
         self.assertIn("인증 해시값 전체를 입력하세요", source)
         self.assertNotIn("data-hash=", source)
         self.assertIn("last_reconnect", source)
@@ -740,6 +872,13 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("/open-latest-package-folder", source)
         self.assertIn("os.startfile", source)
         self.assertIn("local access only", source)
+
+    def test_webui_requires_emergency_reconnect_approval_password(self) -> None:
+        source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")
+
+        self.assertIn("approval_password", source)
+        self.assertIn("approval_password_failed", source)
+        self.assertIn("긴급 재접속 승인 비밀번호가 일치하지 않습니다.", source)
 
     def test_login_success_shows_two_second_loading_splash(self) -> None:
         app_source = (Path.cwd() / "web" / "static" / "app.js").read_text(encoding="utf-8")
@@ -1043,6 +1182,47 @@ class LockFixTests(unittest.TestCase):
         self.assertEqual(summary["transferred"], "0 B")
         self.assertEqual(summary["session_id"], "child-1")
 
+    def test_veeam_console_log_fallback_reads_parent_realtime_progress(self) -> None:
+        root = self.make_workspace() / "logs"
+        job_dir = root / "Backup_Copy_Job_1" / "Agent_backup"
+        job_dir.mkdir(parents=True)
+        (job_dir / "Job.Agent_backup.log").write_text(
+            "\n".join(
+                [
+                    "[10.05.2026 11:13:41.484]    Info    [Session] Id 'parent-1', State 'Working'.",
+                    "[10.05.2026 11:13:43.893]    Info    JobId=7cda3ae9-317b-4952-990e-428f7801342f, JobName=Backup Copy Job 1",
+                    "[10.05.2026 11:13:44.560]    Info    [JobSession] Set new totals: TotalObjects '1', TotalSize '479 GB'",
+                    "[10.05.2026 11:14:08.360]    Info    Job progress: '50%', '257,698,037,760' of '514,319,187,968' bytes, '0' of '0' used bytes, object '0' of '1', totals calculated: No",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        (job_dir / "Job.192.168.219.102.BackupSync.log").write_text(
+            "\n".join(
+                [
+                    "[10.05.2026 11:13:44.995]    Info    [Session] Id 'child-1', State 'Working'.",
+                    "[10.05.2026 11:13:51.364]    Info    [JobSession] Set new totals: TotalObjects '1', TotalSize '479 GB'",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        summary = latest_backup_copy_console_log_summary(
+            log_root=str(root),
+            backup_copy_name="Backup Copy Job 1",
+            job_name="Agent_backup",
+            target_name="192.168.219.102",
+            policy_job_id="7cda3ae9-317b-4952-990e-428f7801342f",
+            repository_id="repo-d",
+            repository_name="DREPO",
+            repository_path="D:\\Backup",
+        )
+
+        self.assertEqual(summary["progress_percent"], 50)
+        self.assertEqual(summary["transferred"], "240.0 GB")
+        self.assertEqual(summary["backup_size"], "479.0 GB")
+        self.assertIn("progress 50%", "\n".join(summary["session_logs"][0]["actions"]))
+
     def test_veeam_session_summary_keeps_realtime_progress_size_and_time(self) -> None:
         session = {
             "id": "session-1",
@@ -1297,6 +1477,52 @@ class LockFixTests(unittest.TestCase):
         self.assertFalse(result["step_logs"][0]["transition_allowed"])
         self.assertEqual(result["step_logs"][0]["progress_percent"], "")
         self.assertIn("configured Veeam check failed", result["session_logs"][0]["actions"][0])
+
+    def test_webui_promotes_finished_veeam_log_to_100_percent(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        raw["veeam"] = {"job_name": "Agent_backup"}
+        config_path.write_text(json.dumps(raw), encoding="utf-8")
+
+        class Probe:
+            context = webui.WebContext(config_path)
+
+            def veeam_install_properties(self):
+                return {}
+
+            def tcp_port_open(self, host, port, timeout=0.25):
+                return True
+
+            def poll_veeam_api(self, server, port, local_payload):
+                return {
+                    "api_synced": True,
+                    "job": "Backup Copy Job 1",
+                    "status": "Running",
+                    "result": "Running",
+                    "progress_percent": 99,
+                    "current_step": 1,
+                    "started_at": "2026-05-10 16:45:57",
+                    "ended_at": "-",
+                    "session_logs": [
+                        {
+                            "name": "Backup Copy Job 1",
+                            "status": "Running",
+                            "actions": [
+                                "Backup Copy Job 1 - 192.168.219.102 (Incremental) (479.0 GB) is running: 479.0 GB transferred, progress 99%",
+                                "Job finished at 2026-05-10 16:46:16",
+                            ],
+                            "progress_percent": 99,
+                        }
+                    ],
+                }
+
+        result = webui.LockFixWebHandler.veeam_interlock_runtime(Probe(), 0)
+
+        self.assertEqual(result["progress_percent"], 100)
+        self.assertEqual(result["payload"]["progress_percent"], 100)
+        self.assertEqual(result["session_logs"][0]["progress_percent"], 100)
+        self.assertEqual(result["session_logs"][0]["status"], "Success")
 
     def test_webui_keeps_last_veeam_detail_logs_when_api_waits(self) -> None:
         class Probe:

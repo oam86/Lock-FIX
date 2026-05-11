@@ -23,6 +23,10 @@ const monitoringStart = document.querySelector("#monitoringStart");
 const monitoringEnd = document.querySelector("#monitoringEnd");
 const monitoringRangeApply = document.querySelector("#monitoringRangeApply");
 const monitoringRangeDownload = document.querySelector("#monitoringRangeDownload");
+const monitoringSummaryStrip = document.querySelector("#monitoringSummaryStrip");
+const opsClock = document.querySelector("#opsClock");
+const opsSummaryGrid = document.querySelector("#opsSummaryGrid");
+const opsEventList = document.querySelector("#opsEventList");
 const chartMenuButton = document.querySelector("#chartMenuButton");
 const chartZoomInButton = document.querySelector("#chartZoomInButton");
 const chartZoomOutButton = document.querySelector("#chartZoomOutButton");
@@ -66,6 +70,19 @@ const notificationAuditAnomalyCount = document.querySelector("#notificationAudit
 const notificationAuditAnomalyStatus = document.querySelector("#notificationAuditAnomalyStatus");
 const notificationAuditLastDetected = document.querySelector("#notificationAuditLastDetected");
 const notificationAuditTable = document.querySelector("#notificationAuditTable");
+const securityAuditSummary = document.querySelector("#securityAuditSummary");
+const securityAuditStart = document.querySelector("#securityAuditStart");
+const securityAuditEnd = document.querySelector("#securityAuditEnd");
+const securityAuditType = document.querySelector("#securityAuditType");
+const securityAuditDevice = document.querySelector("#securityAuditDevice");
+const securityAuditUser = document.querySelector("#securityAuditUser");
+const securityAuditResult = document.querySelector("#securityAuditResult");
+const securityAuditRisk = document.querySelector("#securityAuditRisk");
+const securityAuditApply = document.querySelector("#securityAuditApply");
+const securityAuditReset = document.querySelector("#securityAuditReset");
+const securityAuditCount = document.querySelector("#securityAuditCount");
+const securityAuditTable = document.querySelector("#securityAuditTable");
+const securityAuditDetail = document.querySelector("#securityAuditDetail");
 const detectStart = document.querySelector("#detectStart");
 const detectEnd = document.querySelector("#detectEnd");
 const detectCards = document.querySelector("#detectCards");
@@ -146,6 +163,18 @@ let latestMonitoringData = null;
 let latestReportData = null;
 let latestSourcesData = null;
 let latestDashboardData = null;
+let latestLogsData = null;
+let latestAuditData = [];
+let securityAuditSelectedId = "";
+let securityAuditFilters = {
+  start: "",
+  end: "",
+  event: "",
+  device: "",
+  user: "",
+  result: "",
+  risk: "",
+};
 let airgapPollTimer = null;
 let veeamPollTimer = null;
 let emergencyReconnectPollTimer = null;
@@ -189,6 +218,7 @@ const translations = {
     "nav.dashboard": "Dashboard",
     "nav.detect": "Detect",
     "nav.notification": "Notification",
+    "nav.securityAudit": "Security Audit",
     "nav.logs": "Logs",
     "nav.contact": "Contact Service",
     "nav.license": "License",
@@ -303,6 +333,7 @@ const translations = {
     "nav.dashboard": "대시보드",
     "nav.detect": "탐지 내역",
     "nav.notification": "알림",
+    "nav.securityAudit": "보안 감사",
     "nav.logs": "로그",
     "nav.contact": "고객 센터",
     "nav.license": "라이선스",
@@ -735,6 +766,9 @@ function friendlyEmergencyError(error) {
   if (/repair-volume/i.test(text) && /not supported|43001/i.test(text)) {
     return "해당 파일시스템은 Repair-Volume 검사를 지원하지 않아 검사를 건너뛰고 재연결 상태를 다시 확인합니다.";
   }
+  if (/401|unauthorized|인증|auth/i.test(text)) {
+    return "긴급 접속 상태 확인 인증이 만료되었습니다. 최신 재접속 완료 여부는 백그라운드 로그와 상태 이력에서 다시 확인합니다.";
+  }
   return "긴급 접속을 완료하지 못했습니다. 상세 오류는 백그라운드 로그 이력에 저장됨";
 }
 
@@ -960,10 +994,13 @@ function applyPendingUiSettings() {
 }
 
 async function requestJson(url, options = {}) {
-  const response = await fetch(url, options);
+  const response = await fetch(url, { credentials: "same-origin", ...options });
   const payload = await response.json();
   if (!response.ok) {
-    throw new Error(payload.error || "request failed");
+    const message = payload.error || (response.status === 401 ? "login session expired" : "request failed");
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
   return payload;
 }
@@ -1023,7 +1060,7 @@ async function login(event) {
       setAuthenticated(false);
     }
   } catch (error) {
-    loginError.textContent = "Account or password is not valid.";
+    loginError.textContent = error.message || "Account or password is not valid.";
   }
 }
 
@@ -1056,6 +1093,9 @@ function showView(name) {
       console.warn("Unable to reload report view", error);
       reportAnalysis.textContent = error.message;
     });
+  }
+  if (name === "securityAudit") {
+    renderSecurityAudit(latestAuditData);
   }
   if (name === "settings") {
     reloadConsoleStatus().catch((error) => {
@@ -1573,6 +1613,7 @@ function renderDetect(data) {
     const isNormal = fingerprint.match === true || status === "MATCH";
     const statusClass = isNormal ? "normal" : "abnormal";
     const judgementLabel = isNormal ? "REGISTERED" : status === "DIFFERENT_DISK" ? "DIFFERENT DISK" : "UNREGISTERED";
+    const judgementKorean = isNormal ? "등록된 디스크" : status === "DIFFERENT_DISK" ? "다른 디스크 감지" : "등록되지 않은 디스크";
     const recognitionLabel = isNormal ? "NORMAL RECOGNITION" : "RECOGNITION FAILED";
     const diskSize = parts.find((part) => {
       const key = String(part.key || "").toLowerCase();
@@ -1587,13 +1628,19 @@ function renderDetect(data) {
       <div class="detect-judgement-page">
         <header class="detect-judgement-head">
           <span aria-hidden="true"></span>
-          <h1>Judgement Module UI</h1>
+          <div>
+            <h1>디스크 식별 판정</h1>
+            <p>UID, 해시, 디스크 속성 기준으로 현재 연결된 볼륨의 신뢰 상태를 판정합니다.</p>
+          </div>
         </header>
         <section class="detect-judgement-panel detect-judgement-${statusClass}">
           <div class="detect-judgement-topline">
             <div class="detect-final-state">
               <span>FINAL JUDGEMENT</span>
-              <strong>${escapeHtml(judgementLabel)}</strong>
+              <div class="detect-state-row">
+                <strong>${escapeHtml(judgementLabel)}</strong>
+                <b>${escapeHtml(judgementKorean)}</b>
+              </div>
               <em>${escapeHtml(recognitionLabel)}</em>
             </div>
             <div class="detect-latency">
@@ -1614,6 +1661,11 @@ function renderDetect(data) {
               <span>DISK SIZE</span>
               <strong>${escapeHtml(diskSize?.value || "-")}</strong>
             </article>
+          </div>
+          <div class="detect-action-row">
+            <button type="button" class="detect-action-primary" data-detect-action="logs">상세 로그 보기</button>
+            <button type="button" class="detect-action-secondary" data-detect-action="airgap">격리 유지</button>
+            <button type="button" class="detect-action-secondary" data-detect-action="settings">등록 요청</button>
           </div>
         </section>
         <section class="detect-background-fingerprint" aria-label="Background fingerprint judgement basis">
@@ -1688,6 +1740,7 @@ function renderDetectRows(target, items) {
 }
 
 function renderLogs(data) {
+  latestLogsData = data;
   if (!logsRange.start) logsRange.start = data.range.start;
   if (!logsRange.end) logsRange.end = data.range.end;
   logsRange.page = data.page || 1;
@@ -1717,6 +1770,7 @@ function renderLogs(data) {
     logsHistoryTable.appendChild(row);
   });
   renderLogsPagination(data);
+  renderOperationsOverview();
 }
 
 function renderLogsSourceOptions(options, selected) {
@@ -1963,6 +2017,7 @@ function renderMonitoring(data) {
   monitoringStart.value = monitoringRange.start;
   monitoringEnd.value = monitoringRange.end;
   latestMonitoringSeries = data.series;
+  renderMonitoringSummary(data);
   drawLineChart(latestMonitoringSeries);
   renderGauge(cpuGauge, "CPU", data.current.cpu, "#2c90ff");
   renderGauge(memoryGauge, "Memory", data.current.memory, "#46b865");
@@ -1970,6 +2025,142 @@ function renderMonitoring(data) {
   renderGauge(networkGauge, "Network", data.current.network, "#8b5cf6");
   renderGauge(interfaceGauge, "Interface", data.current.interface, "#5a2f16");
   updateMemoryThresholdButton(data.current.memory);
+  renderOperationsOverview();
+}
+
+function monitoringMetricName(metric) {
+  const labels = {
+    cpu: "CPU",
+    memory: "Memory",
+    disk: "Disk",
+    network: "Network",
+    interface: "Interface",
+  };
+  return labels[metric] || metric;
+}
+
+function monitoringMetricStats(data) {
+  const thresholds = { cpu: 80, memory: 80, disk: 85, network: 75, interface: 70 };
+  const metric = activeMonitoringMetric || "cpu";
+  const values = (data.series || []).map((item) => Number(item[metric] || 0));
+  const current = Number((data.current || {})[metric] || values[values.length - 1] || 0);
+  const average = values.length ? values.reduce((sum, item) => sum + item, 0) / values.length : current;
+  const peak = values.length ? Math.max(...values) : current;
+  const threshold = thresholds[metric] || 80;
+  return { metric, current, average, peak, threshold, warning: peak >= threshold || current >= threshold };
+}
+
+function renderMonitoringSummary(data) {
+  if (!monitoringSummaryStrip) return;
+  const stats = monitoringMetricStats(data);
+  const items = [
+    ["항목", monitoringMetricName(stats.metric)],
+    ["현재", `${stats.current.toFixed(stats.current % 1 ? 1 : 0)}%`],
+    ["평균", `${stats.average.toFixed(1)}%`],
+    ["최대", `${stats.peak.toFixed(1)}%`],
+    ["임계치", `${stats.threshold}%`],
+  ];
+  monitoringSummaryStrip.classList.toggle("summary-warning", stats.warning);
+  monitoringSummaryStrip.innerHTML = items
+    .map(([label, value]) => `<article><span>${label}</span><strong>${value}</strong></article>`)
+    .join("");
+}
+
+function updateOpsClock() {
+  if (!opsClock) return;
+  opsClock.textContent = new Date().toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function opsToneFromText(value, fallback = "neutral") {
+  const text = String(value || "").toUpperCase();
+  if (/(ERROR|FAIL|FAILED|UNREGISTERED|DENIED|WARNING_FOR_MOUNT|MISMATCH)/.test(text)) return "danger";
+  if (/(WAIT|RUNNING|PENDING|START|WARN|UNKNOWN)/.test(text)) return "warn";
+  if (/(OK|VALID|CONNECTED|SUCCESS|DONE|OFFLINE|ONLINE_VERIFIED|COMPLETED)/.test(text)) return "ok";
+  return fallback;
+}
+
+function latestOpsEvents(airGap, veeam) {
+  const logItems = Array.isArray(latestLogsData?.items) ? latestLogsData.items.slice(0, 3) : [];
+  if (logItems.length) {
+    return logItems.map((item) => ({
+      time: formatLogDate(item.date),
+      tone: opsToneFromText(item.severity),
+      text: item.message || `${item.source || "system"} event`,
+    }));
+  }
+  const session = Array.isArray(airGap?.session_logs) ? airGap.session_logs[0] : null;
+  const actions = Array.isArray(session?.actions) ? session.actions.slice(0, 3) : [];
+  if (actions.length) {
+    return actions.map((text) => ({
+      time: veeam?.last_checked || "-",
+      tone: opsToneFromText(text),
+      text,
+    }));
+  }
+  return [{
+    time: "-",
+    tone: "neutral",
+    text: "최근 경고 또는 이벤트가 없습니다.",
+  }];
+}
+
+function renderOperationsOverview() {
+  if (!opsSummaryGrid || !opsEventList) return;
+  const airGap = latestSourcesData?.air_gap || {};
+  const veeam = airGap.veeam || {};
+  const emergencySlot = airGap.emergency_access?.slot || {};
+  const apiSynced = isVeeamSynced(veeam);
+  const progress = Math.max(0, Math.min(100, Number(veeam.progress_percent || 0)));
+  const diskState = emergencySlot.state || airGap.disk_state || airGap.offline_state || "-";
+  const timeline = Array.isArray(airGap.timeline) ? airGap.timeline : [];
+  const activeStep = timeline.find((item) => /ACTIVE|RUNNING|WORKING/i.test(String(item.state || "")));
+  const lastStep = timeline.filter((item) => /DONE|COMPLETED|SUCCESS/i.test(String(item.state || ""))).pop();
+  const cards = [
+    {
+      label: "Veeam REST",
+      value: apiSynced ? "Connected" : "Waiting",
+      meta: `${veeam.server || "127.0.0.1"}:${veeam.port || 9419} · ${veeam.rest_latency_ms ?? veeam.latency_ms ?? "-"}ms`,
+      tone: apiSynced ? "ok" : "warn",
+    },
+    {
+      label: "Backup",
+      value: `${progress}%`,
+      meta: veeam.job || veeam.job_name || "Veeam session",
+      tone: progress >= 100 ? "ok" : progress > 0 ? "run" : "warn",
+    },
+    {
+      label: "Air-Gap",
+      value: activeStep ? `Step ${activeStep.step}` : lastStep ? `Step ${lastStep.step} Done` : "Standby",
+      meta: activeStep ? activeStep.label || activeStep.title || "Working" : lastStep?.label || lastStep?.title || "Ready",
+      tone: activeStep ? "run" : lastStep ? "ok" : "neutral",
+    },
+    {
+      label: "Disk",
+      value: diskState,
+      meta: `${emergencySlot.volume || airGap.volume || "D:\\"} · ${emergencySlot.slot_id || "BAY-01"}`,
+      tone: opsToneFromText(diskState, "neutral"),
+    },
+  ];
+  opsSummaryGrid.innerHTML = cards.map((card) => `
+    <article class="ops-card ops-card-${card.tone}">
+      <span>${escapeHtml(card.label)}</span>
+      <strong>${escapeHtml(card.value)}</strong>
+      <em>${escapeHtml(card.meta)}</em>
+    </article>
+  `).join("");
+  opsEventList.innerHTML = latestOpsEvents(airGap, veeam).map((event) => `
+    <article class="ops-event ops-event-${event.tone}">
+      <span>${escapeHtml(event.time)}</span>
+      <p>${escapeHtml(event.text)}</p>
+    </article>
+  `).join("");
 }
 
 function monitoringUrl() {
@@ -2038,7 +2229,11 @@ function updateMemoryThresholdButton(value) {
 
 function renderLoadedData(key, value) {
   if (key === "summary") renderSlots(value);
-  if (key === "audit") renderAudit(value.items);
+  if (key === "audit") {
+    latestAuditData = Array.isArray(value.items) ? value.items : [];
+    renderAudit(latestAuditData);
+    renderSecurityAudit(latestAuditData);
+  }
   if (key === "integrated") renderIntegrated(value);
   if (key === "monitoring") renderMonitoring(value);
   if (key === "sources") renderSources(value);
@@ -2134,6 +2329,7 @@ async function pollSourcesLive() {
   try {
     const sources = await requestJson("/api/sources");
     renderSources(sources);
+    finalizeEmergencyReconnectFromSources(sources);
   } catch (error) {
     console.warn("Unable to poll Air-Gap live status", error);
   }
@@ -2181,6 +2377,56 @@ function appendEmergencyReconnectDetail(message) {
   emergencyReconnectDetailLogs = emergencyReconnectDetailLogs.slice(-120);
 }
 
+function mergeEmergencyReconnectDetails(lines) {
+  if (!Array.isArray(lines) || !lines.length) return;
+  const next = [...emergencyReconnectDetailLogs];
+  lines.forEach((line) => {
+    const text = String(line || "").trim();
+    if (text && !next.includes(text)) next.push(text);
+  });
+  emergencyReconnectDetailLogs = next.slice(-120);
+}
+
+function applyEmergencyReconnectFlowState(state) {
+  const value = String(state || "").trim();
+  if (!value || !latestSourcesData?.air_gap?.emergency_access?.slot) return;
+  latestSourcesData.air_gap.emergency_access.slot.state = value;
+}
+
+function isEmergencyReconnectCompleteState(state) {
+  return ["ONLINE_VERIFIED_RW", "ONLINE_VERIFIED", "MOUNTED_RW", "COMPLETE", "COMPLETED"].includes(String(state || "").toUpperCase());
+}
+
+function appendEmergencyReconnectCompletion(state = "ONLINE_VERIFIED_RW") {
+  const completionText = `긴급 접속이 완료되었다 - state ${state || "ONLINE_VERIFIED_RW"}`;
+  const historyText = "완료 이력 저장됨 - Reconnect Detail Logs 및 Logs 메뉴에서 확인 가능";
+  const alreadyLogged = emergencyReconnectDetailLogs.some((line) => line.includes("긴급 접속이 완료되었다") || line.includes("긴급 접속 완료") || line.includes("Reconnect COMPLETE"));
+  if (!alreadyLogged) {
+    appendEmergencyReconnectDetail(completionText);
+    appendEmergencyReconnectDetail(historyText);
+  }
+}
+
+function completeEmergencyReconnectWatch(state = "ONLINE_VERIFIED_RW") {
+  appendEmergencyReconnectCompletion(state);
+  stopEmergencyReconnectWatch("긴급 볼륨 접속 작업이 완료되었습니다.");
+  renderSources(latestSourcesData || { air_gap: fallbackAirGapSummary(true) });
+}
+
+function finalizeEmergencyReconnectFromSources(sources) {
+  if (!emergencyReconnectRunning) return false;
+  const slot = sources?.air_gap?.emergency_access?.slot || {};
+  const state = String(slot.state || "");
+  const history = Array.isArray(slot.reconnect_history) ? slot.reconnect_history : [];
+  const historyComplete = history.some((line) => /Reconnect COMPLETE|BACKGROUND COMPLETE|background\.complete|emergency\.reconnect\.complete|ONLINE_VERIFIED_RW|긴급 접속 완료|긴급 접속이 완료되었다/i.test(String(line || "")));
+  if (isEmergencyReconnectCompleteState(state) || historyComplete) {
+    mergeEmergencyReconnectDetails(history);
+    completeEmergencyReconnectWatch(state || "ONLINE_VERIFIED_RW");
+    return true;
+  }
+  return false;
+}
+
 function setEmergencyReconnectDetailLogging(enabled) {
   if (enabled && !emergencyReconnectDetailTimer) {
     appendEmergencyReconnectDetail("request accepted; live detail logging started");
@@ -2217,7 +2463,17 @@ function setEmergencyReconnectStatusPolling(enabled) {
       try {
         const result = await requestJson(`/api/emergency-reconnect/status?slot=${encodeURIComponent(emergencyReconnectDetailSlot)}&job_id=${encodeURIComponent(emergencyReconnectJobId)}`);
         const status = String(result.status || "").toLowerCase();
-        if (status === "not_started") {
+        mergeEmergencyReconnectDetails(result.detail_logs);
+        applyEmergencyReconnectFlowState(result.flow_state);
+        if (status === "idle" || status === "stale") {
+          const message = status === "stale"
+            ? "다른 긴급 재접속 작업이 등록되어 현재 작업 상태를 확인할 수 없습니다."
+            : "재접속 작업이 현재 서비스에 등록되어 있지 않습니다. 버튼 요청이 서비스까지 도달했는지 확인 필요";
+          appendEmergencyReconnectDetail(message);
+          appendEmergencyReconnectDetail("해결 안내: WebUI 로그인 세션, 서비스 상태, 관리자 권한을 확인한 뒤 다시 검증 후 긴급 접속을 실행하세요.");
+          stopEmergencyReconnectWatch(message);
+          renderSources(latestSourcesData || { air_gap: fallbackAirGapSummary(true) });
+        } else if (status === "not_started") {
           const message = result.message || "재접속 작업이 시작되지 않았습니다. 관리자 권한/서비스 상태 확인 필요";
           appendEmergencyReconnectDetail(message);
           appendEmergencyReconnectDetail(`해결 안내: ${emergencyReconnectResolutionText(result)}`);
@@ -2230,17 +2486,29 @@ function setEmergencyReconnectStatusPolling(enabled) {
           renderSources(latestSourcesData || { air_gap: fallbackAirGapSummary(true) });
         } else if (status === "complete") {
           appendEmergencyReconnectDetail(`background job complete: ${result.state || "complete"}`);
-          stopEmergencyReconnectWatch("긴급 볼륨 접속 작업이 완료되었습니다.");
+          completeEmergencyReconnectWatch(result.state || result.flow_state || "ONLINE_VERIFIED_RW");
           await pollSourcesLive();
         } else if (status === "running") {
           const elapsed = Number(result.elapsed_seconds || 0);
           const message = result.background_started_at
             ? `background job running - ${elapsed}s elapsed`
             : `waiting for background worker start - ${elapsed}s elapsed`;
-          appendEmergencyReconnectDetail(message);
+          if (!Array.isArray(result.detail_logs) || !result.detail_logs.length) {
+            appendEmergencyReconnectDetail(message);
+          }
         }
       } catch (error) {
-        appendEmergencyReconnectDetail(`status check failed: ${friendlyEmergencyError(error)}`);
+        const latestState = latestSourcesData?.air_gap?.emergency_access?.slot?.state || "";
+        const latestHistory = latestSourcesData?.air_gap?.emergency_access?.slot?.reconnect_history || [];
+        if (isEmergencyReconnectCompleteState(latestState) || latestHistory.some((line) => /Reconnect COMPLETE|BACKGROUND COMPLETE|background\.complete|emergency\.reconnect\.complete|ONLINE_VERIFIED_RW|긴급 접속 완료|긴급 접속이 완료되었다/i.test(String(line || "")))) {
+          mergeEmergencyReconnectDetails(latestHistory);
+          completeEmergencyReconnectWatch(latestState || "ONLINE_VERIFIED_RW");
+        } else {
+          const message = Number(error.status || 0) === 401
+            ? "status check failed: 로그인 세션이 만료되어 재접속 상태를 확인할 수 없습니다."
+            : `status check failed: ${friendlyEmergencyError(error)}`;
+          appendEmergencyReconnectDetail(message);
+        }
       }
     }, 1000);
   }
@@ -2439,6 +2707,7 @@ function fallbackAirGapSummary(loading = false) {
 
 function renderSources(data) {
   latestSourcesData = data;
+  renderOperationsOverview();
   const restoreContentScroll = keepContentAreaScroll();
   const previousSessionScroll = new Map();
   sourceList.querySelectorAll(".veeam-session-scroll-row").forEach((row, index) => {
@@ -2683,7 +2952,8 @@ function renderSources(data) {
   ];
   const reconnectDisplayOrder = [...reconnectRuntimeOrder].reverse();
   const reconnectReportedState = String(emergencySlot.state || "").toUpperCase();
-  const reconnectFlowIsActive = emergencyReconnectRunning || emergencyReconnectDetailLogs.length > 0;
+  const reconnectIsComplete = isEmergencyReconnectCompleteState(reconnectReportedState);
+  const reconnectFlowIsActive = emergencyReconnectRunning || emergencyReconnectDetailLogs.length > 0 || reconnectIsComplete;
   const reconnectCurrentState = reconnectFlowIsActive && reconnectRuntimeOrder.includes(reconnectReportedState)
     ? reconnectReportedState
     : (emergencyReconnectRunning ? "RECONNECT_REQUESTED" : "");
@@ -2704,6 +2974,7 @@ function renderSources(data) {
   const reconnectStepClass = (state) => {
     if (!reconnectFlowIsActive) return "pending";
     const index = reconnectRuntimeOrder.indexOf(state);
+    if (reconnectIsComplete && reconnectCurrentIndex >= 0 && index >= 0 && index <= reconnectCurrentIndex) return "done";
     if (state === reconnectCurrentState) return "current";
     if (reconnectCurrentIndex >= 0 && index >= 0 && index < reconnectCurrentIndex) return "done";
     return "pending";
@@ -2932,7 +3203,7 @@ function renderSources(data) {
 function drawLineChart(series) {
   const width = 920;
   const height = 320;
-  const pad = { left: 82, right: 18, top: 16, bottom: 50 };
+  const pad = { left: 96, right: 22, top: 12, bottom: 46 };
   const chartWidth = width - pad.left - pad.right;
   const chartHeight = height - pad.top - pad.bottom;
   const visibleCount = Math.max(8, Math.round(series.length / monitoringZoom));
@@ -2962,7 +3233,7 @@ function drawLineChart(series) {
   const grid = [0, 20, 40, 60, 80, 100]
     .map((tick) => {
       const yy = y(tick).toFixed(1);
-      return `<line x1="${pad.left}" y1="${yy}" x2="${width - pad.right}" y2="${yy}" class="grid-line"></line><text x="${pad.left - 12}" y="${Number(yy) + 4}" class="axis-label" text-anchor="end">${tick}.00%</text>`;
+      return `<line x1="${pad.left}" y1="${yy}" x2="${width - pad.right}" y2="${yy}" class="grid-line"></line><text x="${pad.left - 16}" y="${Number(yy) + 4}" class="axis-label" text-anchor="end">${tick}.00%</text>`;
     })
     .join("");
 
@@ -2995,7 +3266,7 @@ function drawLineChart(series) {
     </defs>
     <rect x="${pad.left}" y="${pad.top}" width="${chartWidth}" height="${chartHeight}" fill="#ffffff"></rect>
     ${grid}
-    <text x="16" y="${height / 2}" class="axis-title" transform="rotate(-90 16 ${height / 2})">하드웨어 사용량</text>
+    <text x="24" y="${height / 2}" class="axis-title" transform="rotate(-90 24 ${height / 2})">하드웨어 사용량</text>
     ${fillPath}
     <path d="${activePath.path}" class="line ${activePath.className}"></path>
     ${labels}
@@ -3021,6 +3292,306 @@ function renderGauge(target, label, value, color) {
       <b class="gauge-status-${statusClass}">${status}</b>
     </div>
   `;
+}
+
+function auditRecordText(record) {
+  try {
+    return JSON.stringify(record || {}, null, 0);
+  } catch (error) {
+    return String(record || "");
+  }
+}
+
+function auditRecordTime(record) {
+  return formatLogDate(record?.ts || record?.time || record?.date || record?.timestamp || "");
+}
+
+function auditDateValue(value) {
+  const text = String(value || "").replace(" ", "T").slice(0, 19);
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function auditDateKey(value) {
+  const date = auditDateValue(value);
+  if (!date) return "";
+  const pad = (item) => String(item).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function auditEventLabel(record) {
+  const event = String(record?.event || "").toLowerCase();
+  const text = auditRecordText(record).toLowerCase();
+  if (event.includes("auth.login.warning.threshold")) return "로그인 3회 실패 경고";
+  if (event.includes("auth.login.locked")) return "관리자 승인 필요";
+  if (event.includes("auth.temp_password.requested")) return "임시 비밀번호 승인 요청";
+  if (event.includes("auth.temp_password.approved")) return "임시 비밀번호 승인";
+  if (event.includes("auth.login.temp.success")) return "임시 비밀번호 로그인";
+  if (event.includes("auth.login.failed")) return "로그인 실패";
+  if (event.includes("auth.login.success")) return "로그인 성공";
+  if (event.includes("auth.security_mail")) return "보안 메일 발송";
+  if (event.includes("emergency.reconnect")) return "긴급 재접속";
+  if (event.includes("disk.online.approval.cleared")) return "승인 해제";
+  if (event.includes("disk.online") || event.includes("mount_rw")) return "승인 기반 온라인";
+  if (event.includes("disk.offline") || event.includes("isolation") || event.includes("power.command.off")) return "격리/오프라인";
+  if (event.includes("unauthorized") || text.includes("unauthorized") || text.includes("reblocked")) return "차단된 재연결";
+  if (event.includes("verify.hash") || text.includes("hash")) return "무결성 검증";
+  if (event.includes("verify.uid") || text.includes("uid")) return "UID 검증";
+  if (event.includes("veeam")) return "Veeam 백업";
+  if (event.includes("license")) return "라이선스";
+  if (event.includes("state.transition")) return "상태 전환";
+  return record?.event || "감사 이벤트";
+}
+
+function auditDevice(record) {
+  const text = auditRecordText(record);
+  const bay = text.match(/BAY-\d+/i)?.[0];
+  const drive = text.match(/[A-Z]:\\/i)?.[0];
+  return record?.slot_id || record?.device || record?.drive_letter || record?.target_device || bay || drive || "-";
+}
+
+function auditUser(record) {
+  return record?.user || record?.actor || record?.account || record?.requested_by || "system";
+}
+
+function auditApprover(record) {
+  const event = String(record?.event || "").toLowerCase();
+  if (record?.approver || record?.approved_by) return record.approver || record.approved_by;
+  if (event.includes("auth.temp_password") || event.includes("auth.login.locked")) return "administrator";
+  if (record?.approved_until || event.includes("approved")) return "administrator";
+  return "-";
+}
+
+function auditResult(record) {
+  const event = String(record?.event || "").toLowerCase();
+  const state = String(record?.state || "").toLowerCase();
+  const text = auditRecordText(record).toLowerCase();
+  if (event.includes("auth.login.locked") || event.includes("auth.temp_password.requested")) return "진행";
+  if (event.includes("auth.login.failed")) return "실패";
+  if (event.includes("auth.security_mail.skipped")) return "진행";
+  if (event.includes("error") || event.includes("failed") || event.includes("denied") || state === "error" || text.includes("access denied") || text.includes("액세스 거부")) return "실패";
+  if (event.includes(".start") || event.includes(".tick") || event.includes("heartbeat") || state === "running") return "진행";
+  return "성공";
+}
+
+function auditRisk(record) {
+  const event = String(record?.event || "").toLowerCase();
+  const text = auditRecordText(record).toLowerCase();
+  const failureCount = Number(record?.failure_count || 0);
+  if (event.includes("auth.login.locked") || event.includes("auth.temp_password.requested") || failureCount >= 5) return "높음";
+  if (event.includes("auth.login.warning") || event.includes("auth.login.failed") || failureCount >= 3) return "주의";
+  if (event.includes("unauthorized") || event.includes("denied") || event.includes("quarantine") || text.includes("mismatch") || text.includes("불일치")) return "높음";
+  if (event.includes("error") || event.includes("failed") || event.includes("timeout") || text.includes("access denied") || text.includes("액세스 거부")) return "주의";
+  return "낮음";
+}
+
+function auditBackupJob(record) {
+  const text = auditRecordText(record);
+  return record?.job_name || record?.job || record?.backup_job || text.match(/Backup Copy Job [^\\"]+/i)?.[0] || "-";
+}
+
+function auditBeforeAfter(record) {
+  const before = record?.before_state || record?.previous_state || record?.from_state || "-";
+  const after = record?.after_state || record?.state || record?.to_state || "-";
+  if (before === "-" && after === "-") return "-";
+  return `${before} -> ${after}`;
+}
+
+function auditIntegrityResult(record) {
+  const event = String(record?.event || "").toLowerCase();
+  const text = auditRecordText(record).toLowerCase();
+  if (record?.hash_status) return String(record.hash_status);
+  if (record?.uid_status) return String(record.uid_status);
+  if (text.includes("mismatch") || text.includes("불일치")) return "MISMATCH";
+  if (event.includes("verify.hash") || text.includes("hash") || text.includes("valid")) return "VALID";
+  return "-";
+}
+
+function auditLoginSecurity(record) {
+  const event = String(record?.event || "").toLowerCase();
+  const isAuth = event.includes("auth.login") || event.includes("auth.temp_password") || event.includes("auth.security_mail");
+  return {
+    visible: isAuth,
+    failureCount: record?.failure_count ?? "-",
+    lastFailedAt: formatLogDate(record?.last_failed_at || record?.ts || record?.time || ""),
+    smtpStatus: record?.smtp_status || record?.mail_status || "-",
+    adminEmail: record?.admin_email || "-",
+    approvalStatus: record?.approval_status || (event.includes("approved") ? "APPROVED" : event.includes("requested") || event.includes("locked") ? "PENDING" : "-"),
+    temporaryExpiresAt: formatLogDate(record?.temporary_expires_at || record?.expires_at || ""),
+    temporaryDigest: record?.temporary_password_digest || "-",
+    clientIp: record?.client_ip || "-",
+    authMethod: record?.auth_method || (event.includes("temp") ? "temporary_password" : "-"),
+  };
+}
+
+function normalizeSecurityAuditRecord(record, index) {
+  const id = `${index}-${record?.ts || ""}-${record?.event || ""}`;
+  const detail = record?.message || record?.resolution || record?.error || record?.output || auditRecordText(record);
+  return {
+    id,
+    source: record || {},
+    time: auditRecordTime(record),
+    eventCode: record?.event || "audit.event",
+    event: auditEventLabel(record),
+    device: auditDevice(record),
+    user: auditUser(record),
+    approver: auditApprover(record),
+    result: auditResult(record),
+    risk: auditRisk(record),
+    detail: detail || "-",
+    backupJob: auditBackupJob(record),
+    beforeAfter: auditBeforeAfter(record),
+    approvalReason: record?.reason || record?.approval_reason || record?.message || "-",
+    integrity: auditIntegrityResult(record),
+    loginSecurity: auditLoginSecurity(record),
+  };
+}
+
+function securityAuditMatchesFilters(item) {
+  const dateKey = auditDateKey(item.time);
+  if (securityAuditFilters.start && dateKey && dateKey < securityAuditFilters.start) return false;
+  if (securityAuditFilters.end && dateKey && dateKey > securityAuditFilters.end) return false;
+  if (securityAuditFilters.event && item.event !== securityAuditFilters.event) return false;
+  if (securityAuditFilters.device && item.device !== securityAuditFilters.device) return false;
+  if (securityAuditFilters.user && !String(item.user).toLowerCase().includes(securityAuditFilters.user.toLowerCase())) return false;
+  if (securityAuditFilters.result && item.result !== securityAuditFilters.result) return false;
+  if (securityAuditFilters.risk && item.risk !== securityAuditFilters.risk) return false;
+  return true;
+}
+
+function renderSecurityAuditOptions(items) {
+  const fillSelect = (select, values, current) => {
+    if (!select) return;
+    const unique = [...new Set(values.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)));
+    select.innerHTML = [`<option value="">전체</option>`]
+      .concat(unique.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`))
+      .join("");
+    select.value = current || "";
+  };
+  fillSelect(securityAuditType, items.map((item) => item.event), securityAuditFilters.event);
+  fillSelect(securityAuditDevice, items.map((item) => item.device).filter((item) => item !== "-"), securityAuditFilters.device);
+}
+
+function renderSecurityAuditSummary(items) {
+  if (!securityAuditSummary) return;
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+  const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const todayItems = items.filter((item) => auditDateKey(item.time) === todayKey);
+  const countBy = (matcher) => todayItems.filter(matcher).length;
+  const cards = [
+    {
+      label: "오늘 격리 성공",
+      value: countBy((item) => item.result === "성공" && /격리|오프라인|offline/i.test(`${item.event} ${item.eventCode}`)),
+      tone: "success",
+    },
+    {
+      label: "승인 해제",
+      value: countBy((item) => /승인 해제|approval\.cleared/i.test(`${item.event} ${item.eventCode}`)),
+      tone: "info",
+    },
+    {
+      label: "차단된 재연결 시도",
+      value: countBy((item) => /차단|unauthorized|reblocked/i.test(`${item.event} ${item.detail}`)),
+      tone: "warning",
+    },
+    {
+      label: "무단 탈거 감지",
+      value: countBy((item) => /무단 탈거|unauthorized removal|removed|탈거/i.test(`${item.event} ${item.detail}`)),
+      tone: "danger",
+    },
+  ];
+  securityAuditSummary.innerHTML = cards.map((card) => `
+    <article class="security-audit-card security-audit-card-${card.tone}">
+      <span>${escapeHtml(card.label)}</span>
+      <strong>${card.value}건</strong>
+      <em>오늘 기준</em>
+    </article>
+  `).join("");
+}
+
+function renderSecurityAuditDetail(item) {
+  if (!securityAuditDetail) return;
+  if (!item) {
+    securityAuditDetail.innerHTML = `<div class="security-audit-empty">감사 로그를 선택하면 상세 정보가 표시됩니다.</div>`;
+    return;
+  }
+  const flow = item.loginSecurity?.visible
+    ? ["로그인 시도", "실패 횟수 집계", "SMTP 알림", "관리자 승인", "감사 로그 저장"]
+    : ["이벤트 접수", "정책 확인", "장치 상태 확인", "무결성 검증", "감사 로그 저장"];
+  const loginSecurityHtml = item.loginSecurity?.visible ? `
+      <div><dt>로그인 실패 횟수</dt><dd>${escapeHtml(item.loginSecurity.failureCount)}</dd></div>
+      <div><dt>최근 실패 시간</dt><dd>${escapeHtml(item.loginSecurity.lastFailedAt || "-")}</dd></div>
+      <div><dt>접속 위치</dt><dd>${escapeHtml(item.loginSecurity.clientIp)}</dd></div>
+      <div><dt>SMTP 알림 상태</dt><dd>${escapeHtml(item.loginSecurity.smtpStatus)}</dd></div>
+      <div><dt>관리자 메일</dt><dd>${escapeHtml(item.loginSecurity.adminEmail)}</dd></div>
+      <div><dt>임시 비밀번호 승인</dt><dd>${escapeHtml(item.loginSecurity.approvalStatus)}</dd></div>
+      <div><dt>임시 비밀번호 만료</dt><dd>${escapeHtml(item.loginSecurity.temporaryExpiresAt || "-")}</dd></div>
+      <div><dt>임시 비밀번호 식별값</dt><dd>${escapeHtml(item.loginSecurity.temporaryDigest)}</dd></div>
+    ` : "";
+  securityAuditDetail.innerHTML = `
+    <div class="security-audit-detail-head">
+      <span class="security-audit-risk security-audit-risk-${item.risk}">${escapeHtml(item.risk)}</span>
+      <strong>${escapeHtml(item.event)}</strong>
+      <em>${escapeHtml(item.time || "-")}</em>
+    </div>
+    <div class="security-audit-flow">
+      ${flow.map((step, index) => `<span class="${index < 2 || item.result !== "실패" ? "done" : "pending"}">${escapeHtml(step)}</span>`).join("")}
+    </div>
+    <dl class="security-audit-detail-list">
+      ${loginSecurityHtml}
+      <div><dt>백업 작업명</dt><dd>${escapeHtml(item.backupJob)}</dd></div>
+      <div><dt>격리 전/후 상태</dt><dd>${escapeHtml(item.beforeAfter)}</dd></div>
+      <div><dt>승인 사유</dt><dd>${escapeHtml(item.approvalReason)}</dd></div>
+      <div><dt>무결성 검증 결과</dt><dd>${escapeHtml(item.integrity)}</dd></div>
+      <div><dt>이벤트 원문</dt><dd>${escapeHtml(item.eventCode)}</dd></div>
+      <div class="wide"><dt>상세 내용</dt><dd>${escapeHtml(item.detail)}</dd></div>
+    </dl>
+  `;
+}
+
+function renderSecurityAudit(items = []) {
+  if (!securityAuditSummary || !securityAuditTable) return;
+  const normalized = (Array.isArray(items) ? items : []).map(normalizeSecurityAuditRecord);
+  renderSecurityAuditSummary(normalized);
+  renderSecurityAuditOptions(normalized);
+  if (securityAuditStart) securityAuditStart.value = securityAuditFilters.start;
+  if (securityAuditEnd) securityAuditEnd.value = securityAuditFilters.end;
+  if (securityAuditUser) securityAuditUser.value = securityAuditFilters.user;
+  if (securityAuditResult) securityAuditResult.value = securityAuditFilters.result;
+  if (securityAuditRisk) securityAuditRisk.value = securityAuditFilters.risk;
+
+  const filtered = normalized.filter(securityAuditMatchesFilters);
+  if (securityAuditCount) securityAuditCount.textContent = `${filtered.length}건`;
+  if (!filtered.some((item) => item.id === securityAuditSelectedId)) {
+    securityAuditSelectedId = filtered[0]?.id || "";
+  }
+  const selected = filtered.find((item) => item.id === securityAuditSelectedId) || filtered[0];
+
+  securityAuditTable.replaceChildren();
+  if (!filtered.length) {
+    const row = document.createElement("tr");
+    row.innerHTML = `<td colspan="7" class="security-audit-empty-row">조건에 맞는 보안 감사 로그가 없습니다.</td>`;
+    securityAuditTable.appendChild(row);
+    renderSecurityAuditDetail(null);
+    return;
+  }
+
+  filtered.forEach((item) => {
+    const row = document.createElement("tr");
+    row.className = item.id === selected?.id ? "selected" : "";
+    row.innerHTML = `
+      <td>${escapeHtml(item.time || "-")}</td>
+      <td><strong>${escapeHtml(item.event)}</strong><em>${escapeHtml(item.eventCode)}</em></td>
+      <td>${escapeHtml(item.device)}</td>
+      <td>${escapeHtml(item.user)}</td>
+      <td>${escapeHtml(item.approver)}</td>
+      <td><span class="security-audit-result security-audit-result-${item.result}">${escapeHtml(item.result)}</span></td>
+      <td><button type="button" data-security-audit-id="${escapeHtml(item.id)}">보기</button></td>
+    `;
+    securityAuditTable.appendChild(row);
+  });
+  renderSecurityAuditDetail(selected);
 }
 
 function renderAudit(items) {
@@ -3086,7 +3657,66 @@ async function runAction(action, slotId) {
   }
 }
 
+function requestEmergencyApprovalPassword() {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "emergency-approval-modal";
+    overlay.innerHTML = `
+      <form class="emergency-approval-card">
+        <h2>긴급 재접속 승인</h2>
+        <p>관리자 계정 비밀번호를 한 번 더 입력해야 긴급 재접속이 시작됩니다.</p>
+        <label>
+          <span>승인 비밀번호</span>
+          <input type="password" autocomplete="current-password" autofocus>
+        </label>
+        <em class="emergency-approval-error" aria-live="polite"></em>
+        <div class="emergency-approval-actions">
+          <button type="button" data-approval-cancel="true">취소</button>
+          <button type="submit">승인</button>
+        </div>
+      </form>
+    `;
+    const form = overlay.querySelector("form");
+    const input = overlay.querySelector("input");
+    const error = overlay.querySelector(".emergency-approval-error");
+    const close = (value) => {
+      document.removeEventListener("keydown", onKey);
+      overlay.remove();
+      resolve(value);
+    };
+    function onKey(event) {
+      if (event.key === "Escape") close("");
+    }
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const value = input.value;
+      if (value !== "1") {
+        error.textContent = "승인 비밀번호가 일치하지 않습니다.";
+        input.select();
+        return;
+      }
+      close(value);
+    });
+    overlay.querySelector("[data-approval-cancel]").addEventListener("click", () => close(""));
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) close("");
+    });
+    document.addEventListener("keydown", onKey);
+    document.body.appendChild(overlay);
+    setTimeout(() => input.focus(), 0);
+  });
+}
+
 async function runEmergencyReconnect(slotId, volumePath = "") {
+  const approvalPassword = await requestEmergencyApprovalPassword();
+  if (!approvalPassword) {
+    emergencyReconnectDetailSlot = slotId || "-";
+    emergencyReconnectDetailLogs = [];
+    emergencyActionStatus = "긴급 재접속 승인이 취소되어 작업을 시작하지 않았습니다.";
+    appendEmergencyReconnectDetail("approval canceled; emergency reconnect was not submitted to the service");
+    renderSources(latestSourcesData || { air_gap: fallbackAirGapSummary(true) });
+    return;
+  }
   emergencyReconnectRunning = true;
   emergencyReconnectInitialState = String((latestSourcesData?.air_gap?.emergency_access?.slot?.state) || "").toUpperCase();
   emergencyReconnectDetailSlot = slotId || "-";
@@ -3100,7 +3730,7 @@ async function runEmergencyReconnect(slotId, volumePath = "") {
     const result = await requestJson(`/api/emergency-reconnect?slot=${encodeURIComponent(slotId)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ repository_path: volumePath }),
+      body: JSON.stringify({ repository_path: volumePath, approval_password: approvalPassword }),
     });
     emergencyActionStatus = result.message || "긴급 접속 작업이 백그라운드에서 진행 중입니다.";
     emergencyReconnectJobId = result.job_id || "";
@@ -3108,7 +3738,9 @@ async function runEmergencyReconnect(slotId, volumePath = "") {
     setEmergencyReconnectStatusPolling(true);
     await loadAll();
   } catch (error) {
-    emergencyActionStatus = friendlyEmergencyError(error);
+    emergencyActionStatus = Number(error.status || 0) === 401
+      ? "로그인 세션이 만료되어 긴급 재접속 요청이 서비스에 전달되지 않았습니다. 다시 로그인 후 실행하세요."
+      : friendlyEmergencyError(error);
     appendEmergencyReconnectDetail(`reconnect request failed: ${emergencyActionStatus}`);
     stopEmergencyReconnectWatch();
     await loadAll();
@@ -3130,6 +3762,14 @@ logoutSideButton.addEventListener("click", logout);
 licenseForm.addEventListener("submit", registerLicense);
 sidebarToggle?.addEventListener("click", toggleSidebar);
 sideItems.forEach((item) => item.addEventListener("click", () => showView(item.dataset.view)));
+detectFingerprintRoot?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-detect-action]");
+  if (!button) return;
+  const action = button.dataset.detectAction;
+  if (action === "logs") showView("logs2");
+  if (action === "airgap") showView("sources");
+  if (action === "settings") showView("settings");
+});
 chartMenuButton.addEventListener("click", () => downloadMenu.classList.toggle("open"));
 chartZoomInButton.addEventListener("click", () => {
   monitoringZoom = Math.min(3, monitoringZoom + 0.5);
@@ -3179,11 +3819,38 @@ logsSearch?.addEventListener("keydown", async (event) => {
   logsRange.page = 1;
   await reloadLogs();
 });
+securityAuditApply?.addEventListener("click", () => {
+  securityAuditFilters = {
+    start: securityAuditStart?.value || "",
+    end: securityAuditEnd?.value || "",
+    event: securityAuditType?.value || "",
+    device: securityAuditDevice?.value || "",
+    user: securityAuditUser?.value.trim() || "",
+    result: securityAuditResult?.value || "",
+    risk: securityAuditRisk?.value || "",
+  };
+  securityAuditSelectedId = "";
+  renderSecurityAudit(latestAuditData);
+});
+securityAuditReset?.addEventListener("click", () => {
+  securityAuditFilters = { start: "", end: "", event: "", device: "", user: "", result: "", risk: "" };
+  securityAuditSelectedId = "";
+  renderSecurityAudit(latestAuditData);
+});
+securityAuditTable?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-security-audit-id]");
+  if (!button) return;
+  securityAuditSelectedId = button.dataset.securityAuditId || "";
+  renderSecurityAudit(latestAuditData);
+});
 reportRefreshButton?.addEventListener("click", reloadReport);
 metricFilterButtons.forEach((button) => {
   button.addEventListener("click", () => {
     activeMonitoringMetric = button.dataset.metric;
     metricFilterButtons.forEach((item) => item.classList.toggle("active", item === button));
+    if (latestMonitoringData) {
+      renderMonitoringSummary(latestMonitoringData);
+    }
     drawLineChart(latestMonitoringSeries);
   });
 });
@@ -3205,6 +3872,9 @@ applySidebarState();
 applyUiSettings();
 setupReportSignatures();
 checkSession();
+updateOpsClock();
+renderOperationsOverview();
+setInterval(updateOpsClock, 1000);
 setInterval(() => {
   if (!appRoot.classList.contains("app-locked")) {
     loadAll();

@@ -55,7 +55,7 @@ def latest_backup_copy_console_log_summary(
         return {}
 
     display_name = backup_copy_name
-    if job_name:
+    if job_name and normalize_name(job_name) != normalize_name(backup_copy_name):
         display_name = f"{display_name}\\{job_name}" if display_name else job_name
     display_target = target_name or child.get("target") or ""
     full_name = f"{display_name} - {display_target}" if display_target else display_name
@@ -71,8 +71,12 @@ def latest_backup_copy_console_log_summary(
         return {}
 
     algorithm = child.get("algorithm") or "Incremental"
-    transferred = child.get("transferred") or "0 B"
-    backup_size = child.get("backup_size") or "-"
+    child_progress = int(child.get("progress_percent", 0) or 0)
+    parent_progress = int(parent.get("progress_percent", 0) or 0)
+    progress_percent = max(child_progress, parent_progress)
+    prefer_parent_progress = parent_progress > child_progress
+    transferred = (parent.get("transferred") if prefer_parent_progress else child.get("transferred")) or child.get("transferred") or parent.get("transferred") or "0 B"
+    backup_size = (parent.get("backup_size") if prefer_parent_progress else child.get("backup_size")) or child.get("backup_size") or parent.get("backup_size") or "-"
     status = child.get("status") or parent.get("status") or "Success"
     if normalize_status(status) != "Success" and started_dt and ended_dt and ended_dt < started_dt:
         ended_dt = parent.get("last_activity_dt") or child.get("last_progress_dt") or started_dt
@@ -86,10 +90,9 @@ def latest_backup_copy_console_log_summary(
             f"{full_name} ({algorithm}) ({transferred}) processing finished at {format_dt(ended_dt)}: {transferred} transferred"
         )
     else:
-        progress = child.get("progress_percent", 0)
         speed = child.get("speed") or "0 KB/s"
         actions.append(
-            f"{full_name} ({algorithm}) ({backup_size}) is running: {transferred} transferred at {speed}, progress {progress}%"
+            f"{full_name} ({algorithm}) ({backup_size}) is running: {transferred} transferred at {speed}, progress {progress_percent}%"
         )
     for error in child.get("errors", [])[:3]:
         actions.append(f"WARN - Veeam console reported: {error}")
@@ -110,7 +113,7 @@ def latest_backup_copy_console_log_summary(
         "status": normalized_status,
         "result": normalized_status,
         "session_state": "BACKUP_COMPLETED" if normalized_status == "Success" else "WAITING",
-        "progress_percent": 100 if normalized_status == "Success" else int(child.get("progress_percent", 0) or 0),
+        "progress_percent": 100 if normalized_status == "Success" else progress_percent,
         "current_step": 2 if normalized_status == "Success" else 1,
         "started_at": format_dt(started_dt),
         "ended_at": format_dt(ended_dt),
@@ -140,7 +143,7 @@ def latest_backup_copy_console_log_summary(
                 "status": normalized_status,
                 "actions": actions,
                 "duration": duration,
-                "progress_percent": 100 if normalized_status == "Success" else int(child.get("progress_percent", 0) or 0),
+                "progress_percent": 100 if normalized_status == "Success" else progress_percent,
                 "started_at": format_dt(started_dt),
                 "ended_at": format_dt(ended_dt),
                 "backup_size": backup_size,
@@ -154,6 +157,10 @@ def latest_backup_copy_console_log_summary(
 def veeam_log_folder_name(value: str) -> str:
     cleaned = re.sub(r"[<>:\"/\\|?*]+", "_", str(value or "").strip())
     return re.sub(r"\s+", "_", cleaned)
+
+
+def normalize_name(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
 
 
 def candidate_log_files(root: Path, job_dir: Path, job_name: str, target_name: str, backup_copy_name: str) -> list[Path]:
@@ -192,6 +199,10 @@ def parse_parent_session(text: str, policy_job_id: str) -> dict[str, Any]:
     completions: list[tuple[datetime, str, str]] = []
     working: list[tuple[datetime, str]] = []
     last_activity: datetime | None = None
+    progress_percent = 0
+    transferred = ""
+    backup_size = ""
+    last_progress_dt: datetime | None = None
     for line in text.splitlines():
         line_dt = parse_log_line_dt(line)
         if not line_dt:
@@ -212,6 +223,18 @@ def parse_parent_session(text: str, policy_job_id: str) -> dict[str, Any]:
         working_match = re.search(r"\[Session\]\s+Id '([^']+)'.*State 'Working'", line)
         if working_match:
             working.append((line_dt, working_match.group(1)))
+        total_match = re.search(r"TotalSize '([^']+)'", line)
+        if total_match:
+            backup_size = format_log_size(total_match.group(1))
+        progress_match = re.search(
+            r"Job progress:\s+'(\d+)%',\s+'([^']+)'\s+of\s+'([^']+)'\s+bytes",
+            line,
+        )
+        if progress_match:
+            progress_percent = int(progress_match.group(1))
+            transferred = format_log_size(progress_match.group(2))
+            backup_size = format_log_size(progress_match.group(3))
+            last_progress_dt = line_dt
     if session_creation:
         started, session_id, _ = max(session_creation, key=lambda item: item[0])
         result["started_dt"] = started
@@ -233,6 +256,14 @@ def parse_parent_session(text: str, policy_job_id: str) -> dict[str, Any]:
             result["session_id"] = result.get("session_id") or session_id
     if last_activity:
         result["last_activity_dt"] = last_activity
+    if progress_percent:
+        result["progress_percent"] = progress_percent
+        result["transferred"] = transferred
+        result["backup_size"] = backup_size
+    if backup_size:
+        result["backup_size"] = backup_size
+    if last_progress_dt:
+        result["last_progress_dt"] = last_progress_dt
     if policy_job_id and policy_job_id.lower() not in text.lower():
         return {}
     return result

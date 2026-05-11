@@ -48,6 +48,7 @@ namespace LockFix
         private readonly ComboBox authType = new ComboBox();
         private readonly TextBox veeamUser = new TextBox();
         private readonly TextBox veeamPassword = new TextBox();
+        private readonly Button veeamPasswordToggle = new Button();
         private readonly TextBox securityKey = new TextBox();
         private readonly ComboBox securityKeyType = new ComboBox();
         private readonly ListView systemCheckList = new ListView();
@@ -58,6 +59,7 @@ namespace LockFix
 
         private int pageIndex;
         private bool installed;
+        private bool veeamPasswordVisible;
         private readonly string webUiUrl = "http://127.0.0.1:8088";
 
         public SetupWizardForm()
@@ -167,8 +169,11 @@ namespace LockFix
             veeamPort.Text = "9419";
             authType.Items.AddRange(new object[] { "Windows Authentication", "API Token", "Basic Account" });
             authType.SelectedIndex = 0;
-            veeamUser.Text = "";
+            veeamUser.Text = "administrator";
+            veeamPassword.Text = "backup@1234";
             veeamPassword.PasswordChar = '*';
+            veeamPasswordToggle.Text = "표시";
+            veeamPasswordToggle.Click += delegate { ToggleVeeamPasswordVisibility(); };
 
             securityKeyType.Items.AddRange(new object[] { "LOCK-FIX License Key", "LOCK-FIX API Key" });
             securityKeyType.SelectedIndex = 0;
@@ -331,7 +336,30 @@ namespace LockFix
             AddField("Port", veeamPort, 196);
             AddField("Authentication", authType, 246);
             AddField("User", veeamUser, 296);
-            AddField("Password / Token", veeamPassword, 346);
+            AddVeeamPasswordField(346);
+        }
+
+        private void AddVeeamPasswordField(int top)
+        {
+            AddField("Password / Token", veeamPassword, top);
+            veeamPassword.Width = 308;
+
+            veeamPasswordToggle.Left = veeamPassword.Left + veeamPassword.Width + 12;
+            veeamPasswordToggle.Top = top - 1;
+            veeamPasswordToggle.Width = 90;
+            veeamPasswordToggle.Height = 28;
+            veeamPasswordToggle.FlatStyle = FlatStyle.System;
+            veeamPasswordToggle.TabStop = false;
+            veeamPasswordToggle.Text = veeamPasswordVisible ? "숨김" : "표시";
+            content.Controls.Add(veeamPasswordToggle);
+        }
+
+        private void ToggleVeeamPasswordVisibility()
+        {
+            veeamPasswordVisible = !veeamPasswordVisible;
+            veeamPassword.PasswordChar = veeamPasswordVisible ? '\0' : '*';
+            veeamPasswordToggle.Text = veeamPasswordVisible ? "숨김" : "표시";
+            veeamPassword.Focus();
         }
 
         private bool ValidateVeeamConnectionBeforeNext()
