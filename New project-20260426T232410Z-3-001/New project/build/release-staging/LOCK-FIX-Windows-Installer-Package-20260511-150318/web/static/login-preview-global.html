@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LOCK-FIX Login Preview</title>
+    <style>
+      :root {
+        --navy: #071a34;
+        --blue: #1267e3;
+        --line: #d9e4f2;
+        --muted: #6a7a8d;
+        --soft: #f5f8fc;
+        --green: #10a66a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        color: var(--navy);
+        font-family: "Malgun Gothic", "Segoe UI", Arial, sans-serif;
+        background:
+          linear-gradient(115deg, rgba(7, 26, 52, 0.045) 0 1px, transparent 1px 100%),
+          radial-gradient(circle at 70% 18%, rgba(18, 103, 227, 0.12), transparent 26%),
+          linear-gradient(145deg, #f7faff 0%, #eef4fb 100%);
+      }
+
+      .stage {
+        position: relative;
+        width: 100%;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 36px;
+      }
+
+      .stage::before,
+      .stage::after {
+        content: "";
+        position: absolute;
+        width: 680px;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, rgba(15, 53, 102, 0.12), transparent);
+        transform: rotate(-24deg);
+      }
+
+      .stage::before {
+        left: -120px;
+        bottom: 90px;
+      }
+
+      .stage::after {
+        right: -160px;
+        top: 150px;
+      }
+
+      .login-card {
+        position: relative;
+        z-index: 1;
+        width: min(392px, calc(100vw - 36px));
+        padding: 34px 32px 26px;
+        border: 1px solid rgba(123, 145, 172, 0.28);
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 28px 70px rgba(26, 45, 72, 0.16);
+        backdrop-filter: blur(16px);
+      }
+
+      .brand {
+        display: grid;
+        justify-items: center;
+        gap: 7px;
+        margin-bottom: 28px;
+        text-align: center;
+      }
+
+      .brand img {
+        width: 116px;
+        height: auto;
+        object-fit: contain;
+      }
+
+      .brand h1 {
+        margin: 2px 0 0;
+        font-size: 29px;
+        line-height: 1;
+        font-weight: 900;
+        letter-spacing: 0;
+      }
+
+      .brand h1 span {
+        color: #071f50;
+      }
+
+      .brand h1 em {
+        color: var(--blue);
+        font-style: normal;
+      }
+
+      .brand p {
+        margin: 0;
+        color: #263a58;
+        font-size: 13px;
+        letter-spacing: 3.8px;
+      }
+
+      .form {
+        display: grid;
+        gap: 13px;
+      }
+
+      .field {
+        display: grid;
+        gap: 7px;
+      }
+
+      .field span {
+        color: #53667e;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .input-wrap {
+        position: relative;
+      }
+
+      input {
+        width: 100%;
+        height: 50px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: #fff;
+        color: var(--navy);
+        font-size: 14px;
+        font-weight: 600;
+        padding: 0 46px 0 14px;
+        outline: none;
+        transition: border-color 160ms ease, box-shadow 160ms ease;
+      }
+
+      input:focus {
+        border-color: #123b84;
+        box-shadow: 0 0 0 3px rgba(18, 59, 132, 0.11);
+      }
+
+      .eye {
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        width: 24px;
+        height: 24px;
+        border: 0;
+        background: transparent;
+        transform: translateY(-50%);
+        color: #59708d;
+        cursor: pointer;
+      }
+
+      .eye svg {
+        width: 20px;
+        height: 20px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+      }
+
+      .login-button {
+        height: 54px;
+        margin-top: 12px;
+        border: 0;
+        border-radius: 9px;
+        background: linear-gradient(135deg, #071f50, #123b84);
+        color: white;
+        font-size: 15px;
+        font-weight: 900;
+        cursor: pointer;
+        box-shadow: 0 12px 24px rgba(12, 45, 111, 0.2);
+      }
+
+      .login-button span {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+      }
+
+      .login-button svg {
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2.4;
+      }
+
+      .qr-button {
+        height: 46px;
+        border: 1px solid #e1e9f4;
+        border-radius: 9px;
+        background: #f8fbff;
+        color: #9eb1c8;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .foot {
+        display: grid;
+        justify-items: center;
+        gap: 13px;
+        margin-top: 22px;
+        color: #5d7088;
+        font-size: 12px;
+      }
+
+      .foot a {
+        color: #1267e3;
+        font-weight: 800;
+        text-decoration: none;
+      }
+
+      .license-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 28px;
+        padding: 0 12px;
+        border: 1px solid #cfe7db;
+        border-radius: 999px;
+        background: #f2fbf6;
+        color: #0b6b45;
+        font-weight: 800;
+      }
+
+      .license-pill i {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--green);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="stage">
+      <section class="login-card" aria-label="LOCK-FIX login preview">
+        <div class="brand">
+          <img src="oam-logo.png" alt="OAM" />
+          <h1><span>LOCK-</span><em>FIX</em></h1>
+          <p>Air-Gap Protection</p>
+        </div>
+
+        <div class="form">
+          <label class="field">
+            <span>User</span>
+            <input type="text" value="admin" />
+          </label>
+
+          <label class="field">
+            <span>Password</span>
+            <div class="input-wrap">
+              <input type="password" value="backup@1234" />
+              <button class="eye" type="button" aria-label="Show password">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </button>
+            </div>
+          </label>
+
+          <button class="login-button" type="button">
+            <span>
+              LOGIN
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 12h13"></path>
+                <path d="m13 6 6 6-6 6"></path>
+              </svg>
+            </span>
+          </button>
+          <button class="qr-button" type="button">QR CODE LOGIN · 준비 중</button>
+        </div>
+
+        <div class="foot">
+          <div>계정이 없으신가요? <a href="#">Register account</a></div>
+          <div class="license-pill"><i></i> License: OAM</div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
