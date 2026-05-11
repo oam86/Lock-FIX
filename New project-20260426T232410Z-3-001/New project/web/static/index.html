@@ -59,7 +59,16 @@
           <img class="sidebar-logo-mark" src="/static/sidebar-oam-logo.png?v=20260506-1327" alt="OAM" />
         </button>
         <nav class="side-nav" aria-label="Main navigation">
-          <button class="side-item active" data-view="monitoring"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="3" height="8" rx="1"></rect><rect x="10.5" y="6" width="3" height="12" rx="1"></rect><rect x="17" y="3" width="3" height="15" rx="1"></rect></svg></span><span data-i18n="nav.monitoring">Monitoring</span></button>
+          <button class="side-item rbac-menu active" data-view="dashboard" data-permission="DASHBOARD_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"></rect><rect x="13" y="4" width="7" height="7" rx="1.5"></rect><rect x="4" y="13" width="7" height="7" rx="1.5"></rect><rect x="13" y="13" width="7" height="7" rx="1.5"></rect></svg></span><span>Dashboard</span></button>
+          <button class="side-item rbac-menu" data-view="veeam" data-permission="VEEAM_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14v10H5Z"></path><path d="M8 11h3"></path><path d="M13 11h3"></path><path d="M8 14h8"></path></svg></span><span>Veeam Integration</span></button>
+          <button class="side-item rbac-menu airgap-side" data-view="sources" data-permission="AIRGAP_POLICY_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path><path d="M12 14v2"></path></svg></span><span>Air-Gap Policy</span></button>
+          <button class="side-item rbac-menu" data-view="hardware" data-permission="HARDWARE_CONTROL"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v5H7Z"></path><path d="M5 14h14v6H5Z"></path><path d="M12 9v5"></path></svg></span><span>Hardware Control</span></button>
+          <button class="side-item rbac-menu" data-view="approvals" data-any-permission="DISK_ONLINE_APPROVE,AIRGAP_POLICY_MANAGE,DISK_OFFLINE_REQUEST,DISK_ONLINE_REQUEST,HARDWARE_CONTROL"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 12l3 3 7-7"></path><path d="M5 4h14v16H5Z"></path></svg></span><span>Approval Requests</span></button>
+          <button class="side-item rbac-menu" data-view="userManagement" data-any-permission="USER_MANAGE,ROLE_MANAGE"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"></circle><path d="M4 19c.7-3 2.4-5 5-5s4.3 2 5 5"></path><path d="M16 8h4"></path><path d="M18 6v4"></path></svg></span><span>User & Role Management</span></button>
+          <button class="side-item rbac-menu" data-view="auditLogs" data-permission="AUDIT_LOG_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 19 6.7v5.4c0 4.2-2.8 7.1-7 8.4-4.2-1.3-7-4.2-7-8.4V6.7Z"></path><path d="M9 10.2h6"></path><path d="M9 13h6"></path><path d="M9 15.8h4"></path></svg></span><span>Audit Logs</span></button>
+          <button class="side-item rbac-menu" data-view="report" data-permission="REPORT_EXPORT"><span class="nav-icon report-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h8.8l3.2 3.2v13.8h-12Z"></path><path d="M15 3.8V7h3.2"></path><path d="M9 12.2h5.5"></path><path d="M9 15.5h3.5"></path></svg></span><span>Reports</span></button>
+          <button class="side-item rbac-menu" data-view="settings" data-permission="SYSTEM_SETTING_MANAGE"><span class="nav-icon settings-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"></circle><path d="M12 3.8v2.4"></path><path d="M12 17.8v2.4"></path><path d="m5 7 2 1.2"></path><path d="m17 15.8 2 1.2"></path><path d="m19 7-2 1.2"></path><path d="m7 15.8-2 1.2"></path></svg></span><span>System Settings</span></button>
+          <button class="side-item" data-view="monitoring"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="3" height="8" rx="1"></rect><rect x="10.5" y="6" width="3" height="12" rx="1"></rect><rect x="17" y="3" width="3" height="15" rx="1"></rect></svg></span><span data-i18n="nav.monitoring">Monitoring</span></button>
           <button class="side-item" data-view="dashboard"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"></rect><rect x="13" y="4" width="7" height="7" rx="1.5"></rect><rect x="4" y="13" width="7" height="7" rx="1.5"></rect><rect x="13" y="13" width="7" height="7" rx="1.5"></rect></svg></span><span data-i18n="nav.dashboard">Dashboard</span></button>
           <button class="side-item" data-view="detect2"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="m16 16 4 4"></path></svg></span><span data-i18n="nav.detect">Detect</span></button>
           <button class="side-item" data-view="notification2"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20a2.3 2.3 0 0 0 2.2-1.6H9.8A2.3 2.3 0 0 0 12 20Z"></path><path d="M18 16H6l1.2-2V10a4.8 4.8 0 0 1 9.6 0v4L18 16Z"></path></svg></span><span data-i18n="nav.notification">Notification</span></button>
@@ -582,6 +591,150 @@
         </div>
         <div class="source-root" id="sourceRoot">-</div>
         <div class="source-list" id="sourceList"></div>
+      </section>
+
+      <section class="view rbac-page-view" id="veeamView">
+        <div class="monitoring-header">
+          <div>
+            <h1>Veeam Integration</h1>
+            <p>Veeam REST API session, backup job progress, and isolation readiness status.</p>
+          </div>
+        </div>
+        <section class="rbac-panel">
+          <div class="rbac-panel-head">
+            <h2>Connection Status</h2>
+            <span id="veeamIntegrationStatus">-</span>
+          </div>
+          <div class="rbac-summary-grid" id="veeamIntegrationSummary"></div>
+        </section>
+      </section>
+
+      <section class="view rbac-page-view" id="hardwareView">
+        <div class="monitoring-header">
+          <div>
+            <h1>Hardware Control</h1>
+            <p>Power and physical isolation controls are shown only to authorized operators.</p>
+          </div>
+        </div>
+        <section class="rbac-panel">
+          <div class="rbac-panel-head">
+            <h2>Control Scope</h2>
+            <span>HARDWARE_CONTROL</span>
+          </div>
+          <div class="rbac-empty-state">Hardware control requests are governed by approval policy before execution.</div>
+        </section>
+      </section>
+
+      <section class="view rbac-page-view" id="approvalsView">
+        <div class="monitoring-header">
+          <div>
+            <h1>Approval Requests</h1>
+            <p>Review approval state, pending requests, and dual approval progress.</p>
+          </div>
+        </div>
+        <div class="rbac-tabs" id="approvalTabs">
+          <button type="button" class="active" data-approval-tab="my">My Requests</button>
+          <button type="button" data-approval-tab="pending">Pending Approval</button>
+          <button type="button" data-approval-tab="approved">Approved</button>
+          <button type="button" data-approval-tab="rejected">Rejected</button>
+          <button type="button" data-approval-tab="expired">Expired</button>
+        </div>
+        <section class="rbac-panel">
+          <div class="rbac-panel-head">
+            <h2 id="approvalTabTitle">My Requests</h2>
+            <span id="approvalCount">0 requests</span>
+          </div>
+          <div class="rbac-table-wrap">
+            <table class="rbac-table">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Requester</th>
+                  <th>Target</th>
+                  <th>Status</th>
+                  <th>Approvals</th>
+                  <th>Expires</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="approvalRequestsTable"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="view rbac-page-view" id="userManagementView">
+        <div class="monitoring-header">
+          <div>
+            <h1>User & Role Management</h1>
+            <p>Super Admin controlled users, departments, roles, and disabled state.</p>
+          </div>
+        </div>
+        <section class="rbac-panel">
+          <div class="rbac-panel-head">
+            <h2>Departments</h2>
+            <span id="userManagementDepartmentCount">0 departments</span>
+          </div>
+          <div class="rbac-chip-list" id="userManagementDepartments"></div>
+        </section>
+        <section class="rbac-panel">
+          <div class="rbac-panel-head">
+            <h2>Users</h2>
+            <span id="userManagementCount">0 users</span>
+          </div>
+          <div class="rbac-table-wrap">
+            <table class="rbac-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Department</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="userManagementTable"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="view rbac-page-view" id="auditLogsView">
+        <div class="monitoring-header">
+          <div>
+            <h1>Audit Logs</h1>
+            <p>Structured audit events are view-only and cannot be deleted through the API.</p>
+          </div>
+          <a class="rbac-export-link" href="/api/audit-logs/export">Export</a>
+        </div>
+        <section class="rbac-panel">
+          <div class="rbac-panel-head">
+            <h2>Audit Events</h2>
+            <span id="auditLogsCount">0 events</span>
+          </div>
+          <div class="rbac-table-wrap">
+            <table class="rbac-table">
+              <thead>
+                <tr>
+                  <th>Created</th>
+                  <th>Actor</th>
+                  <th>Action</th>
+                  <th>Resource</th>
+                  <th>Result</th>
+                </tr>
+              </thead>
+              <tbody id="auditLogsTable"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="view rbac-page-view access-denied-view" id="accessDeniedView">
+        <div class="monitoring-header">
+          <div>
+            <h1>403 Forbidden</h1>
+            <p id="accessDeniedMessage">You do not have permission to access this menu.</p>
+          </div>
+        </div>
       </section>
 
       <section class="view settings-view" id="settingsView">

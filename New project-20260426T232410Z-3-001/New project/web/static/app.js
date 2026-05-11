@@ -151,6 +151,19 @@ const consoleStatusDetail = document.querySelector("#consoleStatusDetail");
 const serviceControlStatus = document.querySelector("#serviceControlStatus");
 const serviceStartButton = document.querySelector("#serviceStartButton");
 const serviceStopButton = document.querySelector("#serviceStopButton");
+const veeamIntegrationStatus = document.querySelector("#veeamIntegrationStatus");
+const veeamIntegrationSummary = document.querySelector("#veeamIntegrationSummary");
+const approvalTabs = document.querySelector("#approvalTabs");
+const approvalTabTitle = document.querySelector("#approvalTabTitle");
+const approvalCount = document.querySelector("#approvalCount");
+const approvalRequestsTable = document.querySelector("#approvalRequestsTable");
+const userManagementDepartmentCount = document.querySelector("#userManagementDepartmentCount");
+const userManagementDepartments = document.querySelector("#userManagementDepartments");
+const userManagementCount = document.querySelector("#userManagementCount");
+const userManagementTable = document.querySelector("#userManagementTable");
+const auditLogsCount = document.querySelector("#auditLogsCount");
+const auditLogsTable = document.querySelector("#auditLogsTable");
+const accessDeniedMessage = document.querySelector("#accessDeniedMessage");
 
 const LOGIN_SPLASH_DURATION_MS = 2000;
 let qrToken = "";
@@ -209,7 +222,34 @@ let uiSettings = {
 let pendingUiSettings = { ...uiSettings };
 let memoryThresholdAlertActive = false;
 let sidebarCollapsed = false;
+let currentSession = { authenticated: false, user: "", role: "", permissions: [] };
+let latestApprovalsData = { policies: [], requests: [], decisions: [] };
+let activeApprovalTab = "my";
 localStorage.setItem("lockfix.sidebarCollapsed", "false");
+
+const menuDefinitions = [
+  { view: "dashboard", label: "Dashboard", permissions: ["DASHBOARD_VIEW"] },
+  { view: "veeam", label: "Veeam Integration", permissions: ["VEEAM_VIEW"] },
+  { view: "sources", label: "Air-Gap Policy", permissions: ["AIRGAP_POLICY_VIEW"] },
+  { view: "hardware", label: "Hardware Control", permissions: ["HARDWARE_CONTROL"] },
+  {
+    view: "approvals",
+    label: "Approval Requests",
+    anyPermissions: ["DISK_ONLINE_APPROVE", "AIRGAP_POLICY_MANAGE", "DISK_OFFLINE_REQUEST", "DISK_ONLINE_REQUEST", "HARDWARE_CONTROL"],
+  },
+  { view: "userManagement", label: "User & Role Management", roles: ["SUPER_ADMIN"], anyPermissions: ["USER_MANAGE", "ROLE_MANAGE"] },
+  { view: "auditLogs", label: "Audit Logs", permissions: ["AUDIT_LOG_VIEW"] },
+  { view: "report", label: "Reports", permissions: ["REPORT_EXPORT"] },
+  { view: "settings", label: "System Settings", permissions: ["SYSTEM_SETTING_MANAGE"] },
+];
+
+const approvalTabDefinitions = [
+  { id: "my", label: "My Requests" },
+  { id: "pending", label: "Pending Approval" },
+  { id: "approved", label: "Approved" },
+  { id: "rejected", label: "Rejected" },
+  { id: "expired", label: "Expired" },
+];
 
 const translations = {
   en: {
@@ -947,13 +987,82 @@ function applyUiSettings() {
 }
 
 function applySidebarTooltips() {
-  sideItems.forEach((item) => {
+  document.querySelectorAll(".side-item[data-view]").forEach((item) => {
     const label = item.querySelector("span:not(.nav-icon)")?.textContent?.trim() || "";
     if (label) {
       item.dataset.tooltip = label;
       item.setAttribute("aria-label", label);
     }
   });
+}
+
+function permissionSet(session = currentSession) {
+  return new Set(Array.isArray(session?.permissions) ? session.permissions : []);
+}
+
+function hasPermission(permission, session = currentSession) {
+  if (!permission) return true;
+  return permissionSet(session).has(permission);
+}
+
+function hasAnyPermission(permissions, session = currentSession) {
+  const required = Array.isArray(permissions) ? permissions : [];
+  return required.length === 0 || required.some((permission) => hasPermission(permission, session));
+}
+
+function menuDefinitionFor(view) {
+  return menuDefinitions.find((item) => item.view === view);
+}
+
+function canAccessView(view, session = currentSession) {
+  const definition = menuDefinitionFor(view);
+  if (!definition) return false;
+  if (definition.roles?.length && !definition.roles.includes(session?.role)) {
+    return false;
+  }
+  if (definition.permissions?.length && !definition.permissions.every((permission) => hasPermission(permission, session))) {
+    return false;
+  }
+  return hasAnyPermission(definition.anyPermissions || [], session);
+}
+
+function visibleMenuDefinitions(session = currentSession) {
+  return menuDefinitions.filter((definition) => canAccessView(definition.view, session));
+}
+
+function firstAllowedView(session = currentSession) {
+  return visibleMenuDefinitions(session)[0]?.view || "accessDenied";
+}
+
+function applyMenuVisibility() {
+  const allowedViews = new Set(visibleMenuDefinitions().map((item) => item.view));
+  document.querySelectorAll(".side-item[data-view]").forEach((item) => {
+    const view = item.dataset.view || "";
+    if (view === "logout") {
+      item.hidden = false;
+      return;
+    }
+    const isRbacMenu = item.classList.contains("rbac-menu");
+    item.hidden = !isRbacMenu || !allowedViews.has(view);
+  });
+  applySidebarTooltips();
+}
+
+function showAccessDenied(view) {
+  sideItems.forEach((item) => item.classList.remove("active"));
+  views.forEach((item) => item.classList.remove("view-active"));
+  const denied = document.querySelector("#accessDeniedView");
+  if (accessDeniedMessage) {
+    accessDeniedMessage.textContent = `Access denied for ${menuDefinitionFor(view)?.label || view}. Required permission is missing.`;
+  }
+  denied?.classList.add("view-active");
+  contentArea?.scrollTo({ top: 0, left: 0 });
+}
+
+function initialRouteView() {
+  const candidate = decodeURIComponent(String(window.location.hash || "").replace(/^#/, "")).trim();
+  if (candidate && menuDefinitionFor(candidate)) return candidate;
+  return firstAllowedView();
 }
 
 function applySidebarState() {
@@ -1007,11 +1116,19 @@ async function requestJson(url, options = {}) {
 
 async function checkSession() {
   const session = await requestJson("/api/session");
+  currentSession = {
+    authenticated: Boolean(session.authenticated),
+    user: session.user || "",
+    role: session.role || "",
+    permissions: Array.isArray(session.permissions) ? session.permissions : [],
+  };
+  applyMenuVisibility();
   setAuthenticated(session.authenticated);
   if (session.authenticated) {
     renderLicenseStatus(session.license);
     updateLicenseGate(session.license);
     await loadAll();
+    showView(initialRouteView());
   }
 }
 
@@ -1021,6 +1138,8 @@ function setAuthenticated(authenticated) {
   loginSplash.classList.add("hidden");
   if (!authenticated) {
     licenseModal.classList.add("hidden");
+    currentSession = { authenticated: false, user: "", role: "", permissions: [] };
+    applyMenuVisibility();
   }
   if (authenticated) {
     stopQrTimers();
@@ -1035,11 +1154,20 @@ async function showLoginSplashThenEnter() {
   appRoot.classList.add("app-locked");
   loginSplash.classList.remove("hidden");
   stopQrTimers();
+  const session = await requestJson("/api/session");
+  currentSession = {
+    authenticated: Boolean(session.authenticated),
+    user: session.user || "",
+    role: session.role || "",
+    permissions: Array.isArray(session.permissions) ? session.permissions : [],
+  };
+  applyMenuVisibility();
   await Promise.all([
     loadAll(),
     new Promise((resolve) => setTimeout(resolve, LOGIN_SPLASH_DURATION_MS)),
   ]);
   setAuthenticated(true);
+  showView(initialRouteView());
 }
 
 async function login(event) {
@@ -1074,30 +1202,61 @@ function showView(name) {
     logout();
     return;
   }
-  sideItems.forEach((item) => item.classList.toggle("active", item.dataset.view === name));
+  const targetView = menuDefinitionFor(name) ? name : firstAllowedView();
+  if (!canAccessView(targetView)) {
+    showAccessDenied(targetView);
+    if (window.location.hash !== `#${targetView}`) history.replaceState(null, "", `#${targetView}`);
+    return;
+  }
+  sideItems.forEach((item) => item.classList.toggle("active", item.dataset.view === targetView));
   views.forEach((view) => view.classList.remove("view-active"));
-  const target = document.querySelector(`#${name}View`);
+  const target = document.querySelector(`#${targetView}View`);
   if (target) {
     target.classList.add("view-active");
     contentArea?.scrollTo({ top: 0, left: 0 });
   }
-  setAirGapLivePolling(name === "sources");
-  if (name === "sources") {
+  if (window.location.hash !== `#${targetView}`) history.replaceState(null, "", `#${targetView}`);
+  setAirGapLivePolling(targetView === "sources");
+  if (targetView === "sources") {
     reloadSources().catch((error) => {
       console.warn("Unable to reload Air-Gap view", error);
       renderSources({ air_gap: fallbackAirGapSummary() });
     });
   }
-  if (name === "report") {
+  if (targetView === "veeam") {
+    reloadVeeamIntegration().catch((error) => {
+      console.warn("Unable to reload Veeam Integration view", error);
+      if (veeamIntegrationStatus) veeamIntegrationStatus.textContent = error.message;
+    });
+  }
+  if (targetView === "approvals") {
+    reloadApprovals().catch((error) => {
+      console.warn("Unable to reload approvals", error);
+      renderApprovals({ requests: [], decisions: [], policies: [] }, error.message);
+    });
+  }
+  if (targetView === "userManagement") {
+    reloadUserManagement().catch((error) => {
+      console.warn("Unable to reload user management", error);
+      renderUserManagement({ users: [], departments: [] }, error.message);
+    });
+  }
+  if (targetView === "auditLogs") {
+    reloadAuditLogs().catch((error) => {
+      console.warn("Unable to reload audit logs", error);
+      renderAuditLogs({ items: [] }, error.message);
+    });
+  }
+  if (targetView === "report") {
     reloadReport().catch((error) => {
       console.warn("Unable to reload report view", error);
       reportAnalysis.textContent = error.message;
     });
   }
-  if (name === "securityAudit") {
+  if (targetView === "securityAudit") {
     renderSecurityAudit(latestAuditData);
   }
-  if (name === "settings") {
+  if (targetView === "settings") {
     reloadConsoleStatus().catch((error) => {
       console.warn("Unable to reload console status", error);
       if (consoleStatusText) consoleStatusText.textContent = error.message;
@@ -2248,6 +2407,175 @@ function renderLoadedData(key, value) {
     updateLicenseGate(value);
   }
 }
+
+function approvalDecisionsFor(request, decisions = latestApprovalsData.decisions) {
+  return (Array.isArray(decisions) ? decisions : []).filter((decision) => decision.approvalRequestId === request.id);
+}
+
+function approvalDecisionSummary(request, decisions = latestApprovalsData.decisions) {
+  const approved = approvalDecisionsFor(request, decisions).filter((decision) => decision.decision === "APPROVED").length;
+  const required = Number(request?.requiredApprovals || 1);
+  return `${approved} / ${required} approved`;
+}
+
+function canShowApprovalButton(request, session = currentSession, decisions = latestApprovalsData.decisions) {
+  if (!request || request.status !== "PENDING") return false;
+  if (!hasPermission("DISK_ONLINE_APPROVE", session)) return false;
+  if (Array.isArray(request.allowedApproverRoles) && request.allowedApproverRoles.length && !request.allowedApproverRoles.includes(session.role)) return false;
+  if (String(request.requesterUserId || "") === String(session.user || "")) return false;
+  return !approvalDecisionsFor(request, decisions).some((decision) => String(decision.approverUserId || "") === String(session.user || ""));
+}
+
+function filterApprovalRequests(requests) {
+  const items = Array.isArray(requests) ? requests : [];
+  if (activeApprovalTab === "my") return items.filter((request) => String(request.requesterUserId || "") === String(currentSession.user || ""));
+  if (activeApprovalTab === "pending") return items.filter((request) => request.status === "PENDING");
+  return items.filter((request) => String(request.status || "").toLowerCase() === activeApprovalTab);
+}
+
+function renderApprovals(data, errorMessage = "") {
+  latestApprovalsData = {
+    policies: Array.isArray(data?.policies) ? data.policies : [],
+    requests: Array.isArray(data?.requests) ? data.requests : [],
+    decisions: Array.isArray(data?.decisions) ? data.decisions : [],
+  };
+  const tab = approvalTabDefinitions.find((item) => item.id === activeApprovalTab) || approvalTabDefinitions[0];
+  if (approvalTabTitle) approvalTabTitle.textContent = tab.label;
+  approvalTabs?.querySelectorAll("[data-approval-tab]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.approvalTab === activeApprovalTab);
+  });
+  const rows = filterApprovalRequests(latestApprovalsData.requests);
+  if (approvalCount) approvalCount.textContent = `${rows.length} requests`;
+  if (!approvalRequestsTable) return;
+  approvalRequestsTable.replaceChildren();
+  if (errorMessage || !rows.length) {
+    const row = document.createElement("tr");
+    row.innerHTML = `<td colspan="7">${escapeHtml(errorMessage || "No approval requests in this tab.")}</td>`;
+    approvalRequestsTable.appendChild(row);
+    return;
+  }
+  rows.forEach((request) => {
+    const row = document.createElement("tr");
+    const button = canShowApprovalButton(request)
+      ? `<button type="button" class="rbac-action-button" data-approval-id="${escapeHtml(request.id)}">Approve</button>`
+      : "";
+    row.innerHTML = `
+      <td>${escapeHtml(request.requestType)}</td>
+      <td>${escapeHtml(request.requesterUserId)}</td>
+      <td>${escapeHtml(request.targetId || "-")}</td>
+      <td><span class="rbac-status rbac-status-${escapeHtml(String(request.status || "").toLowerCase())}">${escapeHtml(request.status)}</span></td>
+      <td>${escapeHtml(approvalDecisionSummary(request))}</td>
+      <td>${escapeHtml(formatLogDate(request.expiresAt))}</td>
+      <td>${button}</td>
+    `;
+    approvalRequestsTable.appendChild(row);
+  });
+}
+
+async function reloadApprovals() {
+  const data = await requestJson("/api/approvals");
+  renderApprovals(data);
+}
+
+function renderVeeamIntegration(data, errorMessage = "") {
+  const monitor = data?.air_gap?.copy_job_monitor || {};
+  if (veeamIntegrationStatus) veeamIntegrationStatus.textContent = errorMessage || monitor.detail_status || monitor.status || "-";
+  if (!veeamIntegrationSummary) return;
+  const rows = [
+    ["Server", monitor.server || monitor.server_ip || "-"],
+    ["Job", monitor.detail_name || monitor.name || "-"],
+    ["Progress", monitor.progress || "-"],
+    ["Last Checked", monitor.last_checked || monitor.generated_at || "-"],
+  ];
+  veeamIntegrationSummary.innerHTML = rows.map(([label, value]) => `
+    <article class="rbac-summary-card">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </article>
+  `).join("");
+}
+
+async function reloadVeeamIntegration() {
+  const data = await requestJson("/api/sources");
+  renderVeeamIntegration(data);
+}
+
+function renderUserManagement(data, errorMessage = "") {
+  const departments = Array.isArray(data?.departments) ? data.departments : [];
+  const users = Array.isArray(data?.users) ? data.users : [];
+  if (userManagementDepartmentCount) userManagementDepartmentCount.textContent = `${departments.length} departments`;
+  if (userManagementDepartments) {
+    userManagementDepartments.innerHTML = departments.length
+      ? departments.map((department) => `<span>${escapeHtml(department.name || department.id)}</span>`).join("")
+      : `<em>${escapeHtml(errorMessage || "No departments loaded.")}</em>`;
+  }
+  if (userManagementCount) userManagementCount.textContent = `${users.length} users`;
+  if (!userManagementTable) return;
+  userManagementTable.replaceChildren();
+  if (errorMessage || !users.length) {
+    const row = document.createElement("tr");
+    row.innerHTML = `<td colspan="4">${escapeHtml(errorMessage || "No users loaded.")}</td>`;
+    userManagementTable.appendChild(row);
+    return;
+  }
+  users.forEach((user) => {
+    const department = departments.find((item) => item.id === user.departmentId);
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${escapeHtml(user.username || user.id)}</td>
+      <td>${escapeHtml(department?.name || user.departmentId || "-")}</td>
+      <td>${escapeHtml(user.role || "-")}</td>
+      <td>${escapeHtml(user.disabled ? "Disabled" : "Active")}</td>
+    `;
+    userManagementTable.appendChild(row);
+  });
+}
+
+async function reloadUserManagement() {
+  const [users, departments] = await Promise.all([
+    requestJson("/api/admin/users"),
+    requestJson("/api/admin/departments"),
+  ]);
+  renderUserManagement({ users: users.items || [], departments: departments.items || [] });
+}
+
+function renderAuditLogs(data, errorMessage = "") {
+  const items = Array.isArray(data?.items) ? data.items : [];
+  if (auditLogsCount) auditLogsCount.textContent = `${items.length} events`;
+  if (!auditLogsTable) return;
+  auditLogsTable.replaceChildren();
+  if (errorMessage || !items.length) {
+    const row = document.createElement("tr");
+    row.innerHTML = `<td colspan="5">${escapeHtml(errorMessage || "No audit events loaded.")}</td>`;
+    auditLogsTable.appendChild(row);
+    return;
+  }
+  items.slice(-200).reverse().forEach((item) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${escapeHtml(formatLogDate(item.createdAt || item.ts || item.time))}</td>
+      <td>${escapeHtml(item.actorUserId || item.user || "-")}</td>
+      <td>${escapeHtml(item.action || item.event || "-")}</td>
+      <td>${escapeHtml([item.resourceType, item.resourceId].filter(Boolean).join(" / ") || "-")}</td>
+      <td>${escapeHtml(item.result || "-")}</td>
+    `;
+    auditLogsTable.appendChild(row);
+  });
+}
+
+async function reloadAuditLogs() {
+  const data = await requestJson("/api/audit-logs");
+  renderAuditLogs(data);
+}
+
+window.lockfixUiAuth = {
+  menuDefinitions,
+  approvalTabDefinitions,
+  visibleMenuDefinitions,
+  canAccessView,
+  approvalDecisionSummary,
+  canShowApprovalButton,
+};
 
 async function reloadReport() {
   reportAnalysis.textContent = t("report.loading");
@@ -3762,6 +4090,31 @@ logoutSideButton.addEventListener("click", logout);
 licenseForm.addEventListener("submit", registerLicense);
 sidebarToggle?.addEventListener("click", toggleSidebar);
 sideItems.forEach((item) => item.addEventListener("click", () => showView(item.dataset.view)));
+approvalTabs?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-approval-tab]");
+  if (!button) return;
+  activeApprovalTab = button.dataset.approvalTab || "my";
+  renderApprovals(latestApprovalsData);
+});
+approvalRequestsTable?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-approval-id]");
+  if (!button) return;
+  button.disabled = true;
+  try {
+    await requestJson(`/api/approvals/${encodeURIComponent(button.dataset.approvalId)}/decisions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "APPROVED", comment: "Approved from LOCK-FIX Web UI" }),
+    });
+    await reloadApprovals();
+  } catch (error) {
+    alert(error.message);
+    button.disabled = false;
+  }
+});
+window.addEventListener("hashchange", () => {
+  if (currentSession.authenticated) showView(initialRouteView());
+});
 detectFingerprintRoot?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-detect-action]");
   if (!button) return;

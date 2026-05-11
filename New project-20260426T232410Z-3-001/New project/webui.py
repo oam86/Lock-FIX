@@ -34,7 +34,15 @@ from lockfix.audit_log import audit_logs_to_csv, read_audit_logs
 from lockfix.hashcheck import verify_manifest
 from lockfix.identity import fingerprint_formula, fingerprint_parts, slot_uid, verify_uid
 from lockfix.integrated import integrated_solution_summary
-from lockfix.rbac import AuthorizationError, Permission, Role, load_role_permissions, normalize_role, require_permission
+from lockfix.rbac import (
+    AuthorizationError,
+    Permission,
+    Role,
+    load_role_permissions,
+    normalize_role,
+    permissions_for_role,
+    require_permission,
+)
 from lockfix.source_inventory import integrated_source_inventory
 from lockfix.users import UserDirectory
 from lockfix.veeam_diagnostics import run_veeam_diagnostics
@@ -467,7 +475,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 self.send_json(
                     {
                         "authenticated": self.is_authenticated(),
+                        "user": self.current_session_user() if self.is_authenticated() else "",
                         "role": self.current_role().value if self.is_authenticated() else "",
+                        "permissions": self.current_permissions() if self.is_authenticated() else [],
                         "license": self.license_status(),
                     }
                 )
@@ -1305,6 +1315,10 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         if record:
             return Role.SUPER_ADMIN
         return Role.AUDITOR
+
+    def current_permissions(self) -> list[str]:
+        policy = load_role_permissions(self.context.rbac_policy_path)
+        return sorted(permission.value for permission in permissions_for_role(self.current_role(), policy))
 
     def require_auth(self, permission: Permission | None = None) -> None:
         if not self.is_authenticated():

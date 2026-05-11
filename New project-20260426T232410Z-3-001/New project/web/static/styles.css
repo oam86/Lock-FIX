@@ -7943,6 +7943,158 @@ body,
   box-shadow: none;
 }
 
+.rbac-page-view.view-active {
+  display: block;
+}
+
+.rbac-panel {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid #e2ebf3;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.rbac-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.rbac-panel-head h2 {
+  margin: 0;
+  color: #0f2235;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.rbac-panel-head span {
+  color: #60758a;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.rbac-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.rbac-tabs button,
+.rbac-action-button,
+.rbac-export-link {
+  border: 1px solid #cfdbe6;
+  border-radius: 6px;
+  padding: 9px 12px;
+  color: #17324d;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.rbac-tabs button.active,
+.rbac-action-button {
+  border-color: #1f6fd1;
+  color: #ffffff;
+  background: #1f6fd1;
+}
+
+.rbac-table-wrap {
+  overflow-x: auto;
+}
+
+.rbac-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+}
+
+.rbac-table th,
+.rbac-table td {
+  border: 1px solid #e2ebf3;
+  padding: 11px 12px;
+  color: #25384a;
+  font-size: 12px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.rbac-table th {
+  color: #60758a;
+  background: #f8fafc;
+  font-weight: 900;
+}
+
+.rbac-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.rbac-summary-card,
+.rbac-empty-state {
+  border: 1px solid #e2ebf3;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfdff;
+}
+
+.rbac-summary-card {
+  display: grid;
+  gap: 6px;
+}
+
+.rbac-summary-card span,
+.rbac-chip-list em {
+  color: #60758a;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.rbac-summary-card strong {
+  color: #0f2235;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.rbac-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rbac-chip-list span,
+.rbac-status {
+  border-radius: 999px;
+  padding: 6px 9px;
+  color: #17324d;
+  background: #eef4fb;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.rbac-status-approved {
+  color: #0b7f3f;
+  background: #e7f7ee;
+}
+
+.rbac-status-rejected,
+.rbac-status-expired {
+  color: #b42318;
+  background: #fff1f2;
+}
+
+.access-denied-view {
+  min-height: 360px;
+}
+
 :root[data-theme="dark"] .date-range,
 :root[data-theme="dark"] .date-download-button,
 :root[data-theme="dark"] .metric-filter-button,

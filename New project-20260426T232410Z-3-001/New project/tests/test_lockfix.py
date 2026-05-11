@@ -1170,6 +1170,52 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("width: 42px;", css)
         self.assertIn("height: 26px;", css)
 
+    def test_web_ui_rbac_menu_and_direct_access_guards_are_present(self) -> None:
+        root = Path.cwd()
+        html = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        app = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
+        server = (root / "webui.py").read_text(encoding="utf-8")
+
+        for label in [
+            "Dashboard",
+            "Veeam Integration",
+            "Air-Gap Policy",
+            "Hardware Control",
+            "Approval Requests",
+            "User & Role Management",
+            "Audit Logs",
+            "Reports",
+            "System Settings",
+        ]:
+            self.assertIn(label, html)
+
+        self.assertIn("menuDefinitions", app)
+        self.assertIn('roles: ["SUPER_ADMIN"]', app)
+        self.assertIn("visibleMenuDefinitions", app)
+        self.assertIn("canAccessView", app)
+        self.assertIn("showAccessDenied", app)
+        self.assertIn("accessDeniedView", html)
+        self.assertIn("window.addEventListener(\"hashchange\"", app)
+        self.assertIn('"permissions": self.current_permissions()', server)
+        self.assertIn("permissions_for_role", server)
+
+    def test_web_ui_approval_tabs_and_button_visibility_are_testable(self) -> None:
+        root = Path.cwd()
+        html = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        app = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
+
+        for tab in ["My Requests", "Pending Approval", "Approved", "Rejected", "Expired"]:
+            self.assertIn(tab, html)
+
+        self.assertIn("approvalDecisionSummary", app)
+        self.assertIn("canShowApprovalButton", app)
+        self.assertIn('`${approved} / ${required} approved`', app)
+        self.assertIn('hasPermission("DISK_ONLINE_APPROVE"', app)
+        self.assertIn("request.allowedApproverRoles.includes(session.role)", app)
+        self.assertIn('request.requesterUserId || "") === String(session.user || "")', app)
+        self.assertIn("data-approval-id", app)
+        self.assertIn("window.lockfixUiAuth", app)
+
     def test_airgap_detail_log_area_scrolls_inside_blue_left_border(self) -> None:
         css = (Path.cwd() / "web" / "static" / "styles.css").read_text(encoding="utf-8")
 
