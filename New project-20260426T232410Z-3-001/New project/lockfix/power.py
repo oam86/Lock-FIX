@@ -21,11 +21,13 @@ class MockPowerController(PowerController):
         self.audit = audit
 
     def off(self, slot_id: str) -> None:
+        self.audit.write("hardware.power_off.request", slot_id=slot_id, resourceType="HARDWARE_POWER", resourceId=slot_id)
         self.audit.write("power.mock.off.start", slot_id=slot_id)
         self.audit.write("power.mock.off.tick", slot_id=slot_id, elapsed_seconds=1)
         self.audit.write("power.mock.off", slot_id=slot_id)
 
     def on(self, slot_id: str) -> None:
+        self.audit.write("hardware.power_on.request", slot_id=slot_id, resourceType="HARDWARE_POWER", resourceId=slot_id)
         self.audit.write("power.mock.on.start", slot_id=slot_id)
         self.audit.write("power.mock.on.tick", slot_id=slot_id, elapsed_seconds=1)
         self.audit.write("power.mock.on", slot_id=slot_id)
@@ -50,6 +52,7 @@ class CommandPowerController(PowerController):
         self.audit = audit
 
     def off(self, slot_id: str) -> None:
+        self.audit.write("hardware.power_off.request", slot_id=slot_id, resourceType="HARDWARE_POWER", resourceId=slot_id)
         self.audit.write("power.command.off.start", slot_id=slot_id, command=self.config.off_command)
         try:
             output = self.runner.run(self.config.off_command)
@@ -60,6 +63,7 @@ class CommandPowerController(PowerController):
         self.audit.write("power.command.off", slot_id=slot_id, output=output)
 
     def on(self, slot_id: str) -> None:
+        self.audit.write("hardware.power_on.request", slot_id=slot_id, resourceType="HARDWARE_POWER", resourceId=slot_id)
         self.audit.write("power.command.on.start", slot_id=slot_id, command=self.config.on_command)
         try:
             output = self.runner.run(self.config.on_command)

@@ -36,6 +36,7 @@ class LockFixController:
         self.audit.write("state.transition", slot_id=slot_id, state=state.value, **payload)
 
     def isolate(self, slot_id: str, repository_path: str = "") -> LockFixState:
+        self.audit.write("disk.offline.request", slot_id=slot_id, resourceType="DISK", resourceId=slot_id)
         self.approvals.require_approved("DISK_OFFLINE", slot_id)
         slot = self.repository_slot(self.config.slot(slot_id), repository_path)
         try:
@@ -83,6 +84,7 @@ class LockFixController:
             raise
 
     def reconnect(self, slot_id: str, repository_path: str = "") -> LockFixState:
+        self.audit.write("disk.online.request", slot_id=slot_id, resourceType="DISK", resourceId=slot_id)
         self.approvals.require_approved("DISK_ONLINE", slot_id)
         base_slot = self.config.slot(slot_id)
         remembered_path = str(self.disk.read_storage_state(base_slot).get("accessPath") or "").strip()
@@ -300,6 +302,7 @@ class LockFixController:
         return slot_uid(slot)
 
     def emergency_reconnect(self, slot_id: str, verification_hash: str = "", repository_path: str = "") -> LockFixState:
+        self.audit.write("emergency.unlock.request", slot_id=slot_id, resourceType="EMERGENCY", resourceId=slot_id)
         self.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)
         slot = self.config.slot(slot_id)
         storage_state = self.disk.read_storage_state(slot)

@@ -17,6 +17,7 @@ from lockfix.audit import AuditLogger
 from lockfix.hashcheck import manifest_digest
 from lockfix.identity import compute_uid, fingerprint_parts, slot_uid
 from lockfix.approvals import ApprovalStore
+from lockfix.audit_log import AUDIT_LOG_FIELDS, audit_logs_to_csv, read_audit_logs
 from lockfix.rbac import AuthorizationError, Permission, Role, default_policy_document, has_permission, load_role_permissions
 from lockfix.state_store import StateStore
 from lockfix.states import LockFixState
@@ -176,6 +177,52 @@ class LockFixTests(unittest.TestCase):
 
         with self.assertRaises(AuthorizationError):
             handler.require_super_admin()
+
+    def test_audit_log_model_normalizes_existing_jsonl_records(self) -> None:
+        tmp_path = self.make_workspace()
+        audit_path = tmp_path / "audit.jsonl"
+        AuditLogger(audit_path).write(
+            "auth.login.success",
+            actorUserId="admin",
+            ipAddress="127.0.0.1",
+            userAgent="unit-test",
+            result="SUCCESS",
+        )
+
+        logs = read_audit_logs(audit_path)
+
+        self.assertEqual(set(AUDIT_LOG_FIELDS), set(logs[0]) - {"raw"})
+        self.assertEqual(logs[0]["actorUserId"], "admin")
+        self.assertEqual(logs[0]["action"], "auth.login.success")
+        self.assertEqual(logs[0]["resourceType"], "AUTH")
+        self.assertEqual(logs[0]["result"], "SUCCESS")
+
+    def test_audit_log_view_is_limited_to_auditor_security_and_super_admin(self) -> None:
+        tmp_path = self.make_workspace()
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(write_config(tmp_path))
+        handler.headers = {"Cookie": "lockfix_session=auditor-token", "User-Agent": "unit-test"}
+        handler.path = "/api/audit-logs"
+        handler.client_address = ("127.0.0.1", 12345)
+        handler.context.sessions["auditor-token"] = handler.session_record("auditor", Role.AUDITOR)
+
+        handler.require_audit_log_view()
+
+        handler.context.sessions["auditor-token"] = handler.session_record("developer", Role.DEVELOPER)
+        with self.assertRaises(AuthorizationError):
+            handler.require_audit_log_view()
+
+    def test_audit_log_export_is_csv_and_no_delete_api_is_defined(self) -> None:
+        tmp_path = self.make_workspace()
+        audit_path = tmp_path / "audit.jsonl"
+        AuditLogger(audit_path).write("admin.user.disabled", actorUserId="admin", resourceId="user-1")
+        logs = read_audit_logs(audit_path)
+        csv_body = audit_logs_to_csv(logs).decode("utf-8-sig")
+        webui_source = Path("webui.py").read_text(encoding="utf-8")
+
+        self.assertIn("actorUserId,action,resourceType", csv_body)
+        self.assertIn("admin.user.disabled", csv_body)
+        self.assertNotIn("def do_DELETE", webui_source)
 
     def test_approval_policy_defaults_and_two_person_approval(self) -> None:
         tmp_path = self.make_workspace()

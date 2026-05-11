@@ -30,6 +30,7 @@ from xml.sax.saxutils import escape
 
 from lockfix.config import get_veeam_config, load_app_config, load_config
 from lockfix.controller import LockFixController
+from lockfix.audit_log import audit_logs_to_csv, read_audit_logs
 from lockfix.hashcheck import verify_manifest
 from lockfix.identity import fingerprint_formula, fingerprint_parts, slot_uid, verify_uid
 from lockfix.integrated import integrated_solution_summary
@@ -493,6 +494,12 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/audit":
                 self.require_auth(Permission.AUDIT_LOG_VIEW)
                 self.send_json({"items": self.audit_items()})
+            elif parsed.path == "/api/audit-logs":
+                self.require_audit_log_view()
+                self.send_json({"items": self.audit_logs()})
+            elif parsed.path == "/api/audit-logs/export":
+                self.require_audit_log_view()
+                self.send_audit_logs_export()
             elif parsed.path == "/api/integrated":
                 self.require_auth(Permission.DASHBOARD_VIEW)
                 self.send_json(integrated_solution_summary())
@@ -585,8 +592,10 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             else:
                 self.send_error(404, "not found")
         except AuthorizationError as exc:
+            self.audit_access_denied(exc)
             self.send_json({"error": str(exc), "permission": exc.permission.value, "role": exc.role.value}, status=403)
         except PermissionError as exc:
+            self.audit_unauthorized_access(str(exc))
             self.send_json({"error": str(exc)}, status=401)
         except KeyError as exc:
             self.send_json({"error": str(exc)}, status=404)
@@ -872,8 +881,10 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             else:
                 self.send_error(404, "not found")
         except AuthorizationError as exc:
+            self.audit_access_denied(exc)
             self.send_json({"error": str(exc), "permission": exc.permission.value, "role": exc.role.value}, status=403)
         except PermissionError as exc:
+            self.audit_unauthorized_access(str(exc))
             self.send_json({"error": str(exc)}, status=401)
         except KeyError as exc:
             self.send_json({"error": str(exc)}, status=404)
@@ -897,8 +908,10 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 payload = self.read_json_body()
                 self.send_json(self.admin_update_user(user_id, payload))
         except AuthorizationError as exc:
+            self.audit_access_denied(exc)
             self.send_json({"error": str(exc), "permission": exc.permission.value, "role": exc.role.value}, status=403)
         except PermissionError as exc:
+            self.audit_unauthorized_access(str(exc))
             self.send_json({"error": str(exc)}, status=401)
         except KeyError as exc:
             self.send_json({"error": str(exc)}, status=404)
@@ -1304,6 +1317,36 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         if self.current_role() != Role.SUPER_ADMIN:
             raise AuthorizationError(Permission.USER_MANAGE, self.current_role())
 
+    def require_audit_log_view(self) -> None:
+        self.require_auth(Permission.AUDIT_LOG_VIEW)
+        if self.current_role() not in {Role.AUDITOR, Role.SECURITY_ADMIN, Role.SUPER_ADMIN}:
+            raise AuthorizationError(Permission.AUDIT_LOG_VIEW, self.current_role())
+
+    def audit_unauthorized_access(self, reason: str) -> None:
+        self.context.controller.audit.write(
+            "security.unauthorized_access",
+            actorUserId=self.current_session_user(),
+            resourceType="API",
+            resourceId=self.path,
+            ipAddress=self.client_ip(),
+            userAgent=str(self.headers.get("User-Agent") or ""),
+            result="FAILED",
+            reason=reason,
+        )
+
+    def audit_access_denied(self, exc: AuthorizationError) -> None:
+        self.context.controller.audit.write(
+            "security.permission_denied",
+            actorUserId=self.current_session_user(),
+            resourceType="API",
+            resourceId=self.path,
+            ipAddress=self.client_ip(),
+            userAgent=str(self.headers.get("User-Agent") or ""),
+            result="FAILED",
+            role=exc.role.value,
+            permission=exc.permission.value,
+        )
+
     def admin_departments(self) -> list[dict]:
         with self.context.user_directory_lock:
             return self.context.user_directory.departments()
@@ -1323,8 +1366,22 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             role=str(user.get("role") or ""),
             disabled=bool(user.get("disabled")),
             before=before or {},
+            beforeValue=before or {},
+            afterValue=user,
             result="SUCCESS",
         )
+        before_role = str((before or {}).get("role") or "")
+        after_role = str(user.get("role") or "")
+        if before is not None and before_role and before_role != after_role:
+            self.context.controller.audit.write(
+                "admin.role.changed",
+                actorUserId=self.current_session_user(),
+                resourceType="ROLE",
+                resourceId=str(user.get("id") or ""),
+                beforeValue={"role": before_role},
+                afterValue={"role": after_role},
+                result="SUCCESS",
+            )
 
     def admin_create_user(self, payload: dict) -> dict:
         with self.context.user_directory_lock:
@@ -1383,6 +1440,12 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         if isinstance(record, dict):
             return str(record.get("user") or "unknown")
         return "legacy-admin" if record else "unknown"
+
+    def audit_logs(self) -> list[dict]:
+        return read_audit_logs(self.context.config.audit_log_path)
+
+    def send_audit_logs_export(self) -> None:
+        self.send_download(audit_logs_to_csv(self.audit_logs()), "text/csv; charset=utf-8", "lockfix_audit_logs.csv")
 
     def summary(self) -> dict:
         config = self.context.config
