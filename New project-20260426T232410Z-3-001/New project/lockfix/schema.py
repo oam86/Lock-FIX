@@ -54,6 +54,24 @@ LOCKFIX_TABLE_SCHEMA: dict[str, tuple[str, ...]] = {
         "created_at",
         "updated_at",
     ),
+    "review_comments": (
+        "id",
+        "approval_request_id",
+        "department_review_id",
+        "author_user_id",
+        "comment",
+        "created_at",
+    ),
+    "notifications": (
+        "id",
+        "user_id",
+        "title",
+        "message",
+        "target_type",
+        "target_id",
+        "read_at",
+        "created_at",
+    ),
     "approval_decisions": ("id", "approval_request_id", "approver_user_id", "decision", "comment", "created_at"),
     "audit_logs": (
         "id",
@@ -165,6 +183,36 @@ def department_review_row(review: dict[str, Any]) -> dict[str, Any]:
             "comment": review.get("comment", ""),
             "created_at": review.get("created_at") or review.get("createdAt") or "",
             "updated_at": review.get("updated_at") or review.get("updatedAt") or "",
+        },
+    )
+
+
+def review_comment_row(comment: dict[str, Any]) -> dict[str, Any]:
+    return pick_schema_row(
+        "review_comments",
+        {
+            "id": comment.get("id", ""),
+            "approval_request_id": comment.get("approval_request_id") or comment.get("approvalRequestId") or "",
+            "department_review_id": comment.get("department_review_id") or comment.get("departmentReviewId") or "",
+            "author_user_id": comment.get("author_user_id") or comment.get("authorUserId") or "",
+            "comment": comment.get("comment", ""),
+            "created_at": comment.get("created_at") or comment.get("createdAt") or "",
+        },
+    )
+
+
+def notification_row(notification: dict[str, Any]) -> dict[str, Any]:
+    return pick_schema_row(
+        "notifications",
+        {
+            "id": notification.get("id", ""),
+            "user_id": notification.get("user_id") or notification.get("userId") or "",
+            "title": notification.get("title", ""),
+            "message": notification.get("message", ""),
+            "target_type": notification.get("target_type") or notification.get("targetType") or "",
+            "target_id": notification.get("target_id") or notification.get("targetId") or "",
+            "read_at": notification.get("read_at") or notification.get("readAt") or "",
+            "created_at": notification.get("created_at") or notification.get("createdAt") or "",
         },
     )
 

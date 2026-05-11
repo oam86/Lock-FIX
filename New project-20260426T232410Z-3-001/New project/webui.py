@@ -1453,6 +1453,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "requests": data["requests"],
             "decisions": data["decisions"],
             "departmentReviews": data.get("departmentReviews", []),
+            "reviewComments": data.get("reviewComments", []),
             "notifications": data.get("notifications", []),
             "expired": expired,
         }

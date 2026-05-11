@@ -27,6 +27,8 @@ from lockfix.schema import (
     audit_log_row,
     department_review_row,
     departments_row,
+    notification_row,
+    review_comment_row,
     load_schema_sql,
     role_permissions_rows,
     users_row,
@@ -232,6 +234,24 @@ class LockFixTests(unittest.TestCase):
                 "created_at",
                 "updated_at",
             ),
+            "review_comments": (
+                "id",
+                "approval_request_id",
+                "department_review_id",
+                "author_user_id",
+                "comment",
+                "created_at",
+            ),
+            "notifications": (
+                "id",
+                "user_id",
+                "title",
+                "message",
+                "target_type",
+                "target_id",
+                "read_at",
+                "created_at",
+            ),
             "approval_decisions": ("id", "approval_request_id", "approver_user_id", "decision", "comment", "created_at"),
             "audit_logs": (
                 "id",
@@ -314,6 +334,28 @@ class LockFixTests(unittest.TestCase):
                 "updatedAt": "u",
             }
         )
+        review_comment = review_comment_row(
+            {
+                "id": "comment1",
+                "approvalRequestId": "req1",
+                "departmentReviewId": "review1",
+                "authorUserId": "security-reviewer",
+                "comment": "checked",
+                "createdAt": "c",
+            }
+        )
+        notification = notification_row(
+            {
+                "id": "notice1",
+                "userId": "department:security",
+                "title": "Review required",
+                "message": "Security review required",
+                "targetType": "APPROVAL_REQUEST",
+                "targetId": "req1",
+                "readAt": "",
+                "createdAt": "c",
+            }
+        )
         audit_log = audit_log_row(
             {
                 "id": "log1",
@@ -339,6 +381,9 @@ class LockFixTests(unittest.TestCase):
         self.assertEqual("DISK", approval_request["target_resource_type"])
         self.assertIn("Security", approval_request["review_departments"])
         self.assertEqual("security", department_review["department_id"])
+        self.assertEqual("review1", review_comment["department_review_id"])
+        self.assertEqual("department:security", notification["user_id"])
+        self.assertEqual("APPROVAL_REQUEST", notification["target_type"])
         self.assertEqual("u2", approval_decision["approver_user_id"])
         self.assertEqual("127.0.0.1", audit_log["ip_address"])
 
@@ -488,6 +533,11 @@ class LockFixTests(unittest.TestCase):
         store.comment_department_review(request["id"], security_review["id"], "security-admin", Role.SECURITY_ADMIN, "logs look clean")
         store.mark_department_reviewed(request["id"], security_review["id"], "security-admin", Role.SECURITY_ADMIN, "security reviewed")
         store.mark_department_reviewed(request["id"], audit_review["id"], "auditor", Role.AUDITOR, "audit reviewed")
+        data = store.load()
+        self.assertEqual(3, len(data["reviewComments"]))
+        self.assertTrue(data["notifications"])
+        self.assertEqual("APPROVAL_REQUEST", data["notifications"][0]["targetType"])
+        self.assertEqual(f"department:{data['notifications'][0]['departmentId']}", data["notifications"][0]["userId"])
         first = store.decide(request["id"], "security-approver", Role.SECURITY_ADMIN, "APPROVED")
 
         self.assertEqual(first["request"]["status"], "PENDING")

@@ -223,7 +223,7 @@ let pendingUiSettings = { ...uiSettings };
 let memoryThresholdAlertActive = false;
 let sidebarCollapsed = false;
 let currentSession = { authenticated: false, user: "", role: "", permissions: [] };
-let latestApprovalsData = { policies: [], requests: [], decisions: [], departmentReviews: [], notifications: [] };
+let latestApprovalsData = { policies: [], requests: [], decisions: [], departmentReviews: [], reviewComments: [], notifications: [] };
 let activeApprovalTab = "approvalRequestBox";
 localStorage.setItem("lockfix.sidebarCollapsed", "false");
 
@@ -2421,7 +2421,13 @@ function approvalDecisionsFor(request, decisions = latestApprovalsData.decisions
 }
 
 function departmentReviewsFor(request, reviews = latestApprovalsData.departmentReviews) {
-  return (Array.isArray(reviews) ? reviews : []).filter((review) => review.approvalRequestId === request.id);
+  const comments = Array.isArray(latestApprovalsData.reviewComments) ? latestApprovalsData.reviewComments : [];
+  return (Array.isArray(reviews) ? reviews : [])
+    .filter((review) => review.approvalRequestId === request.id)
+    .map((review) => ({
+      ...review,
+      comments: comments.filter((comment) => comment.departmentReviewId === review.id),
+    }));
 }
 
 function approvalDecisionSummary(request, decisions = latestApprovalsData.decisions) {
@@ -2601,6 +2607,7 @@ function renderApprovals(data, errorMessage = "") {
     requests: Array.isArray(data?.requests) ? data.requests : [],
     decisions: Array.isArray(data?.decisions) ? data.decisions : [],
     departmentReviews: Array.isArray(data?.departmentReviews) ? data.departmentReviews : [],
+    reviewComments: Array.isArray(data?.reviewComments) ? data.reviewComments : [],
     notifications: Array.isArray(data?.notifications) ? data.notifications : [],
   };
   const tab = approvalTabDefinitions.find((item) => item.id === activeApprovalTab) || approvalTabDefinitions[0];

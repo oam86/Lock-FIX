@@ -70,6 +70,14 @@ PENDING -> BLOCKED
 
 Required department reviews must be REVIEWED before the final approval button is enabled. NEEDS_CHANGES sends the request back for rework, and BLOCKED can only be handled through Super Admin exception review. Every review comment, status change, and department notification is written to Audit Log.
 
+Collaboration tables:
+
+```text
+department_reviews(id, approval_request_id, department_id, reviewer_user_id, status, comment, created_at, updated_at)
+review_comments(id, approval_request_id, department_review_id, author_user_id, comment, created_at)
+notifications(id, user_id, title, message, target_type, target_id, read_at, created_at)
+```
+
 Department review APIs:
 
 ```text

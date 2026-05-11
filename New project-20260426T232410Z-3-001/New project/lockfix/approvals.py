@@ -161,6 +161,23 @@ class ApprovalStore:
         notifications = data.get("notifications")
         if not isinstance(notifications, list):
             notifications = []
+        review_comments = data.get("reviewComments")
+        if not isinstance(review_comments, list):
+            review_comments = []
+            for review in department_reviews:
+                legacy_comments = review.get("comments") if isinstance(review.get("comments"), list) else []
+                for comment in legacy_comments:
+                    review_comments.append(
+                        {
+                            "id": comment.get("id") or uuid.uuid4().hex,
+                            "approvalRequestId": review.get("approvalRequestId", ""),
+                            "departmentReviewId": review.get("id", ""),
+                            "authorUserId": comment.get("authorUserId") or comment.get("reviewerUserId") or "",
+                            "comment": comment.get("comment", ""),
+                            "createdAt": comment.get("createdAt") or review.get("updatedAt") or "",
+                            "status": comment.get("status") or review.get("status") or "",
+                        }
+                    )
         for request in requests:
             if not isinstance(request, dict):
                 continue
@@ -173,6 +190,7 @@ class ApprovalStore:
             "requests": requests,
             "decisions": decisions,
             "departmentReviews": department_reviews,
+            "reviewComments": review_comments,
             "notifications": notifications,
         }
 
@@ -220,12 +238,15 @@ class ApprovalStore:
             notifications.append(
                 {
                     "id": uuid.uuid4().hex,
+                    "userId": f"department:{department_id}",
+                    "title": f"{request.get('requestType')} department review required",
+                    "message": f"{request.get('requestType')} requires {department} department review before approval.",
+                    "targetType": "APPROVAL_REQUEST",
+                    "targetId": str(request.get("id") or ""),
+                    "readAt": "",
+                    "createdAt": timestamp,
                     "approvalRequestId": str(request.get("id") or ""),
                     "departmentId": department_id,
-                    "recipientType": "DEPARTMENT",
-                    "message": f"{request.get('requestType')} requires {department} department review before approval.",
-                    "createdAt": timestamp,
-                    "readAt": "",
                 }
             )
         return notifications
@@ -271,6 +292,7 @@ class ApprovalStore:
         record = asdict(request)
         data["requests"].append(record)
         data.setdefault("departmentReviews", []).extend(self.create_department_review_records(record, now))
+        data.setdefault("reviewComments", [])
         data.setdefault("notifications", []).extend(self.create_department_notifications(record, now))
         self.save(data)
         self.audit_event("approval.request.created", approval_request=record)
@@ -383,8 +405,13 @@ class ApprovalStore:
 
     def department_reviews_for(self, approval_request_id: str) -> list[dict[str, Any]]:
         data = self.load()
+        comments_by_review: dict[str, list[dict[str, Any]]] = {}
+        for comment in data.get("reviewComments", []):
+            if str(comment.get("approvalRequestId") or "") != str(approval_request_id):
+                continue
+            comments_by_review.setdefault(str(comment.get("departmentReviewId") or ""), []).append(dict(comment))
         return [
-            dict(review)
+            {**dict(review), "comments": comments_by_review.get(str(review.get("id") or ""), [])}
             for review in data.get("departmentReviews", [])
             if str(review.get("approvalRequestId") or "") == str(approval_request_id)
         ]
@@ -494,18 +521,16 @@ class ApprovalStore:
         if text:
             review["comment"] = text
         review["updatedAt"] = now
-        comments = review.get("comments")
-        if not isinstance(comments, list):
-            comments = []
-            review["comments"] = comments
         if text:
-            comments.append(
+            data.setdefault("reviewComments", []).append(
                 {
                     "id": uuid.uuid4().hex,
-                    "reviewerUserId": review["reviewerUserId"],
-                    "status": normalized_status,
+                    "approvalRequestId": str(approval_request_id),
+                    "departmentReviewId": str(review_id),
+                    "authorUserId": review["reviewerUserId"],
                     "comment": text,
                     "createdAt": now,
+                    "status": normalized_status,
                 }
             )
         request.setdefault("metadata", {})["departmentReviewStatus"] = self.department_review_status(request, data)
@@ -555,13 +580,15 @@ class ApprovalStore:
                 review["status"] = "REVIEWED"
                 review["comment"] = comment
                 review["updatedAt"] = now
-                review.setdefault("comments", []).append(
+                data.setdefault("reviewComments", []).append(
                     {
                         "id": uuid.uuid4().hex,
-                        "reviewerUserId": reviewer,
-                        "status": "REVIEWED",
+                        "approvalRequestId": str(request.get("id") or ""),
+                        "departmentReviewId": str(review.get("id") or ""),
+                        "authorUserId": reviewer,
                         "comment": comment,
                         "createdAt": now,
+                        "status": "REVIEWED",
                         "legacyReviewType": review_type,
                     }
                 )

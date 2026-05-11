@@ -61,6 +61,26 @@ CREATE TABLE IF NOT EXISTS department_reviews (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS review_comments (
+  id TEXT PRIMARY KEY,
+  approval_request_id TEXT NOT NULL REFERENCES approval_requests(id),
+  department_review_id TEXT NOT NULL REFERENCES department_reviews(id),
+  author_user_id TEXT NOT NULL REFERENCES users(id),
+  comment TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  message TEXT NOT NULL DEFAULT '',
+  target_type TEXT NOT NULL DEFAULT '',
+  target_id TEXT NOT NULL DEFAULT '',
+  read_at TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS approval_decisions (
   id TEXT PRIMARY KEY,
   approval_request_id TEXT NOT NULL REFERENCES approval_requests(id),
