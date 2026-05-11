@@ -200,13 +200,17 @@ class LockFixTests(unittest.TestCase):
             ),
         }
         schema_sql = load_schema_sql()
+        migration_sql = (Path.cwd() / "migrations" / "001_lockfix_rbac_approval_audit.sql").read_text(encoding="utf-8")
 
         self.assertEqual(expected, LOCKFIX_TABLE_SCHEMA)
         for table, fields in expected.items():
             self.assertIn(f"CREATE TABLE IF NOT EXISTS {table}", schema_sql)
+            self.assertIn(f"CREATE TABLE IF NOT EXISTS {table}", migration_sql)
             for field in fields:
                 self.assertIn(field, schema_sql)
+                self.assertIn(field, migration_sql)
         self.assertNotIn("audit_log_delete", schema_sql.lower())
+        self.assertNotIn("audit_log_delete", migration_sql.lower())
 
     def test_schema_row_mappers_preserve_snake_case_contract(self) -> None:
         policy = load_role_permissions(Path("config/rbac_policy.json"))
@@ -1300,6 +1304,15 @@ class LockFixTests(unittest.TestCase):
         self.assertIn('$props["dry_run"] = if ($OperationMode -eq "live") { "false" } else { "true" }', source)
         self.assertIn("Set-ObjectProperty -Object $config -Name dry_run -Value $effectiveDryRun", source)
         self.assertIn('"lockfix\\command.py"', source)
+
+    def test_readme_documents_rbac_approval_audit_automation(self) -> None:
+        source = (Path.cwd() / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("RBAC, Approval, and Audit Automation", source)
+        self.assertIn("migrations/001_lockfix_rbac_approval_audit.sql", source)
+        self.assertIn("The request creator cannot approve their own request.", source)
+        self.assertIn("Emergency unlock requires a reason, dual approval, and audit logging.", source)
+        self.assertIn("python -m unittest tests.test_lockfix", source)
 
     def test_installer_and_default_config_use_live_operation_mode(self) -> None:
         root = Path.cwd()

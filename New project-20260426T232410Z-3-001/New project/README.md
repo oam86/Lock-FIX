@@ -1,3 +1,75 @@
+## RBAC, Approval, and Audit Automation
+
+LOCK-FIX includes a permission and approval automation module for department-based administration.
+
+Implemented scope:
+
+- RBAC roles and permissions: `SUPER_ADMIN`, `SECURITY_ADMIN`, `BACKUP_OPERATOR`, `HARDWARE_ADMIN`, `AUDITOR`, `UI_DESIGNER`, `DEVELOPER`
+- Department and user management with disable-instead-of-delete behavior
+- Backend permission guards for protected Web UI APIs
+- Dynamic Web UI menu visibility based on session role and permissions
+- Approval request workflow for `DISK_ONLINE`, `DISK_OFFLINE`, `POLICY_CHANGE`, `EMERGENCY_UNLOCK`, `HARDWARE_POWER_ON`, `HARDWARE_POWER_OFF`
+- Dual approval policy for `DISK_ONLINE`, `POLICY_CHANGE`, `EMERGENCY_UNLOCK`, `HARDWARE_POWER_ON`, `HARDWARE_POWER_OFF`
+- Structured audit log model and CSV export
+- Approval Requests UI with My Requests, Pending Approval, Approved, Rejected, and Expired tabs
+- Regression tests for RBAC, approvals, user management, audit logs, schema contract, and Web UI guards
+
+Security rules enforced by code:
+
+- The request creator cannot approve their own request.
+- The same user cannot approve the same request twice.
+- Execution APIs are blocked until the required approval count is met.
+- Audit logs have no delete API, and `AUDIT_LOG_DELETE` is not defined.
+- Unauthorized access is returned as `403 Forbidden` and written to Audit Log.
+- Emergency unlock requires a reason, dual approval, and audit logging.
+- Super Admin still counts as only one approver and cannot complete dual approval alone.
+
+Database migration:
+
+```text
+migrations/001_lockfix_rbac_approval_audit.sql
+config/lockfix_schema.sql
+```
+
+Core backend files:
+
+```text
+lockfix/rbac.py
+lockfix/users.py
+lockfix/approvals.py
+lockfix/audit_log.py
+lockfix/schema.py
+lockfix/controller.py
+webui.py
+```
+
+Core frontend files:
+
+```text
+web/static/index.html
+web/static/app.js
+web/static/styles.css
+```
+
+Run Web UI:
+
+```powershell
+python .\webui.py --host 127.0.0.1 --port 8088 --config .\config\lockfix.example.json
+```
+
+Run tests:
+
+```powershell
+python -m unittest tests.test_lockfix
+```
+
+Remaining hardening items:
+
+- Replace the current JSON runtime stores with a selected production DB engine using the provided migration.
+- Add password hashing and login integration for managed users beyond the bootstrap/admin login flow.
+- Add operator-facing create/edit forms for all approval request types where the Web UI currently exposes read/approve flow first.
+- Add retention, archival, and integrity sealing for long-term audit log operation.
+
 # LOCK-FIX Windows Server Package
 
 Windows Server 전용 LOCK-FIX 설치 패키지 소스입니다.
