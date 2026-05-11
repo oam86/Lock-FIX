@@ -9,6 +9,7 @@ from typing import Any
 
 from .audit import AuditLogger
 from .rbac import Role, normalize_role
+from .users import department_id_for
 
 
 APPROVED = "APPROVED"
@@ -30,6 +31,25 @@ REPOSITORY_ONLINE_REVIEW_TYPES = {
     "SECURITY_LOG_REVIEW": Role.SECURITY_ADMIN.value,
     "HARDWARE_STATE_REVIEW": Role.HARDWARE_ADMIN.value,
     "MANAGER_REVIEW": Role.SUPER_ADMIN.value,
+}
+
+DEPARTMENT_REVIEW_ASSIGNMENTS = {
+    "DISK_ONLINE": ["Security", "Hardware Control"],
+    "DISK_OFFLINE": ["Backup Operation", "Security"],
+    "POLICY_CHANGE": ["Security", "Audit"],
+    "EMERGENCY_UNLOCK": ["Security", "Hardware Control", "Audit"],
+    "HARDWARE_POWER_ON": ["Hardware Control", "Security"],
+    "HARDWARE_POWER_OFF": ["Hardware Control", "Security"],
+}
+
+DEPARTMENT_REVIEW_STATUSES = {"PENDING", "IN_REVIEW", "REVIEWED", "NEEDS_CHANGES", "BLOCKED"}
+
+ROLE_REVIEW_DEPARTMENTS = {
+    Role.SECURITY_ADMIN.value: ["security"],
+    Role.BACKUP_OPERATOR.value: ["backup-operation"],
+    Role.HARDWARE_ADMIN.value: ["hardware-control"],
+    Role.AUDITOR.value: ["audit"],
+    Role.SUPER_ADMIN.value: ["management", "security", "backup-operation", "hardware-control", "audit"],
 }
 
 
@@ -54,6 +74,18 @@ class ApprovalDecision:
 
 
 @dataclass(frozen=True)
+class DepartmentReview:
+    id: str
+    approvalRequestId: str
+    departmentId: str
+    reviewerUserId: str
+    status: str
+    comment: str
+    createdAt: str
+    updatedAt: str
+
+
+@dataclass(frozen=True)
 class ApprovalRequest:
     id: str
     requestType: str
@@ -62,6 +94,7 @@ class ApprovalRequest:
     status: str
     requiredApprovals: int
     allowedApproverRoles: list[str]
+    reviewDepartments: list[str]
     expiresAt: str
     createdAt: str
     updatedAt: str
@@ -122,7 +155,26 @@ class ApprovalStore:
         decisions = data.get("decisions")
         if not isinstance(decisions, list):
             decisions = []
-        return {"policies": policies, "requests": requests, "decisions": decisions}
+        department_reviews = data.get("departmentReviews")
+        if not isinstance(department_reviews, list):
+            department_reviews = []
+        notifications = data.get("notifications")
+        if not isinstance(notifications, list):
+            notifications = []
+        for request in requests:
+            if not isinstance(request, dict):
+                continue
+            request_type = str(request.get("requestType") or "").upper()
+            departments = request.get("reviewDepartments")
+            if not isinstance(departments, list):
+                request["reviewDepartments"] = self.review_departments_for(request_type)
+        return {
+            "policies": policies,
+            "requests": requests,
+            "decisions": decisions,
+            "departmentReviews": department_reviews,
+            "notifications": notifications,
+        }
 
     def save(self, data: dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -135,6 +187,48 @@ class ApprovalStore:
             if str(policy.get("requestType") or "").upper() == wanted:
                 return dict(policy)
         raise KeyError(f"approval policy not found: {request_type}")
+
+    def review_departments_for(self, request_type: str) -> list[str]:
+        return list(DEPARTMENT_REVIEW_ASSIGNMENTS.get(str(request_type or "").strip().upper(), []))
+
+    def create_department_review_records(self, request: dict[str, Any], now: datetime | None = None) -> list[dict[str, Any]]:
+        timestamp = iso(now or utc_now())
+        records: list[dict[str, Any]] = []
+        for department in request.get("reviewDepartments") or []:
+            department_id = department_id_for(str(department or ""))
+            records.append(
+                asdict(
+                    DepartmentReview(
+                        id=uuid.uuid4().hex,
+                        approvalRequestId=str(request.get("id") or ""),
+                        departmentId=department_id,
+                        reviewerUserId="",
+                        status="PENDING",
+                        comment="",
+                        createdAt=timestamp,
+                        updatedAt=timestamp,
+                    )
+                )
+            )
+        return records
+
+    def create_department_notifications(self, request: dict[str, Any], now: datetime | None = None) -> list[dict[str, Any]]:
+        timestamp = iso(now or utc_now())
+        notifications: list[dict[str, Any]] = []
+        for department in request.get("reviewDepartments") or []:
+            department_id = department_id_for(str(department or ""))
+            notifications.append(
+                {
+                    "id": uuid.uuid4().hex,
+                    "approvalRequestId": str(request.get("id") or ""),
+                    "departmentId": department_id,
+                    "recipientType": "DEPARTMENT",
+                    "message": f"{request.get('requestType')} requires {department} department review before approval.",
+                    "createdAt": timestamp,
+                    "readAt": "",
+                }
+            )
+        return notifications
 
     def create_request(
         self,
@@ -159,6 +253,7 @@ class ApprovalStore:
             )
             raise ValueError("reason is required for EMERGENCY_UNLOCK")
         now = utc_now()
+        review_departments = self.review_departments_for(normalized_type)
         request = ApprovalRequest(
             id=uuid.uuid4().hex,
             requestType=normalized_type,
@@ -167,6 +262,7 @@ class ApprovalStore:
             status=PENDING,
             requiredApprovals=max(1, int(policy.get("requiredApprovals") or 1)),
             allowedApproverRoles=list(policy.get("allowedApproverRoles") or []),
+            reviewDepartments=review_departments,
             expiresAt=iso(now + timedelta(minutes=max(1, int(policy.get("expiresInMinutes") or 30)))),
             createdAt=iso(now),
             updatedAt=iso(now),
@@ -174,8 +270,22 @@ class ApprovalStore:
         )
         record = asdict(request)
         data["requests"].append(record)
+        data.setdefault("departmentReviews", []).extend(self.create_department_review_records(record, now))
+        data.setdefault("notifications", []).extend(self.create_department_notifications(record, now))
         self.save(data)
         self.audit_event("approval.request.created", approval_request=record)
+        if review_departments:
+            self.audit_event(
+                "department.review.assigned",
+                approval_request=record,
+                reviewDepartments=review_departments,
+            )
+            self.audit_event(
+                "department.review.notification.created",
+                approvalRequestId=record["id"],
+                reviewDepartments=review_departments,
+                notifications=[item for item in data["notifications"] if item.get("approvalRequestId") == record["id"]],
+            )
         if normalized_type == "DISK_ONLINE":
             self.audit_event(
                 "approval.notification.sent",
@@ -250,6 +360,7 @@ class ApprovalStore:
             "createdAt": iso(utc_now()),
         }
         reviews[normalized_type] = review
+        self.sync_legacy_department_review(data, request, normalized_type, reviewer, text, role)
         metadata["workflowStatus"] = self.repository_online_workflow_status(request)
         request["updatedAt"] = review["createdAt"]
         self.save(data)
@@ -269,6 +380,193 @@ class ApprovalStore:
                 message="Repository Online request is ready for first and second approval.",
             )
         return {"request": dict(request), "review": review}
+
+    def department_reviews_for(self, approval_request_id: str) -> list[dict[str, Any]]:
+        data = self.load()
+        return [
+            dict(review)
+            for review in data.get("departmentReviews", [])
+            if str(review.get("approvalRequestId") or "") == str(approval_request_id)
+        ]
+
+    def comment_department_review(
+        self,
+        approval_request_id: str,
+        review_id: str,
+        reviewer_user_id: str,
+        reviewer_role: Role | str,
+        comment: str,
+    ) -> dict[str, Any]:
+        return self.update_department_review(
+            approval_request_id,
+            review_id,
+            reviewer_user_id,
+            reviewer_role,
+            "IN_REVIEW",
+            comment,
+            "department.review.comment.created",
+        )
+
+    def mark_department_reviewed(
+        self,
+        approval_request_id: str,
+        review_id: str,
+        reviewer_user_id: str,
+        reviewer_role: Role | str,
+        comment: str = "",
+    ) -> dict[str, Any]:
+        return self.update_department_review(
+            approval_request_id,
+            review_id,
+            reviewer_user_id,
+            reviewer_role,
+            "REVIEWED",
+            comment,
+            "department.review.marked_reviewed",
+        )
+
+    def mark_department_needs_changes(
+        self,
+        approval_request_id: str,
+        review_id: str,
+        reviewer_user_id: str,
+        reviewer_role: Role | str,
+        comment: str,
+    ) -> dict[str, Any]:
+        return self.update_department_review(
+            approval_request_id,
+            review_id,
+            reviewer_user_id,
+            reviewer_role,
+            "NEEDS_CHANGES",
+            comment,
+            "department.review.needs_changes",
+        )
+
+    def block_department_review(
+        self,
+        approval_request_id: str,
+        review_id: str,
+        reviewer_user_id: str,
+        reviewer_role: Role | str,
+        comment: str,
+    ) -> dict[str, Any]:
+        return self.update_department_review(
+            approval_request_id,
+            review_id,
+            reviewer_user_id,
+            reviewer_role,
+            "BLOCKED",
+            comment,
+            "department.review.blocked",
+        )
+
+    def update_department_review(
+        self,
+        approval_request_id: str,
+        review_id: str,
+        reviewer_user_id: str,
+        reviewer_role: Role | str,
+        status: str,
+        comment: str,
+        event: str,
+    ) -> dict[str, Any]:
+        data = self.load()
+        request = self.find_request(data, approval_request_id)
+        self.expire_request_if_needed(data, request)
+        if request.get("status") != PENDING:
+            self.save(data)
+            raise PermissionError(f"approval request is not pending: {request.get('status')}")
+        review = self.find_department_review(data, approval_request_id, review_id)
+        role = normalize_role(reviewer_role)
+        if review.get("status") == "BLOCKED" and role != Role.SUPER_ADMIN:
+            raise PermissionError("blocked department review requires Super Admin exception review")
+        self.require_department_reviewer(review, reviewer_user_id, role)
+        normalized_status = str(status or "").strip().upper()
+        if normalized_status not in DEPARTMENT_REVIEW_STATUSES:
+            raise ValueError("invalid department review status")
+        text = str(comment or "").strip()
+        if normalized_status in {"IN_REVIEW", "NEEDS_CHANGES", "BLOCKED"} and not text:
+            raise ValueError("comment is required")
+        now = iso(utc_now())
+        review["reviewerUserId"] = str(reviewer_user_id or "").strip()
+        review["status"] = normalized_status
+        if text:
+            review["comment"] = text
+        review["updatedAt"] = now
+        comments = review.get("comments")
+        if not isinstance(comments, list):
+            comments = []
+            review["comments"] = comments
+        if text:
+            comments.append(
+                {
+                    "id": uuid.uuid4().hex,
+                    "reviewerUserId": review["reviewerUserId"],
+                    "status": normalized_status,
+                    "comment": text,
+                    "createdAt": now,
+                }
+            )
+        request.setdefault("metadata", {})["departmentReviewStatus"] = self.department_review_status(request, data)
+        request["updatedAt"] = now
+        self.save(data)
+        self.audit_event(event, approval_request=request, departmentReview=review, comment=text)
+        return {"request": dict(request), "review": dict(review), "reviews": self.department_reviews_for(approval_request_id)}
+
+    def find_department_review(self, data: dict[str, Any], approval_request_id: str, review_id: str) -> dict[str, Any]:
+        for review in data.get("departmentReviews", []):
+            if (
+                str(review.get("approvalRequestId") or "") == str(approval_request_id)
+                and str(review.get("id") or "") == str(review_id)
+            ):
+                return review
+        raise KeyError(f"department review not found: {review_id}")
+
+    def require_department_reviewer(self, review: dict[str, Any], reviewer_user_id: str, reviewer_role: Role) -> None:
+        reviewer = str(reviewer_user_id or "").strip()
+        if not reviewer:
+            raise ValueError("reviewerUserId is required")
+        department_id = str(review.get("departmentId") or "")
+        allowed = ROLE_REVIEW_DEPARTMENTS.get(reviewer_role.value, [])
+        if department_id not in allowed:
+            raise PermissionError(f"reviewer role is not assigned to department: {department_id}")
+
+    def sync_legacy_department_review(
+        self,
+        data: dict[str, Any],
+        request: dict[str, Any],
+        review_type: str,
+        reviewer: str,
+        comment: str,
+        role: Role,
+    ) -> None:
+        department_by_review_type = {
+            "SECURITY_LOG_REVIEW": "security",
+            "HARDWARE_STATE_REVIEW": "hardware-control",
+        }
+        department_id = department_by_review_type.get(review_type)
+        if not department_id:
+            return
+        for review in data.get("departmentReviews", []):
+            if review.get("approvalRequestId") == request.get("id") and review.get("departmentId") == department_id:
+                now = iso(utc_now())
+                review["reviewerUserId"] = reviewer
+                review["status"] = "REVIEWED"
+                review["comment"] = comment
+                review["updatedAt"] = now
+                review.setdefault("comments", []).append(
+                    {
+                        "id": uuid.uuid4().hex,
+                        "reviewerUserId": reviewer,
+                        "status": "REVIEWED",
+                        "comment": comment,
+                        "createdAt": now,
+                        "legacyReviewType": review_type,
+                    }
+                )
+                self.audit_event("department.review.marked_reviewed", approval_request=request, departmentReview=review)
+                break
 
     def decide(
         self,
@@ -300,6 +598,8 @@ class ApprovalStore:
         normalized_decision = str(decision or "").strip().upper()
         if normalized_decision not in {APPROVED, REJECTED}:
             raise ValueError("decision must be APPROVED or REJECTED")
+        if normalized_decision == APPROVED:
+            self.require_department_reviews_completed(data, request, role)
         if str(request.get("requestType") or "").upper() == "DISK_ONLINE" and normalized_decision == APPROVED:
             self.require_repository_online_reviews(request)
             self.require_repository_online_approval_order(data, request, role)
@@ -329,6 +629,38 @@ class ApprovalStore:
         if request["status"] == REJECTED:
             self.audit_event("approval.request.rejected", approval_request=request)
         return {"request": dict(request), "decision": decision_dict}
+
+    def department_review_status(self, request: dict[str, Any], data: dict[str, Any] | None = None) -> str:
+        reviews = [
+            review
+            for review in (data or self.load()).get("departmentReviews", [])
+            if str(review.get("approvalRequestId") or "") == str(request.get("id") or "")
+        ]
+        if not reviews:
+            return "NOT_REQUIRED"
+        statuses = {str(review.get("status") or "PENDING").upper() for review in reviews}
+        if "BLOCKED" in statuses:
+            return "BLOCKED"
+        if "NEEDS_CHANGES" in statuses:
+            return "NEEDS_CHANGES"
+        if statuses == {"REVIEWED"}:
+            return "REVIEWED"
+        if "IN_REVIEW" in statuses:
+            return "IN_REVIEW"
+        return "PENDING"
+
+    def require_department_reviews_completed(self, data: dict[str, Any], request: dict[str, Any], approver_role: Role) -> None:
+        status = self.department_review_status(request, data)
+        if status == "NOT_REQUIRED":
+            return
+        if status == "BLOCKED":
+            if approver_role != Role.SUPER_ADMIN:
+                raise PermissionError("blocked department review requires Super Admin exception review")
+            return
+        if status == "NEEDS_CHANGES":
+            raise PermissionError("department review needs changes before approval")
+        if status != "REVIEWED":
+            raise PermissionError("department review required before approval")
 
     def require_repository_online_reviews(self, request: dict[str, Any]) -> None:
         reviews = (request.get("metadata") or {}).get("reviews")

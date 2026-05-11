@@ -51,6 +51,35 @@ Collaboration workflow menu:
 └─ 감사 기록 - 전체 협의·승인·실행 로그
 ```
 
+Department collaboration workflow:
+
+```text
+ApprovalRequest.reviewDepartments
+├─ DISK_ONLINE: Security, Hardware Control
+├─ DISK_OFFLINE: Backup Operation, Security
+├─ POLICY_CHANGE: Security, Audit
+├─ EMERGENCY_UNLOCK: Security, Hardware Control, Audit
+├─ HARDWARE_POWER_ON: Hardware Control, Security
+└─ HARDWARE_POWER_OFF: Hardware Control, Security
+
+DepartmentReview statuses:
+PENDING -> IN_REVIEW -> REVIEWED
+PENDING -> NEEDS_CHANGES
+PENDING -> BLOCKED
+```
+
+Required department reviews must be REVIEWED before the final approval button is enabled. NEEDS_CHANGES sends the request back for rework, and BLOCKED can only be handled through Super Admin exception review. Every review comment, status change, and department notification is written to Audit Log.
+
+Department review APIs:
+
+```text
+GET /api/approval-requests/:id/reviews
+POST /api/approval-requests/:id/reviews/:reviewId/comment
+POST /api/approval-requests/:id/reviews/:reviewId/mark-reviewed
+POST /api/approval-requests/:id/reviews/:reviewId/needs-changes
+POST /api/approval-requests/:id/reviews/:reviewId/block
+```
+
 Database migration:
 
 ```text

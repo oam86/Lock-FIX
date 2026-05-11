@@ -25,6 +25,7 @@ from lockfix.schema import (
     approval_policy_row,
     approval_request_row,
     audit_log_row,
+    department_review_row,
     departments_row,
     load_schema_sql,
     role_permissions_rows,
@@ -78,6 +79,20 @@ class LockFixTests(unittest.TestCase):
     def approve_operation(self, controller: LockFixController, request_type: str, slot_id: str = "BAY-01") -> dict:
         metadata = {"reason": "unit test emergency unlock"} if request_type == "EMERGENCY_UNLOCK" else {}
         request = controller.approvals.create_request(request_type, "requester", target_id=slot_id, metadata=metadata)
+        for review in controller.approvals.department_reviews_for(request["id"]):
+            role = {
+                "security": Role.SECURITY_ADMIN,
+                "backup-operation": Role.BACKUP_OPERATOR,
+                "hardware-control": Role.HARDWARE_ADMIN,
+                "audit": Role.AUDITOR,
+            }.get(review["departmentId"], Role.SUPER_ADMIN)
+            controller.approvals.mark_department_reviewed(
+                request["id"],
+                review["id"],
+                f"{review['departmentId']}-reviewer",
+                role,
+                "department review completed",
+            )
         required = int(request["requiredApprovals"])
         if request_type == "DISK_ONLINE":
             controller.approvals.review_request(request["id"], "security-reviewer", Role.SECURITY_ADMIN, "SECURITY_LOG_REVIEW", "isolation logs reviewed")
@@ -94,6 +109,22 @@ class LockFixTests(unittest.TestCase):
         for approver_id, role in approvers[:required]:
             result = controller.approvals.decide(request["id"], approver_id, role, "APPROVED")
         return result["request"]
+
+    def complete_department_reviews(self, store: ApprovalStore, request: dict) -> None:
+        for review in store.department_reviews_for(request["id"]):
+            role = {
+                "security": Role.SECURITY_ADMIN,
+                "backup-operation": Role.BACKUP_OPERATOR,
+                "hardware-control": Role.HARDWARE_ADMIN,
+                "audit": Role.AUDITOR,
+            }.get(review["departmentId"], Role.SUPER_ADMIN)
+            store.mark_department_reviewed(
+                request["id"],
+                review["id"],
+                f"{review['departmentId']}-reviewer",
+                role,
+                "department review completed",
+            )
 
     def test_compute_uid_is_stable(self) -> None:
         self.assertEqual(
@@ -178,6 +209,7 @@ class LockFixTests(unittest.TestCase):
                 "target_resource_type",
                 "target_resource_id",
                 "reason",
+                "review_departments",
                 "status",
                 "created_at",
                 "updated_at",
@@ -189,6 +221,16 @@ class LockFixTests(unittest.TestCase):
                 "allowed_approver_roles",
                 "expires_in_minutes",
                 "enabled",
+            ),
+            "department_reviews": (
+                "id",
+                "approval_request_id",
+                "department_id",
+                "reviewer_user_id",
+                "status",
+                "comment",
+                "created_at",
+                "updated_at",
             ),
             "approval_decisions": ("id", "approval_request_id", "approver_user_id", "decision", "comment", "created_at"),
             "audit_logs": (
@@ -253,11 +295,24 @@ class LockFixTests(unittest.TestCase):
                 "status": "PENDING",
                 "createdAt": "c",
                 "updatedAt": "u",
+                "reviewDepartments": ["Security", "Hardware Control"],
                 "metadata": {"targetResourceType": "DISK", "reason": "maintenance"},
             }
         )
         approval_decision = approval_decision_row(
             {"id": "dec1", "approvalRequestId": "req1", "approverUserId": "u2", "decision": "APPROVED", "createdAt": "c"}
+        )
+        department_review = department_review_row(
+            {
+                "id": "review1",
+                "approvalRequestId": "req1",
+                "departmentId": "security",
+                "reviewerUserId": "security-reviewer",
+                "status": "REVIEWED",
+                "comment": "checked",
+                "createdAt": "c",
+                "updatedAt": "u",
+            }
         )
         audit_log = audit_log_row(
             {
@@ -282,6 +337,8 @@ class LockFixTests(unittest.TestCase):
         self.assertEqual("DISK_ONLINE", approval_policy["request_type"])
         self.assertEqual("u1", approval_request["requested_by_user_id"])
         self.assertEqual("DISK", approval_request["target_resource_type"])
+        self.assertIn("Security", approval_request["review_departments"])
+        self.assertEqual("security", department_review["department_id"])
         self.assertEqual("u2", approval_decision["approver_user_id"])
         self.assertEqual("127.0.0.1", audit_log["ip_address"])
 
@@ -415,6 +472,49 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("approval.notification.sent", audit_text)
         self.assertIn("approval.review.created", audit_text)
 
+    def test_department_reviews_are_assigned_and_gate_final_approval(self) -> None:
+        tmp_path = self.make_workspace()
+        store = ApprovalStore(tmp_path / "approvals.json", AuditLogger(tmp_path / "audit.jsonl"))
+        request = store.create_request("POLICY_CHANGE", requester_user_id="developer", target_id="rbac-policy")
+        reviews = store.department_reviews_for(request["id"])
+
+        self.assertEqual(["Security", "Audit"], request["reviewDepartments"])
+        self.assertEqual({"security", "audit"}, {review["departmentId"] for review in reviews})
+        with self.assertRaisesRegex(PermissionError, "department review required"):
+            store.decide(request["id"], "security-admin", Role.SECURITY_ADMIN, "APPROVED")
+
+        security_review = next(review for review in reviews if review["departmentId"] == "security")
+        audit_review = next(review for review in reviews if review["departmentId"] == "audit")
+        store.comment_department_review(request["id"], security_review["id"], "security-admin", Role.SECURITY_ADMIN, "logs look clean")
+        store.mark_department_reviewed(request["id"], security_review["id"], "security-admin", Role.SECURITY_ADMIN, "security reviewed")
+        store.mark_department_reviewed(request["id"], audit_review["id"], "auditor", Role.AUDITOR, "audit reviewed")
+        first = store.decide(request["id"], "security-approver", Role.SECURITY_ADMIN, "APPROVED")
+
+        self.assertEqual(first["request"]["status"], "PENDING")
+        audit_text = (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
+        self.assertIn("department.review.assigned", audit_text)
+        self.assertIn("department.review.comment.created", audit_text)
+        self.assertIn("department.review.marked_reviewed", audit_text)
+
+    def test_department_review_needs_changes_and_blocked_rules(self) -> None:
+        tmp_path = self.make_workspace()
+        store = ApprovalStore(tmp_path / "approvals.json", AuditLogger(tmp_path / "audit.jsonl"))
+        request = store.create_request("DISK_OFFLINE", requester_user_id="backup-operator", target_id="BAY-01")
+        reviews = store.department_reviews_for(request["id"])
+        backup_review = next(review for review in reviews if review["departmentId"] == "backup-operation")
+        security_review = next(review for review in reviews if review["departmentId"] == "security")
+
+        store.mark_department_needs_changes(request["id"], backup_review["id"], "backup-reviewer", Role.BACKUP_OPERATOR, "add isolation evidence")
+        with self.assertRaisesRegex(PermissionError, "needs changes"):
+            store.decide(request["id"], "security-admin", Role.SECURITY_ADMIN, "APPROVED")
+
+        store.block_department_review(request["id"], security_review["id"], "security-admin", Role.SECURITY_ADMIN, "security incident open")
+        with self.assertRaisesRegex(PermissionError, "Super Admin"):
+            store.mark_department_reviewed(request["id"], security_review["id"], "security-admin", Role.SECURITY_ADMIN, "try to override")
+        override = store.mark_department_reviewed(request["id"], security_review["id"], "super-admin", Role.SUPER_ADMIN, "exception review started")
+
+        self.assertEqual(override["review"]["status"], "REVIEWED")
+
     def test_approval_blocks_duplicate_and_creator_self_approval(self) -> None:
         tmp_path = self.make_workspace()
         store = ApprovalStore(tmp_path / "approvals.json", AuditLogger(tmp_path / "audit.jsonl"))
@@ -423,6 +523,7 @@ class LockFixTests(unittest.TestCase):
         with self.assertRaisesRegex(PermissionError, "creator cannot approve"):
             store.decide(request["id"], "creator", Role.SECURITY_ADMIN, "APPROVED")
 
+        self.complete_department_reviews(store, request)
         store.decide(request["id"], "approver-a", Role.SECURITY_ADMIN, "APPROVED")
         with self.assertRaisesRegex(PermissionError, "duplicate"):
             store.decide(request["id"], "approver-a", Role.SECURITY_ADMIN, "APPROVED")
@@ -440,6 +541,7 @@ class LockFixTests(unittest.TestCase):
             target_id="BAY-01",
             metadata={"reason": "recover locked backup volume"},
         )
+        self.complete_department_reviews(store, request)
         first = store.decide(request["id"], "approver-a", Role.SUPER_ADMIN, "APPROVED")
         second = store.decide(request["id"], "approver-b", Role.SECURITY_ADMIN, "APPROVED")
 
@@ -1349,6 +1451,10 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("Emergency unlock requires a reason, dual approval, and audit logging.", source)
         self.assertIn("Repository Online workflow", source)
         self.assertIn("Collaboration workflow menu", source)
+        self.assertIn("Department collaboration workflow", source)
+        self.assertIn("ApprovalRequest.reviewDepartments", source)
+        self.assertIn("DepartmentReview statuses", source)
+        self.assertIn("GET /api/approval-requests/:id/reviews", source)
         self.assertIn("협업/승인 워크플로우", source)
         for label in ["승인 요청함", "부서 검토함", "내 승인 대기", "협의 의견", "보완 요청", "완료 이력", "감사 기록"]:
             self.assertIn(label, source)
@@ -1441,6 +1547,8 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("window.addEventListener(\"hashchange\"", app)
         self.assertIn('"permissions": self.current_permissions()', server)
         self.assertIn("permissions_for_role", server)
+        self.assertIn("/api/approval-requests/([^/]+)/reviews", server)
+        self.assertIn("comment|mark-reviewed|needs-changes|block", server)
 
     def test_web_ui_approval_tabs_and_button_visibility_are_testable(self) -> None:
         root = Path.cwd()
@@ -1453,6 +1561,20 @@ class LockFixTests(unittest.TestCase):
 
         self.assertIn("approvalDecisionSummary", app)
         self.assertIn("repositoryOnlineWorkflowSummary", app)
+        self.assertIn("departmentReviewsFor", app)
+        self.assertIn("departmentReviewStatus", app)
+        self.assertIn("departmentReviewSummary", app)
+        self.assertIn("pendingDepartmentReviewsForSession", app)
+        self.assertIn("data-department-review-id", app)
+        self.assertIn("data-review-action", app)
+        self.assertIn("/api/approval-requests/", app)
+        self.assertIn("최종 승인 가능 여부", html + app)
+        self.assertIn("부서 검토 대기", html)
+        self.assertIn("내 검토함", html)
+        self.assertIn("협의 댓글", html)
+        self.assertIn("검토 완료 상태", html)
+        self.assertIn("보완 요청 상태", html)
+        self.assertIn("approval-review-state", css)
         self.assertIn("workflowHistoryItems", app)
         self.assertIn("renderWorkflowHistory", app)
         self.assertIn("canShowReviewButton", app)

@@ -31,6 +31,7 @@ LOCKFIX_TABLE_SCHEMA: dict[str, tuple[str, ...]] = {
         "target_resource_type",
         "target_resource_id",
         "reason",
+        "review_departments",
         "status",
         "created_at",
         "updated_at",
@@ -42,6 +43,16 @@ LOCKFIX_TABLE_SCHEMA: dict[str, tuple[str, ...]] = {
         "allowed_approver_roles",
         "expires_in_minutes",
         "enabled",
+    ),
+    "department_reviews": (
+        "id",
+        "approval_request_id",
+        "department_id",
+        "reviewer_user_id",
+        "status",
+        "comment",
+        "created_at",
+        "updated_at",
     ),
     "approval_decisions": ("id", "approval_request_id", "approver_user_id", "decision", "comment", "created_at"),
     "audit_logs": (
@@ -131,9 +142,29 @@ def approval_request_row(request: dict[str, Any]) -> dict[str, Any]:
             "target_resource_type": request.get("target_resource_type") or metadata.get("targetResourceType") or "",
             "target_resource_id": request.get("target_resource_id") or request.get("targetId") or "",
             "reason": request.get("reason") or metadata.get("reason") or "",
+            "review_departments": json.dumps(
+                request.get("review_departments") or request.get("reviewDepartments") or [],
+                ensure_ascii=False,
+            ),
             "status": request.get("status", ""),
             "created_at": request.get("created_at") or request.get("createdAt") or "",
             "updated_at": request.get("updated_at") or request.get("updatedAt") or "",
+        },
+    )
+
+
+def department_review_row(review: dict[str, Any]) -> dict[str, Any]:
+    return pick_schema_row(
+        "department_reviews",
+        {
+            "id": review.get("id", ""),
+            "approval_request_id": review.get("approval_request_id") or review.get("approvalRequestId") or "",
+            "department_id": review.get("department_id") or review.get("departmentId") or "",
+            "reviewer_user_id": review.get("reviewer_user_id") or review.get("reviewerUserId") or "",
+            "status": review.get("status", ""),
+            "comment": review.get("comment", ""),
+            "created_at": review.get("created_at") or review.get("createdAt") or "",
+            "updated_at": review.get("updated_at") or review.get("updatedAt") or "",
         },
     )
 
@@ -183,4 +214,3 @@ def json_text(value: Any) -> str:
 
 def stable_id(*parts: str) -> str:
     return hashlib.sha256(":".join(parts).encode("utf-8")).hexdigest()[:32]
-

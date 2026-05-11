@@ -8126,6 +8126,14 @@ body,
   overflow-wrap: anywhere;
 }
 
+.approval-review-state {
+  display: inline-block;
+  margin-top: 6px;
+  color: #60758a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .access-denied-view {
   min-height: 360px;
 }

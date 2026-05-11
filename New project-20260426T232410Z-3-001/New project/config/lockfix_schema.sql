@@ -41,7 +41,19 @@ CREATE TABLE IF NOT EXISTS approval_requests (
   target_resource_type TEXT NOT NULL DEFAULT '',
   target_resource_id TEXT NOT NULL DEFAULT '',
   reason TEXT NOT NULL DEFAULT '',
+  review_departments TEXT NOT NULL DEFAULT '[]',
   status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS department_reviews (
+  id TEXT PRIMARY KEY,
+  approval_request_id TEXT NOT NULL REFERENCES approval_requests(id),
+  department_id TEXT NOT NULL REFERENCES departments(id),
+  reviewer_user_id TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL,
+  comment TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -69,4 +81,3 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   after_value TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL
 );
-

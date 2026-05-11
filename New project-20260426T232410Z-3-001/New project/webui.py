@@ -595,6 +595,11 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 self.require_auth(Permission.AIRGAP_POLICY_VIEW)
                 self.send_json(self.approval_summary())
             else:
+                review_match = re.fullmatch(r"/api/approval-requests/([^/]+)/reviews", parsed.path)
+                if review_match:
+                    self.require_auth(Permission.AIRGAP_POLICY_VIEW)
+                    self.send_json({"items": self.approval_department_reviews(review_match.group(1))})
+                    return
                 self.send_error(404, "not found")
         except AuthorizationError as exc:
             self.audit_access_denied(exc)
@@ -891,6 +896,22 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 approval_request_id = parsed.path.split("/")[3]
                 self.send_json(self.create_approval_review(approval_request_id, payload))
             else:
+                review_match = re.fullmatch(
+                    r"/api/approval-requests/([^/]+)/reviews/([^/]+)/(comment|mark-reviewed|needs-changes|block)",
+                    parsed.path,
+                )
+                if review_match:
+                    self.require_auth(Permission.AIRGAP_POLICY_VIEW)
+                    payload = self.read_json_body()
+                    self.send_json(
+                        self.update_department_review(
+                            review_match.group(1),
+                            review_match.group(2),
+                            review_match.group(3),
+                            payload,
+                        )
+                    )
+                    return
                 self.send_error(404, "not found")
         except AuthorizationError as exc:
             self.audit_access_denied(exc)
@@ -1431,6 +1452,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "policies": data["policies"],
             "requests": data["requests"],
             "decisions": data["decisions"],
+            "departmentReviews": data.get("departmentReviews", []),
+            "notifications": data.get("notifications", []),
             "expired": expired,
         }
 
@@ -1461,6 +1484,25 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             review_type=str(payload.get("reviewType") or ""),
             comment=str(payload.get("comment") or ""),
         )
+        return {"ok": True, **result}
+
+    def approval_department_reviews(self, approval_request_id: str) -> list[dict]:
+        return self.context.controller.approvals.department_reviews_for(approval_request_id)
+
+    def update_department_review(self, approval_request_id: str, review_id: str, action: str, payload: dict) -> dict:
+        store = self.context.controller.approvals
+        reviewer = str(payload.get("reviewerUserId") or self.current_session_user())
+        comment = str(payload.get("comment") or "")
+        if action == "comment":
+            result = store.comment_department_review(approval_request_id, review_id, reviewer, self.current_role(), comment)
+        elif action == "mark-reviewed":
+            result = store.mark_department_reviewed(approval_request_id, review_id, reviewer, self.current_role(), comment)
+        elif action == "needs-changes":
+            result = store.mark_department_needs_changes(approval_request_id, review_id, reviewer, self.current_role(), comment)
+        elif action == "block":
+            result = store.block_department_review(approval_request_id, review_id, reviewer, self.current_role(), comment)
+        else:
+            raise ValueError("unsupported department review action")
         return {"ok": True, **result}
 
     def current_session_user(self) -> str:

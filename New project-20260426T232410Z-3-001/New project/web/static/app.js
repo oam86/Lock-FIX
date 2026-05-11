@@ -223,7 +223,7 @@ let pendingUiSettings = { ...uiSettings };
 let memoryThresholdAlertActive = false;
 let sidebarCollapsed = false;
 let currentSession = { authenticated: false, user: "", role: "", permissions: [] };
-let latestApprovalsData = { policies: [], requests: [], decisions: [] };
+let latestApprovalsData = { policies: [], requests: [], decisions: [], departmentReviews: [], notifications: [] };
 let activeApprovalTab = "approvalRequestBox";
 localStorage.setItem("lockfix.sidebarCollapsed", "false");
 
@@ -1109,6 +1109,9 @@ async function requestJson(url, options = {}) {
   const payload = await response.json();
   if (!response.ok) {
     const message = payload.error || (response.status === 401 ? "login session expired" : "request failed");
+    if (response.status === 401 && url !== "/api/session") {
+      setAuthenticated(false);
+    }
     const error = new Error(message);
     error.status = response.status;
     throw error;
@@ -1139,6 +1142,9 @@ function setAuthenticated(authenticated) {
   appRoot.classList.toggle("app-locked", !authenticated);
   loginSplash.classList.add("hidden");
   if (!authenticated) {
+    setAirGapLivePolling(false);
+    setEmergencyReconnectLivePolling(false);
+    setVeeamLivePolling(false);
     licenseModal.classList.add("hidden");
     currentSession = { authenticated: false, user: "", role: "", permissions: [] };
     applyMenuVisibility();
@@ -2414,6 +2420,10 @@ function approvalDecisionsFor(request, decisions = latestApprovalsData.decisions
   return (Array.isArray(decisions) ? decisions : []).filter((decision) => decision.approvalRequestId === request.id);
 }
 
+function departmentReviewsFor(request, reviews = latestApprovalsData.departmentReviews) {
+  return (Array.isArray(reviews) ? reviews : []).filter((review) => review.approvalRequestId === request.id);
+}
+
 function approvalDecisionSummary(request, decisions = latestApprovalsData.decisions) {
   const approved = approvalDecisionsFor(request, decisions).filter((decision) => decision.decision === "APPROVED").length;
   const required = Number(request?.requiredApprovals || 1);
@@ -2426,7 +2436,8 @@ function repositoryOnlineWorkflowSummary(request, decisions = latestApprovalsDat
   const reviewCount = ["SECURITY_LOG_REVIEW", "HARDWARE_STATE_REVIEW", "MANAGER_REVIEW"].filter((key) => reviews[key]).length;
   const status = metadata.workflowStatus || (request?.requestType === "DISK_ONLINE" ? "AWAITING_SECURITY_HARDWARE_REVIEW" : "");
   const approvals = approvalDecisionSummary(request, decisions);
-  return request?.requestType === "DISK_ONLINE" ? `${status} · reviews ${reviewCount} / 3 · ${approvals}` : approvals;
+  const department = departmentReviewSummary(request);
+  return request?.requestType === "DISK_ONLINE" ? `${status} · ${department} · reviews ${reviewCount} / 3 · ${approvals}` : `${department} · ${approvals}`;
 }
 
 function reviewTypeForRole(role) {
@@ -2451,10 +2462,48 @@ function workflowReviews(request) {
   return typeof reviews === "object" && !Array.isArray(reviews) ? reviews : {};
 }
 
+function departmentReviewStatus(request) {
+  const reviews = departmentReviewsFor(request);
+  if (!reviews.length) return "NOT_REQUIRED";
+  const statuses = new Set(reviews.map((review) => String(review.status || "PENDING").toUpperCase()));
+  if (statuses.has("BLOCKED")) return "BLOCKED";
+  if (statuses.has("NEEDS_CHANGES")) return "NEEDS_CHANGES";
+  if (statuses.size === 1 && statuses.has("REVIEWED")) return "REVIEWED";
+  if (statuses.has("IN_REVIEW")) return "IN_REVIEW";
+  return "PENDING";
+}
+
+function departmentReviewSummary(request) {
+  const reviews = departmentReviewsFor(request);
+  if (!reviews.length) return "department reviews not required";
+  const reviewed = reviews.filter((review) => String(review.status || "").toUpperCase() === "REVIEWED").length;
+  return `department review ${reviewed} / ${reviews.length} ${departmentReviewStatus(request)}`;
+}
+
+function roleDepartmentIds(role) {
+  return {
+    SECURITY_ADMIN: ["security"],
+    BACKUP_OPERATOR: ["backup-operation"],
+    HARDWARE_ADMIN: ["hardware-control"],
+    AUDITOR: ["audit"],
+    SUPER_ADMIN: ["management", "security", "backup-operation", "hardware-control", "audit"],
+  }[role] || [];
+}
+
+function canReviewDepartment(review, session = currentSession) {
+  if (!review) return false;
+  if (String(review.status || "").toUpperCase() === "REVIEWED") return false;
+  if (String(review.status || "").toUpperCase() === "BLOCKED" && session.role !== "SUPER_ADMIN") return false;
+  return roleDepartmentIds(session.role).includes(String(review.departmentId || ""));
+}
+
+function pendingDepartmentReviewsForSession(request, session = currentSession) {
+  return departmentReviewsFor(request).filter((review) => canReviewDepartment(review, session));
+}
+
 function isDepartmentReviewPending(request) {
-  if (!request || request.status !== "PENDING" || request.requestType !== "DISK_ONLINE") return false;
-  const reviews = workflowReviews(request);
-  return !reviews.SECURITY_LOG_REVIEW || !reviews.HARDWARE_STATE_REVIEW || !reviews.MANAGER_REVIEW;
+  if (!request || request.status !== "PENDING") return false;
+  return ["PENDING", "IN_REVIEW", "NEEDS_CHANGES", "BLOCKED"].includes(departmentReviewStatus(request));
 }
 
 function isApprovalPendingRequest(request, decisions = latestApprovalsData.decisions) {
@@ -2469,6 +2518,7 @@ function canShowApprovalButton(request, session = currentSession, decisions = la
   if (!hasPermission("DISK_ONLINE_APPROVE", session)) return false;
   if (Array.isArray(request.allowedApproverRoles) && request.allowedApproverRoles.length && !request.allowedApproverRoles.includes(session.role)) return false;
   if (String(request.requesterUserId || "") === String(session.user || "")) return false;
+  if (!["NOT_REQUIRED", "REVIEWED"].includes(departmentReviewStatus(request))) return false;
   if (request.requestType === "DISK_ONLINE") {
     const reviews = request.metadata?.reviews || {};
     if (!["SECURITY_LOG_REVIEW", "HARDWARE_STATE_REVIEW", "MANAGER_REVIEW"].every((key) => reviews[key])) return false;
@@ -2482,10 +2532,10 @@ function canShowApprovalButton(request, session = currentSession, decisions = la
 function filterApprovalRequests(requests) {
   const items = Array.isArray(requests) ? requests : [];
   if (activeApprovalTab === "approvalRequestBox") return items.filter((request) => String(request.requesterUserId || "") === String(currentSession.user || ""));
-  if (activeApprovalTab === "departmentReviewBox") return items.filter((request) => isDepartmentReviewPending(request) || canShowReviewButton(request));
+  if (activeApprovalTab === "departmentReviewBox") return items.filter((request) => isDepartmentReviewPending(request));
   if (activeApprovalTab === "myApprovalPending") return items.filter((request) => canShowApprovalButton(request));
-  if (activeApprovalTab === "consultationOpinion") return items.filter((request) => workflowHistoryItems(request).length > 1 || request.requestType === "DISK_ONLINE");
-  if (activeApprovalTab === "reworkRequest") return items.filter((request) => ["REJECTED", "EXPIRED"].includes(String(request.status || "")));
+  if (activeApprovalTab === "consultationOpinion") return items.filter((request) => workflowHistoryItems(request).length > 1 || departmentReviewsFor(request).length > 0);
+  if (activeApprovalTab === "reworkRequest") return items.filter((request) => ["REJECTED", "EXPIRED"].includes(String(request.status || "")) || departmentReviewStatus(request) === "NEEDS_CHANGES");
   if (activeApprovalTab === "completedHistory") return items.filter((request) => request.status === "APPROVED");
   if (activeApprovalTab === "auditRecord") return items;
   return items;
@@ -2502,6 +2552,24 @@ function workflowHistoryItems(request, decisions = latestApprovalsData.decisions
       text: review.comment || "",
       createdAt: review.createdAt || "",
     });
+  });
+  departmentReviewsFor(request).forEach((review) => {
+    (Array.isArray(review.comments) ? review.comments : []).forEach((comment) => {
+      items.push({
+        type: `${review.departmentId || "department"} ${comment.status || review.status || "review"}`,
+        actor: comment.reviewerUserId || review.reviewerUserId || "-",
+        text: comment.comment || review.comment || "",
+        createdAt: comment.createdAt || review.updatedAt || "",
+      });
+    });
+    if (review.comment && !(Array.isArray(review.comments) && review.comments.length)) {
+      items.push({
+        type: `${review.departmentId || "department"} ${review.status || "review"}`,
+        actor: review.reviewerUserId || "-",
+        text: review.comment || "",
+        createdAt: review.updatedAt || review.createdAt || "",
+      });
+    }
   });
   approvalDecisionsFor(request, decisions).forEach((decision) => {
     items.push({
@@ -2532,6 +2600,8 @@ function renderApprovals(data, errorMessage = "") {
     policies: Array.isArray(data?.policies) ? data.policies : [],
     requests: Array.isArray(data?.requests) ? data.requests : [],
     decisions: Array.isArray(data?.decisions) ? data.decisions : [],
+    departmentReviews: Array.isArray(data?.departmentReviews) ? data.departmentReviews : [],
+    notifications: Array.isArray(data?.notifications) ? data.notifications : [],
   };
   const tab = approvalTabDefinitions.find((item) => item.id === activeApprovalTab) || approvalTabDefinitions[0];
   if (approvalTabTitle) approvalTabTitle.textContent = tab.label;
@@ -2554,6 +2624,12 @@ function renderApprovals(data, errorMessage = "") {
     const reviewButton = canShowReviewButton(request)
       ? `<button type="button" class="rbac-action-button" data-review-id="${escapeHtml(request.id)}" data-review-type="${escapeHtml(reviewType)}">Review</button>`
       : "";
+    const departmentButtons = pendingDepartmentReviewsForSession(request).map((review) => `
+      <button type="button" class="rbac-action-button" data-department-review-id="${escapeHtml(review.id)}" data-approval-request-id="${escapeHtml(request.id)}" data-review-action="comment">Comment</button>
+      <button type="button" class="rbac-action-button" data-department-review-id="${escapeHtml(review.id)}" data-approval-request-id="${escapeHtml(request.id)}" data-review-action="mark-reviewed">Reviewed</button>
+      <button type="button" class="rbac-action-button" data-department-review-id="${escapeHtml(review.id)}" data-approval-request-id="${escapeHtml(request.id)}" data-review-action="needs-changes">Needs changes</button>
+      <button type="button" class="rbac-action-button" data-department-review-id="${escapeHtml(review.id)}" data-approval-request-id="${escapeHtml(request.id)}" data-review-action="block">Block</button>
+    `).join("");
     const approveButton = canShowApprovalButton(request)
       ? `<button type="button" class="rbac-action-button" data-approval-id="${escapeHtml(request.id)}">Approve</button>`
       : "";
@@ -2563,9 +2639,9 @@ function renderApprovals(data, errorMessage = "") {
       <td>${escapeHtml(request.requesterUserId)}</td>
       <td>${escapeHtml(request.targetId || "-")}</td>
       <td><span class="rbac-status rbac-status-${escapeHtml(String(request.status || "").toLowerCase())}">${escapeHtml(request.status)}</span></td>
-      <td>${escapeHtml(repositoryOnlineWorkflowSummary(request))}${history}</td>
+      <td>${escapeHtml(repositoryOnlineWorkflowSummary(request))}<br><span class="approval-review-state">최종 승인 가능 여부: ${canShowApprovalButton(request) ? "가능" : "불가"} · 검토 완료 상태: ${escapeHtml(departmentReviewStatus(request))}</span>${history}</td>
       <td>${escapeHtml(formatLogDate(request.expiresAt))}</td>
-      <td>${reviewButton}${approveButton}</td>
+      <td>${departmentButtons}${reviewButton}${approveButton}</td>
     `;
     approvalRequestsTable.appendChild(row);
   });
@@ -2674,9 +2750,13 @@ window.lockfixUiAuth = {
   canAccessView,
   approvalDecisionSummary,
   repositoryOnlineWorkflowSummary,
+  departmentReviewsFor,
+  departmentReviewStatus,
+  departmentReviewSummary,
   workflowHistoryItems,
   renderWorkflowHistory,
   canShowReviewButton,
+  canReviewDepartment,
   canShowApprovalButton,
 };
 
@@ -2754,7 +2834,7 @@ async function reloadSources() {
 }
 
 async function pollSourcesLive() {
-  if (appRoot.classList.contains("app-locked")) return;
+  if (!currentSession.authenticated || appRoot.classList.contains("app-locked")) return;
   const activeView = document.querySelector(".view.view-active");
   if (!activeView || activeView.id !== "sourcesView") return;
   try {
@@ -2955,7 +3035,7 @@ async function reloadVeeamBackup() {
 }
 
 async function pollVeeamBackupLive() {
-  if (appRoot.classList.contains("app-locked")) return;
+  if (!currentSession.authenticated || appRoot.classList.contains("app-locked")) return;
   const activeView = document.querySelector(".view.view-active");
   if (!activeView || activeView.id !== "veeamView") return;
   try {
@@ -4200,6 +4280,26 @@ approvalTabs?.addEventListener("click", (event) => {
   renderApprovals(latestApprovalsData);
 });
 approvalRequestsTable?.addEventListener("click", async (event) => {
+  const departmentReviewButton = event.target.closest("[data-department-review-id]");
+  if (departmentReviewButton) {
+    const action = departmentReviewButton.dataset.reviewAction || "comment";
+    const promptLabel = action === "mark-reviewed" ? "검토 완료 의견을 입력하세요." : "부서 검토 의견을 입력하세요.";
+    const comment = prompt(promptLabel, action === "mark-reviewed" ? "Department review completed." : "");
+    if (comment === null) return;
+    departmentReviewButton.disabled = true;
+    try {
+      await requestJson(`/api/approval-requests/${encodeURIComponent(departmentReviewButton.dataset.approvalRequestId)}/reviews/${encodeURIComponent(departmentReviewButton.dataset.departmentReviewId)}/${encodeURIComponent(action)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comment }),
+      });
+      await reloadApprovals();
+    } catch (error) {
+      alert(error.message);
+      departmentReviewButton.disabled = false;
+    }
+    return;
+  }
   const reviewButton = event.target.closest("[data-review-id]");
   if (reviewButton) {
     const comment = window.prompt("Review comment") || "";
