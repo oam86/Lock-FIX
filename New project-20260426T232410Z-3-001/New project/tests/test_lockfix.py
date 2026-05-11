@@ -1730,6 +1730,26 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("/api/approval-requests/([^/]+)/reviews", server)
         self.assertIn("comment|mark-reviewed|needs-changes|block", server)
 
+    def test_settings_view_groups_admin_and_support_diagnostics(self) -> None:
+        root = Path.cwd()
+        html = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        app = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
+        css = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn("settings.adminTitle", html)
+        self.assertIn("settings.supportTitle", html)
+        self.assertIn("Support & Advanced Diagnostics", app)
+        self.assertIn("Administrator Settings", app)
+        self.assertIn("data-settings-view=\"userManagement\"", html)
+        self.assertIn("data-settings-view=\"approvals\"", html)
+        self.assertIn("data-settings-view=\"veeam\"", html)
+        self.assertIn("settings-tile-grid", css)
+        self.assertIn("settings-diagnostics-grid", css)
+        self.assertIn("querySelectorAll(\"[data-settings-view]\")", app)
+        self.assertNotIn("Web UI Console", html)
+        self.assertNotIn("settingsApplyButton", html)
+        self.assertIn("applyPendingUiSettings()", app)
+
     def test_web_ui_approval_tabs_and_button_visibility_are_testable(self) -> None:
         root = Path.cwd()
         html = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
