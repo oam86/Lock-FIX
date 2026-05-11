@@ -38,6 +38,19 @@ LOCK-FIX Agent is allowed to execute Disk Online only after the required reviews
 All request, review, approval, execution-blocked, execution, and failure events are written to Audit Log.
 ```
 
+Collaboration workflow menu:
+
+```text
+협업/승인 워크플로우
+├─ 요청함
+├─ 내 검토 대기
+├─ 부서 검토
+├─ 승인 대기
+├─ 반려/보완 요청
+├─ 완료된 요청
+└─ 협의 댓글/이력
+```
+
 Database migration:
 
 ```text

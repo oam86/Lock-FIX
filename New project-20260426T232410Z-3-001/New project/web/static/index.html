@@ -63,7 +63,7 @@
           <button class="side-item rbac-menu" data-view="veeam" data-permission="VEEAM_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14v10H5Z"></path><path d="M8 11h3"></path><path d="M13 11h3"></path><path d="M8 14h8"></path></svg></span><span>Veeam Integration</span></button>
           <button class="side-item rbac-menu airgap-side" data-view="sources" data-permission="AIRGAP_POLICY_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path><path d="M12 14v2"></path></svg></span><span>Air-Gap Policy</span></button>
           <button class="side-item rbac-menu" data-view="hardware" data-permission="HARDWARE_CONTROL"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v5H7Z"></path><path d="M5 14h14v6H5Z"></path><path d="M12 9v5"></path></svg></span><span>Hardware Control</span></button>
-          <button class="side-item rbac-menu" data-view="approvals" data-any-permission="DISK_ONLINE_APPROVE,AIRGAP_POLICY_MANAGE,DISK_OFFLINE_REQUEST,DISK_ONLINE_REQUEST,HARDWARE_CONTROL"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 12l3 3 7-7"></path><path d="M5 4h14v16H5Z"></path></svg></span><span>Approval Requests</span></button>
+          <button class="side-item rbac-menu" data-view="approvals" data-any-permission="DISK_ONLINE_APPROVE,AIRGAP_POLICY_MANAGE,DISK_OFFLINE_REQUEST,DISK_ONLINE_REQUEST,HARDWARE_CONTROL"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 12l3 3 7-7"></path><path d="M5 4h14v16H5Z"></path></svg></span><span>협업/승인 워크플로우</span></button>
           <button class="side-item rbac-menu" data-view="userManagement" data-any-permission="USER_MANAGE,ROLE_MANAGE"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"></circle><path d="M4 19c.7-3 2.4-5 5-5s4.3 2 5 5"></path><path d="M16 8h4"></path><path d="M18 6v4"></path></svg></span><span>User & Role Management</span></button>
           <button class="side-item rbac-menu" data-view="auditLogs" data-permission="AUDIT_LOG_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 19 6.7v5.4c0 4.2-2.8 7.1-7 8.4-4.2-1.3-7-4.2-7-8.4V6.7Z"></path><path d="M9 10.2h6"></path><path d="M9 13h6"></path><path d="M9 15.8h4"></path></svg></span><span>Audit Logs</span></button>
           <button class="side-item rbac-menu" data-view="report" data-permission="REPORT_EXPORT"><span class="nav-icon report-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h8.8l3.2 3.2v13.8h-12Z"></path><path d="M15 3.8V7h3.2"></path><path d="M9 12.2h5.5"></path><path d="M9 15.5h3.5"></path></svg></span><span>Reports</span></button>
@@ -628,20 +628,22 @@
       <section class="view rbac-page-view" id="approvalsView">
         <div class="monitoring-header">
           <div>
-            <h1>Approval Requests</h1>
-            <p>Review approval state, pending requests, and dual approval progress.</p>
+            <h1>협업/승인 워크플로우</h1>
+            <p>요청, 부서 검토, 승인 대기, 반려/보완, 완료, 협의 댓글과 이력을 한 화면에서 확인합니다.</p>
           </div>
         </div>
         <div class="rbac-tabs" id="approvalTabs">
-          <button type="button" class="active" data-approval-tab="my">My Requests</button>
-          <button type="button" data-approval-tab="pending">Pending Approval</button>
-          <button type="button" data-approval-tab="approved">Approved</button>
-          <button type="button" data-approval-tab="rejected">Rejected</button>
-          <button type="button" data-approval-tab="expired">Expired</button>
+          <button type="button" class="active" data-approval-tab="requestInbox">요청함</button>
+          <button type="button" data-approval-tab="myReviewPending">내 검토 대기</button>
+          <button type="button" data-approval-tab="departmentReview">부서 검토</button>
+          <button type="button" data-approval-tab="approvalPending">승인 대기</button>
+          <button type="button" data-approval-tab="rework">반려/보완 요청</button>
+          <button type="button" data-approval-tab="completed">완료된 요청</button>
+          <button type="button" data-approval-tab="history">협의 댓글/이력</button>
         </div>
         <section class="rbac-panel">
           <div class="rbac-panel-head">
-            <h2 id="approvalTabTitle">My Requests</h2>
+            <h2 id="approvalTabTitle">요청함</h2>
             <span id="approvalCount">0 requests</span>
           </div>
           <div class="rbac-table-wrap">

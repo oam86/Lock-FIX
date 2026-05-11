@@ -8091,6 +8091,41 @@ body,
   background: #fff1f2;
 }
 
+.workflow-history-list {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow-history-list li {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(120px, 1fr);
+  gap: 6px 10px;
+  border: 1px solid #e2ebf3;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #fbfdff;
+}
+
+.workflow-history-list strong,
+.workflow-history-list span,
+.workflow-history-list em {
+  color: #60758a;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.workflow-history-list p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #25384a;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .access-denied-view {
   min-height: 360px;
 }

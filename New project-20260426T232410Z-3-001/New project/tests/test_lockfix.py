@@ -1348,6 +1348,9 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("The request creator cannot approve their own request.", source)
         self.assertIn("Emergency unlock requires a reason, dual approval, and audit logging.", source)
         self.assertIn("Repository Online workflow", source)
+        self.assertIn("Collaboration workflow menu", source)
+        self.assertIn("협업/승인 워크플로우", source)
+        self.assertIn("협의 댓글/이력", source)
         self.assertIn("SECURITY_LOG_REVIEW", source)
         self.assertIn("HARDWARE_STATE_REVIEW", source)
         self.assertIn("MANAGER_REVIEW", source)
@@ -1420,7 +1423,7 @@ class LockFixTests(unittest.TestCase):
             "Veeam Integration",
             "Air-Gap Policy",
             "Hardware Control",
-            "Approval Requests",
+            "협업/승인 워크플로우",
             "User & Role Management",
             "Audit Logs",
             "Reports",
@@ -1442,14 +1445,22 @@ class LockFixTests(unittest.TestCase):
         root = Path.cwd()
         html = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
         app = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
+        css = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
 
-        for tab in ["My Requests", "Pending Approval", "Approved", "Rejected", "Expired"]:
+        for tab in ["요청함", "내 검토 대기", "부서 검토", "승인 대기", "반려/보완 요청", "완료된 요청", "협의 댓글/이력"]:
             self.assertIn(tab, html)
 
         self.assertIn("approvalDecisionSummary", app)
         self.assertIn("repositoryOnlineWorkflowSummary", app)
+        self.assertIn("workflowHistoryItems", app)
+        self.assertIn("renderWorkflowHistory", app)
         self.assertIn("canShowReviewButton", app)
         self.assertIn('data-review-id', app)
+        self.assertIn("requestInbox", app)
+        self.assertIn("myReviewPending", app)
+        self.assertIn("departmentReview", app)
+        self.assertIn("approvalPending", app)
+        self.assertIn("workflow-history-list", css)
         self.assertIn("canShowApprovalButton", app)
         self.assertIn('`${approved} / ${required} approved`', app)
         self.assertIn('hasPermission("DISK_ONLINE_APPROVE"', app)

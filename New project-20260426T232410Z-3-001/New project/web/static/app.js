@@ -224,7 +224,7 @@ let memoryThresholdAlertActive = false;
 let sidebarCollapsed = false;
 let currentSession = { authenticated: false, user: "", role: "", permissions: [] };
 let latestApprovalsData = { policies: [], requests: [], decisions: [] };
-let activeApprovalTab = "my";
+let activeApprovalTab = "requestInbox";
 localStorage.setItem("lockfix.sidebarCollapsed", "false");
 
 const menuDefinitions = [
@@ -234,7 +234,7 @@ const menuDefinitions = [
   { view: "hardware", label: "Hardware Control", permissions: ["HARDWARE_CONTROL"] },
   {
     view: "approvals",
-    label: "Approval Requests",
+    label: "협업/승인 워크플로우",
     anyPermissions: ["DISK_ONLINE_APPROVE", "AIRGAP_POLICY_MANAGE", "DISK_OFFLINE_REQUEST", "DISK_ONLINE_REQUEST", "HARDWARE_CONTROL"],
   },
   { view: "userManagement", label: "User & Role Management", roles: ["SUPER_ADMIN"], anyPermissions: ["USER_MANAGE", "ROLE_MANAGE"] },
@@ -244,11 +244,13 @@ const menuDefinitions = [
 ];
 
 const approvalTabDefinitions = [
-  { id: "my", label: "My Requests" },
-  { id: "pending", label: "Pending Approval" },
-  { id: "approved", label: "Approved" },
-  { id: "rejected", label: "Rejected" },
-  { id: "expired", label: "Expired" },
+  { id: "requestInbox", label: "요청함" },
+  { id: "myReviewPending", label: "내 검토 대기" },
+  { id: "departmentReview", label: "부서 검토" },
+  { id: "approvalPending", label: "승인 대기" },
+  { id: "rework", label: "반려/보완 요청" },
+  { id: "completed", label: "완료된 요청" },
+  { id: "history", label: "협의 댓글/이력" },
 ];
 
 const translations = {
@@ -2444,6 +2446,24 @@ function canShowReviewButton(request, session = currentSession) {
   return !reviews[reviewType];
 }
 
+function workflowReviews(request) {
+  const reviews = request?.metadata?.reviews || {};
+  return typeof reviews === "object" && !Array.isArray(reviews) ? reviews : {};
+}
+
+function isDepartmentReviewPending(request) {
+  if (!request || request.status !== "PENDING" || request.requestType !== "DISK_ONLINE") return false;
+  const reviews = workflowReviews(request);
+  return !reviews.SECURITY_LOG_REVIEW || !reviews.HARDWARE_STATE_REVIEW || !reviews.MANAGER_REVIEW;
+}
+
+function isApprovalPendingRequest(request, decisions = latestApprovalsData.decisions) {
+  if (!request || request.status !== "PENDING") return false;
+  if (request.requestType !== "DISK_ONLINE") return true;
+  if (isDepartmentReviewPending(request)) return false;
+  return approvalDecisionsFor(request, decisions).filter((decision) => decision.decision === "APPROVED").length < Number(request.requiredApprovals || 1);
+}
+
 function canShowApprovalButton(request, session = currentSession, decisions = latestApprovalsData.decisions) {
   if (!request || request.status !== "PENDING") return false;
   if (!hasPermission("DISK_ONLINE_APPROVE", session)) return false;
@@ -2461,9 +2481,50 @@ function canShowApprovalButton(request, session = currentSession, decisions = la
 
 function filterApprovalRequests(requests) {
   const items = Array.isArray(requests) ? requests : [];
-  if (activeApprovalTab === "my") return items.filter((request) => String(request.requesterUserId || "") === String(currentSession.user || ""));
-  if (activeApprovalTab === "pending") return items.filter((request) => request.status === "PENDING");
-  return items.filter((request) => String(request.status || "").toLowerCase() === activeApprovalTab);
+  if (activeApprovalTab === "requestInbox") return items.filter((request) => String(request.requesterUserId || "") === String(currentSession.user || ""));
+  if (activeApprovalTab === "myReviewPending") return items.filter((request) => canShowReviewButton(request));
+  if (activeApprovalTab === "departmentReview") return items.filter((request) => isDepartmentReviewPending(request));
+  if (activeApprovalTab === "approvalPending") return items.filter((request) => isApprovalPendingRequest(request));
+  if (activeApprovalTab === "rework") return items.filter((request) => ["REJECTED", "EXPIRED"].includes(String(request.status || "")));
+  if (activeApprovalTab === "completed") return items.filter((request) => request.status === "APPROVED");
+  if (activeApprovalTab === "history") return items;
+  return items;
+}
+
+function workflowHistoryItems(request, decisions = latestApprovalsData.decisions) {
+  const items = [];
+  if (!request) return items;
+  items.push({ type: "request", actor: request.requesterUserId || "-", text: request.metadata?.reason || "request created", createdAt: request.createdAt || "" });
+  Object.values(workflowReviews(request)).forEach((review) => {
+    items.push({
+      type: review.reviewType || "review",
+      actor: review.reviewerUserId || "-",
+      text: review.comment || "",
+      createdAt: review.createdAt || "",
+    });
+  });
+  approvalDecisionsFor(request, decisions).forEach((decision) => {
+    items.push({
+      type: decision.decision || "decision",
+      actor: decision.approverUserId || "-",
+      text: decision.comment || "",
+      createdAt: decision.createdAt || "",
+    });
+  });
+  return items.sort((left, right) => String(left.createdAt || "").localeCompare(String(right.createdAt || "")));
+}
+
+function renderWorkflowHistory(request, decisions = latestApprovalsData.decisions) {
+  const items = workflowHistoryItems(request, decisions);
+  if (!items.length) return "";
+  return `<ol class="workflow-history-list">${items.map((item) => `
+    <li>
+      <strong>${escapeHtml(item.type)}</strong>
+      <span>${escapeHtml(item.actor)}</span>
+      <em>${escapeHtml(formatLogDate(item.createdAt))}</em>
+      <p>${escapeHtml(item.text || "-")}</p>
+    </li>
+  `).join("")}</ol>`;
 }
 
 function renderApprovals(data, errorMessage = "") {
@@ -2496,12 +2557,13 @@ function renderApprovals(data, errorMessage = "") {
     const approveButton = canShowApprovalButton(request)
       ? `<button type="button" class="rbac-action-button" data-approval-id="${escapeHtml(request.id)}">Approve</button>`
       : "";
+    const history = activeApprovalTab === "history" ? renderWorkflowHistory(request) : "";
     row.innerHTML = `
       <td>${escapeHtml(request.requestType)}</td>
       <td>${escapeHtml(request.requesterUserId)}</td>
       <td>${escapeHtml(request.targetId || "-")}</td>
       <td><span class="rbac-status rbac-status-${escapeHtml(String(request.status || "").toLowerCase())}">${escapeHtml(request.status)}</span></td>
-      <td>${escapeHtml(repositoryOnlineWorkflowSummary(request))}</td>
+      <td>${escapeHtml(repositoryOnlineWorkflowSummary(request))}${history}</td>
       <td>${escapeHtml(formatLogDate(request.expiresAt))}</td>
       <td>${reviewButton}${approveButton}</td>
     `;
@@ -2612,6 +2674,8 @@ window.lockfixUiAuth = {
   canAccessView,
   approvalDecisionSummary,
   repositoryOnlineWorkflowSummary,
+  workflowHistoryItems,
+  renderWorkflowHistory,
   canShowReviewButton,
   canShowApprovalButton,
 };
@@ -4132,7 +4196,7 @@ sideItems.forEach((item) => item.addEventListener("click", () => showView(item.d
 approvalTabs?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-approval-tab]");
   if (!button) return;
-  activeApprovalTab = button.dataset.approvalTab || "my";
+  activeApprovalTab = button.dataset.approvalTab || "requestInbox";
   renderApprovals(latestApprovalsData);
 });
 approvalRequestsTable?.addEventListener("click", async (event) => {
