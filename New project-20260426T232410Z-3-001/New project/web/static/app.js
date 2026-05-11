@@ -1126,7 +1126,7 @@ function applyPendingUiSettings() {
   logsRange.page = 1;
   localStorage.setItem("lockfix.logRetentionDays", String(logsRange.retention));
   applyUiSettings();
-  settingsApplyStatus.textContent = t("settings.applied");
+  if (settingsApplyStatus) settingsApplyStatus.textContent = t("settings.applied");
   if (latestMonitoringData) {
     renderMonitoring(latestMonitoringData);
   }
@@ -4576,18 +4576,18 @@ metricFilterButtons.forEach((button) => {
     drawLineChart(latestMonitoringSeries);
   });
 });
-languageSelect.addEventListener("change", () => {
+languageSelect?.addEventListener("change", () => {
   pendingUiSettings.language = languageSelect.value;
-  settingsApplyStatus.textContent = translations[pendingUiSettings.language]?.["settings.pending"] || translations.en["settings.pending"];
+  applyPendingUiSettings();
 });
-themeSelect.addEventListener("change", () => {
+themeSelect?.addEventListener("change", () => {
   pendingUiSettings.theme = themeSelect.value;
-  settingsApplyStatus.textContent = translations[pendingUiSettings.language]?.["settings.pending"] || translations.en["settings.pending"];
+  applyPendingUiSettings();
 });
 logRetentionSelect?.addEventListener("change", () => {
-  settingsApplyStatus.textContent = translations[pendingUiSettings.language]?.["settings.pending"] || translations.en["settings.pending"];
+  applyPendingUiSettings();
 });
-settingsApplyButton.addEventListener("click", applyPendingUiSettings);
+settingsApplyButton?.addEventListener("click", applyPendingUiSettings);
 document.querySelectorAll("[data-settings-view]").forEach((button) => {
   button.addEventListener("click", () => showView(button.dataset.settingsView || "settings"));
 });

@@ -1720,6 +1720,9 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("settings-tile-grid", css)
         self.assertIn("settings-diagnostics-grid", css)
         self.assertIn("querySelectorAll(\"[data-settings-view]\")", app)
+        self.assertNotIn("Web UI Console", html)
+        self.assertNotIn("settingsApplyButton", html)
+        self.assertIn("applyPendingUiSettings()", app)
 
     def test_web_ui_approval_tabs_and_button_visibility_are_testable(self) -> None:
         root = Path.cwd()
