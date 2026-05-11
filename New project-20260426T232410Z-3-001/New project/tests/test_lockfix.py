@@ -1350,7 +1350,8 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("Repository Online workflow", source)
         self.assertIn("Collaboration workflow menu", source)
         self.assertIn("협업/승인 워크플로우", source)
-        self.assertIn("협의 댓글/이력", source)
+        for label in ["승인 요청함", "부서 검토함", "내 승인 대기", "협의 의견", "보완 요청", "완료 이력", "감사 기록"]:
+            self.assertIn(label, source)
         self.assertIn("SECURITY_LOG_REVIEW", source)
         self.assertIn("HARDWARE_STATE_REVIEW", source)
         self.assertIn("MANAGER_REVIEW", source)
@@ -1447,7 +1448,7 @@ class LockFixTests(unittest.TestCase):
         app = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
         css = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
 
-        for tab in ["요청함", "내 검토 대기", "부서 검토", "승인 대기", "반려/보완 요청", "완료된 요청", "협의 댓글/이력"]:
+        for tab in ["승인 요청함", "부서 검토함", "내 승인 대기", "협의 의견", "보완 요청", "완료 이력", "감사 기록"]:
             self.assertIn(tab, html)
 
         self.assertIn("approvalDecisionSummary", app)
@@ -1456,10 +1457,13 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderWorkflowHistory", app)
         self.assertIn("canShowReviewButton", app)
         self.assertIn('data-review-id', app)
-        self.assertIn("requestInbox", app)
-        self.assertIn("myReviewPending", app)
-        self.assertIn("departmentReview", app)
-        self.assertIn("approvalPending", app)
+        self.assertIn("approvalRequestBox", app)
+        self.assertIn("departmentReviewBox", app)
+        self.assertIn("myApprovalPending", app)
+        self.assertIn("consultationOpinion", app)
+        self.assertIn("reworkRequest", app)
+        self.assertIn("completedHistory", app)
+        self.assertIn("auditRecord", app)
         self.assertIn("workflow-history-list", css)
         self.assertIn("canShowApprovalButton", app)
         self.assertIn('`${approved} / ${required} approved`', app)

@@ -224,7 +224,7 @@ let memoryThresholdAlertActive = false;
 let sidebarCollapsed = false;
 let currentSession = { authenticated: false, user: "", role: "", permissions: [] };
 let latestApprovalsData = { policies: [], requests: [], decisions: [] };
-let activeApprovalTab = "requestInbox";
+let activeApprovalTab = "approvalRequestBox";
 localStorage.setItem("lockfix.sidebarCollapsed", "false");
 
 const menuDefinitions = [
@@ -244,13 +244,13 @@ const menuDefinitions = [
 ];
 
 const approvalTabDefinitions = [
-  { id: "requestInbox", label: "요청함" },
-  { id: "myReviewPending", label: "내 검토 대기" },
-  { id: "departmentReview", label: "부서 검토" },
-  { id: "approvalPending", label: "승인 대기" },
-  { id: "rework", label: "반려/보완 요청" },
-  { id: "completed", label: "완료된 요청" },
-  { id: "history", label: "협의 댓글/이력" },
+  { id: "approvalRequestBox", label: "승인 요청함" },
+  { id: "departmentReviewBox", label: "부서 검토함" },
+  { id: "myApprovalPending", label: "내 승인 대기" },
+  { id: "consultationOpinion", label: "협의 의견" },
+  { id: "reworkRequest", label: "보완 요청" },
+  { id: "completedHistory", label: "완료 이력" },
+  { id: "auditRecord", label: "감사 기록" },
 ];
 
 const translations = {
@@ -2481,13 +2481,13 @@ function canShowApprovalButton(request, session = currentSession, decisions = la
 
 function filterApprovalRequests(requests) {
   const items = Array.isArray(requests) ? requests : [];
-  if (activeApprovalTab === "requestInbox") return items.filter((request) => String(request.requesterUserId || "") === String(currentSession.user || ""));
-  if (activeApprovalTab === "myReviewPending") return items.filter((request) => canShowReviewButton(request));
-  if (activeApprovalTab === "departmentReview") return items.filter((request) => isDepartmentReviewPending(request));
-  if (activeApprovalTab === "approvalPending") return items.filter((request) => isApprovalPendingRequest(request));
-  if (activeApprovalTab === "rework") return items.filter((request) => ["REJECTED", "EXPIRED"].includes(String(request.status || "")));
-  if (activeApprovalTab === "completed") return items.filter((request) => request.status === "APPROVED");
-  if (activeApprovalTab === "history") return items;
+  if (activeApprovalTab === "approvalRequestBox") return items.filter((request) => String(request.requesterUserId || "") === String(currentSession.user || ""));
+  if (activeApprovalTab === "departmentReviewBox") return items.filter((request) => isDepartmentReviewPending(request) || canShowReviewButton(request));
+  if (activeApprovalTab === "myApprovalPending") return items.filter((request) => canShowApprovalButton(request));
+  if (activeApprovalTab === "consultationOpinion") return items.filter((request) => workflowHistoryItems(request).length > 1 || request.requestType === "DISK_ONLINE");
+  if (activeApprovalTab === "reworkRequest") return items.filter((request) => ["REJECTED", "EXPIRED"].includes(String(request.status || "")));
+  if (activeApprovalTab === "completedHistory") return items.filter((request) => request.status === "APPROVED");
+  if (activeApprovalTab === "auditRecord") return items;
   return items;
 }
 
@@ -2557,7 +2557,7 @@ function renderApprovals(data, errorMessage = "") {
     const approveButton = canShowApprovalButton(request)
       ? `<button type="button" class="rbac-action-button" data-approval-id="${escapeHtml(request.id)}">Approve</button>`
       : "";
-    const history = activeApprovalTab === "history" ? renderWorkflowHistory(request) : "";
+    const history = ["consultationOpinion", "completedHistory", "auditRecord"].includes(activeApprovalTab) ? renderWorkflowHistory(request) : "";
     row.innerHTML = `
       <td>${escapeHtml(request.requestType)}</td>
       <td>${escapeHtml(request.requesterUserId)}</td>
@@ -4196,7 +4196,7 @@ sideItems.forEach((item) => item.addEventListener("click", () => showView(item.d
 approvalTabs?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-approval-tab]");
   if (!button) return;
-  activeApprovalTab = button.dataset.approvalTab || "requestInbox";
+  activeApprovalTab = button.dataset.approvalTab || "approvalRequestBox";
   renderApprovals(latestApprovalsData);
 });
 approvalRequestsTable?.addEventListener("click", async (event) => {

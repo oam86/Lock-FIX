@@ -629,21 +629,21 @@
         <div class="monitoring-header">
           <div>
             <h1>협업/승인 워크플로우</h1>
-            <p>요청, 부서 검토, 승인 대기, 반려/보완, 완료, 협의 댓글과 이력을 한 화면에서 확인합니다.</p>
+            <p>승인 요청 등록, 부서 검토, 내 승인 대기, 협의 의견, 보완 요청, 완료 이력, 감사 기록을 한 화면에서 확인합니다.</p>
           </div>
         </div>
         <div class="rbac-tabs" id="approvalTabs">
-          <button type="button" class="active" data-approval-tab="requestInbox">요청함</button>
-          <button type="button" data-approval-tab="myReviewPending">내 검토 대기</button>
-          <button type="button" data-approval-tab="departmentReview">부서 검토</button>
-          <button type="button" data-approval-tab="approvalPending">승인 대기</button>
-          <button type="button" data-approval-tab="rework">반려/보완 요청</button>
-          <button type="button" data-approval-tab="completed">완료된 요청</button>
-          <button type="button" data-approval-tab="history">협의 댓글/이력</button>
+          <button type="button" class="active" data-approval-tab="approvalRequestBox">승인 요청함</button>
+          <button type="button" data-approval-tab="departmentReviewBox">부서 검토함</button>
+          <button type="button" data-approval-tab="myApprovalPending">내 승인 대기</button>
+          <button type="button" data-approval-tab="consultationOpinion">협의 의견</button>
+          <button type="button" data-approval-tab="reworkRequest">보완 요청</button>
+          <button type="button" data-approval-tab="completedHistory">완료 이력</button>
+          <button type="button" data-approval-tab="auditRecord">감사 기록</button>
         </div>
         <section class="rbac-panel">
           <div class="rbac-panel-head">
-            <h2 id="approvalTabTitle">요청함</h2>
+            <h2 id="approvalTabTitle">승인 요청함</h2>
             <span id="approvalCount">0 requests</span>
           </div>
           <div class="rbac-table-wrap">
