@@ -148,10 +148,65 @@ class LockFixTests(unittest.TestCase):
         policy = load_role_permissions(Path("config/rbac_policy.json"))
 
         self.assertEqual(set(policy), set(Role))
+        self.assertEqual(
+            [role.value for role in Role],
+            [
+                "SUPER_ADMIN",
+                "SECURITY_ADMIN",
+                "BACKUP_OPERATOR",
+                "HARDWARE_ADMIN",
+                "AUDITOR",
+                "UI_DESIGNER",
+                "DEVELOPER",
+            ],
+        )
+        self.assertEqual(
+            [permission.value for permission in Permission],
+            [
+                "DASHBOARD_VIEW",
+                "USER_MANAGE",
+                "ROLE_MANAGE",
+                "VEEAM_VIEW",
+                "VEEAM_MANAGE",
+                "AIRGAP_POLICY_VIEW",
+                "AIRGAP_POLICY_MANAGE",
+                "DISK_OFFLINE_REQUEST",
+                "DISK_OFFLINE_EXECUTE",
+                "DISK_ONLINE_REQUEST",
+                "DISK_ONLINE_APPROVE",
+                "HARDWARE_CONTROL",
+                "APPROVAL_REQUEST_VIEW",
+                "APPROVAL_REQUEST_CREATE",
+                "APPROVAL_REQUEST_APPROVE",
+                "DEPARTMENT_REVIEW",
+                "AUDIT_LOG_VIEW",
+                "REPORT_EXPORT",
+                "SYSTEM_SETTING_MANAGE",
+            ],
+        )
         self.assertNotIn("AUDIT_LOG_DELETE", {permission.value for permission in Permission})
         self.assertNotIn("AUDIT_LOG_DELETE", json.dumps(default_policy_document()))
         self.assertTrue(has_permission(Role.SUPER_ADMIN, Permission.AUDIT_LOG_VIEW, policy))
         self.assertFalse(has_permission(Role.SUPER_ADMIN, Permission("AUDIT_LOG_VIEW"), {Role.SUPER_ADMIN: set()}))
+        self.assertTrue(all(has_permission(Role.SUPER_ADMIN, permission, policy) for permission in Permission))
+        self.assertTrue(has_permission(Role.BACKUP_OPERATOR, Permission.APPROVAL_REQUEST_CREATE, policy))
+        self.assertTrue(has_permission(Role.BACKUP_OPERATOR, Permission.APPROVAL_REQUEST_VIEW, policy))
+        self.assertFalse(has_permission(Role.BACKUP_OPERATOR, Permission.APPROVAL_REQUEST_APPROVE, policy))
+        self.assertTrue(has_permission(Role.AUDITOR, Permission.APPROVAL_REQUEST_VIEW, policy))
+        self.assertFalse(has_permission(Role.AUDITOR, Permission.APPROVAL_REQUEST_CREATE, policy))
+        self.assertFalse(has_permission(Role.AUDITOR, Permission.DEPARTMENT_REVIEW, policy))
+        self.assertEqual(
+            {role.value: sorted(permission.value for permission in permissions) for role, permissions in policy.items()},
+            default_policy_document(),
+        )
+
+    def test_approval_api_guards_use_dedicated_rbac_permissions(self) -> None:
+        source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")
+
+        self.assertIn("Permission.APPROVAL_REQUEST_VIEW", source)
+        self.assertIn("Permission.APPROVAL_REQUEST_CREATE", source)
+        self.assertIn("Permission.APPROVAL_REQUEST_APPROVE", source)
+        self.assertIn("Permission.DEPARTMENT_REVIEW", source)
 
     def test_rbac_denies_missing_api_permission_with_forbidden_error(self) -> None:
         tmp_path = self.make_workspace()
@@ -165,6 +220,28 @@ class LockFixTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.permission, Permission.DISK_OFFLINE_EXECUTE)
         self.assertEqual(raised.exception.role, Role.AUDITOR)
+
+    def test_rbac_permission_denied_is_audited_for_api_guard(self) -> None:
+        tmp_path = self.make_workspace()
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(write_config(tmp_path))
+        handler.headers = {"Cookie": "lockfix_session=test-token", "User-Agent": "unit-test"}
+        handler.path = "/api/isolate?slot=BAY-01"
+        handler.client_address = ("127.0.0.1", 12345)
+        handler.context.sessions["test-token"] = handler.session_record("auditor", Role.AUDITOR)
+
+        try:
+            handler.require_auth(Permission.DISK_OFFLINE_EXECUTE)
+        except AuthorizationError as exc:
+            handler.audit_access_denied(exc)
+
+        audit_text = (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
+        self.assertIn('"event": "security.permission_denied"', audit_text)
+        self.assertIn('"resourceType": "API"', audit_text)
+        self.assertIn('"resourceId": "/api/isolate?slot=BAY-01"', audit_text)
+        self.assertIn('"role": "AUDITOR"', audit_text)
+        self.assertIn('"permission": "DISK_OFFLINE_EXECUTE"', audit_text)
+        self.assertIn('"result": "FAILED"', audit_text)
 
     def test_rbac_allows_super_admin_existing_session_format(self) -> None:
         tmp_path = self.make_workspace()

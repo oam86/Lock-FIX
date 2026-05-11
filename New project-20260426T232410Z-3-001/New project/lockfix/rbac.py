@@ -29,6 +29,10 @@ class Permission(str, Enum):
     DISK_ONLINE_REQUEST = "DISK_ONLINE_REQUEST"
     DISK_ONLINE_APPROVE = "DISK_ONLINE_APPROVE"
     HARDWARE_CONTROL = "HARDWARE_CONTROL"
+    APPROVAL_REQUEST_VIEW = "APPROVAL_REQUEST_VIEW"
+    APPROVAL_REQUEST_CREATE = "APPROVAL_REQUEST_CREATE"
+    APPROVAL_REQUEST_APPROVE = "APPROVAL_REQUEST_APPROVE"
+    DEPARTMENT_REVIEW = "DEPARTMENT_REVIEW"
     AUDIT_LOG_VIEW = "AUDIT_LOG_VIEW"
     REPORT_EXPORT = "REPORT_EXPORT"
     SYSTEM_SETTING_MANAGE = "SYSTEM_SETTING_MANAGE"
@@ -52,6 +56,10 @@ DEFAULT_ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
         Permission.DISK_OFFLINE_REQUEST,
         Permission.DISK_ONLINE_REQUEST,
         Permission.DISK_ONLINE_APPROVE,
+        Permission.APPROVAL_REQUEST_VIEW,
+        Permission.APPROVAL_REQUEST_CREATE,
+        Permission.APPROVAL_REQUEST_APPROVE,
+        Permission.DEPARTMENT_REVIEW,
         Permission.AUDIT_LOG_VIEW,
         Permission.REPORT_EXPORT,
         Permission.SYSTEM_SETTING_MANAGE,
@@ -63,6 +71,8 @@ DEFAULT_ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
         Permission.AIRGAP_POLICY_VIEW,
         Permission.DISK_OFFLINE_REQUEST,
         Permission.DISK_ONLINE_REQUEST,
+        Permission.APPROVAL_REQUEST_VIEW,
+        Permission.APPROVAL_REQUEST_CREATE,
         Permission.REPORT_EXPORT,
     },
     Role.HARDWARE_ADMIN: {
@@ -71,12 +81,16 @@ DEFAULT_ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
         Permission.DISK_OFFLINE_EXECUTE,
         Permission.DISK_ONLINE_APPROVE,
         Permission.HARDWARE_CONTROL,
+        Permission.APPROVAL_REQUEST_VIEW,
+        Permission.APPROVAL_REQUEST_APPROVE,
+        Permission.DEPARTMENT_REVIEW,
         Permission.AUDIT_LOG_VIEW,
     },
     Role.AUDITOR: {
         Permission.DASHBOARD_VIEW,
         Permission.VEEAM_VIEW,
         Permission.AIRGAP_POLICY_VIEW,
+        Permission.APPROVAL_REQUEST_VIEW,
         Permission.AUDIT_LOG_VIEW,
         Permission.REPORT_EXPORT,
     },
@@ -87,6 +101,7 @@ DEFAULT_ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
         Permission.DASHBOARD_VIEW,
         Permission.VEEAM_VIEW,
         Permission.AIRGAP_POLICY_VIEW,
+        Permission.APPROVAL_REQUEST_VIEW,
         Permission.AUDIT_LOG_VIEW,
         Permission.REPORT_EXPORT,
         Permission.SYSTEM_SETTING_MANAGE,
