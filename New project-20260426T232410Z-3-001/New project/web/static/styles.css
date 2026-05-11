@@ -8134,6 +8134,45 @@ body,
   font-weight: 800;
 }
 
+.repository-online-request-card {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid #d8e4ef;
+  border-radius: 8px;
+  background: #f8fbfe;
+  color: #1f3347;
+}
+
+.repository-online-request-card strong {
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.repository-online-request-card dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 10px;
+  margin: 0;
+}
+
+.repository-online-request-card dt,
+.repository-online-request-card dd {
+  margin: 0;
+  font-size: 12px;
+}
+
+.repository-online-request-card dt {
+  color: #60758a;
+  font-weight: 900;
+}
+
+.repository-online-request-card dd {
+  display: grid;
+  gap: 4px;
+}
+
 .access-denied-view {
   min-height: 360px;
 }

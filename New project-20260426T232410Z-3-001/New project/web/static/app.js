@@ -2486,6 +2486,65 @@ function departmentReviewSummary(request) {
   return `department review ${reviewed} / ${reviews.length} ${departmentReviewStatus(request)}`;
 }
 
+function departmentDisplayName(departmentId) {
+  return {
+    security: "보안팀",
+    "backup-operation": "백업팀",
+    "hardware-control": "하드웨어팀",
+    audit: "감사팀",
+    management: "관리자",
+  }[departmentId] || departmentId || "-";
+}
+
+function departmentReviewDisplayStatus(status) {
+  return {
+    PENDING: "검토 대기",
+    IN_REVIEW: "검토 중",
+    REVIEWED: "검토 완료",
+    NEEDS_CHANGES: "보완 요청",
+    BLOCKED: "차단",
+  }[String(status || "PENDING").toUpperCase()] || "검토 대기";
+}
+
+function departmentWorkflowDisplayStatus(request) {
+  return {
+    NOT_REQUIRED: "부서 검토 불필요",
+    PENDING: "부서 검토 진행 중",
+    IN_REVIEW: "부서 검토 진행 중",
+    REVIEWED: "부서 검토 완료",
+    NEEDS_CHANGES: "보완 요청 상태",
+    BLOCKED: "차단 상태",
+  }[departmentReviewStatus(request)] || "부서 검토 진행 중";
+}
+
+function renderRepositoryOnlineRequestPanel(request) {
+  if (request?.requestType !== "DISK_ONLINE") return "";
+  const reason = request.metadata?.reason || "백업 검증을 위해 Repository Online 필요";
+  const reviews = departmentReviewsFor(request);
+  const requiredReviews = reviews.length ? reviews : [
+    { departmentId: "security", status: "PENDING" },
+    { departmentId: "hardware-control", status: "PENDING" },
+  ];
+  return `
+    <div class="repository-online-request-card">
+      <strong>[Repository Online 요청]</strong>
+      <dl>
+        <dt>요청 사유:</dt>
+        <dd>${escapeHtml(reason)}</dd>
+        <dt>관련 부서:</dt>
+        <dd>
+          ${requiredReviews.map((review) => {
+            const checked = String(review.status || "").toUpperCase() === "REVIEWED" ? "☑" : "□";
+            return `<span>${checked} ${escapeHtml(departmentDisplayName(review.departmentId))} ${escapeHtml(departmentReviewDisplayStatus(review.status))}</span>`;
+          }).join("")}
+        </dd>
+        <dt>상태:</dt>
+        <dd>${escapeHtml(departmentWorkflowDisplayStatus(request))}</dd>
+      </dl>
+    </div>
+  `;
+}
+
 function roleDepartmentIds(role) {
   return {
     SECURITY_ADMIN: ["security"],
@@ -2646,7 +2705,7 @@ function renderApprovals(data, errorMessage = "") {
       <td>${escapeHtml(request.requesterUserId)}</td>
       <td>${escapeHtml(request.targetId || "-")}</td>
       <td><span class="rbac-status rbac-status-${escapeHtml(String(request.status || "").toLowerCase())}">${escapeHtml(request.status)}</span></td>
-      <td>${escapeHtml(repositoryOnlineWorkflowSummary(request))}<br><span class="approval-review-state">최종 승인 가능 여부: ${canShowApprovalButton(request) ? "가능" : "불가"} · 검토 완료 상태: ${escapeHtml(departmentReviewStatus(request))}</span>${history}</td>
+      <td>${renderRepositoryOnlineRequestPanel(request)}${escapeHtml(repositoryOnlineWorkflowSummary(request))}<br><span class="approval-review-state">최종 승인 가능 여부: ${canShowApprovalButton(request) ? "가능" : "불가"} · 검토 완료 상태: ${escapeHtml(departmentReviewStatus(request))}</span>${history}</td>
       <td>${escapeHtml(formatLogDate(request.expiresAt))}</td>
       <td>${departmentButtons}${reviewButton}${approveButton}</td>
     `;
@@ -2760,6 +2819,7 @@ window.lockfixUiAuth = {
   departmentReviewsFor,
   departmentReviewStatus,
   departmentReviewSummary,
+  renderRepositoryOnlineRequestPanel,
   workflowHistoryItems,
   renderWorkflowHistory,
   canShowReviewButton,
