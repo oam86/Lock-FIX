@@ -2418,11 +2418,44 @@ function approvalDecisionSummary(request, decisions = latestApprovalsData.decisi
   return `${approved} / ${required} approved`;
 }
 
+function repositoryOnlineWorkflowSummary(request, decisions = latestApprovalsData.decisions) {
+  const metadata = request?.metadata || {};
+  const reviews = metadata.reviews || {};
+  const reviewCount = ["SECURITY_LOG_REVIEW", "HARDWARE_STATE_REVIEW", "MANAGER_REVIEW"].filter((key) => reviews[key]).length;
+  const status = metadata.workflowStatus || (request?.requestType === "DISK_ONLINE" ? "AWAITING_SECURITY_HARDWARE_REVIEW" : "");
+  const approvals = approvalDecisionSummary(request, decisions);
+  return request?.requestType === "DISK_ONLINE" ? `${status} · reviews ${reviewCount} / 3 · ${approvals}` : approvals;
+}
+
+function reviewTypeForRole(role) {
+  return {
+    SECURITY_ADMIN: "SECURITY_LOG_REVIEW",
+    HARDWARE_ADMIN: "HARDWARE_STATE_REVIEW",
+    SUPER_ADMIN: "MANAGER_REVIEW",
+  }[role] || "";
+}
+
+function canShowReviewButton(request, session = currentSession) {
+  if (!request || request.status !== "PENDING" || request.requestType !== "DISK_ONLINE") return false;
+  if (String(request.requesterUserId || "") === String(session.user || "")) return false;
+  const reviewType = reviewTypeForRole(session.role);
+  if (!reviewType) return false;
+  const reviews = request.metadata?.reviews || {};
+  return !reviews[reviewType];
+}
+
 function canShowApprovalButton(request, session = currentSession, decisions = latestApprovalsData.decisions) {
   if (!request || request.status !== "PENDING") return false;
   if (!hasPermission("DISK_ONLINE_APPROVE", session)) return false;
   if (Array.isArray(request.allowedApproverRoles) && request.allowedApproverRoles.length && !request.allowedApproverRoles.includes(session.role)) return false;
   if (String(request.requesterUserId || "") === String(session.user || "")) return false;
+  if (request.requestType === "DISK_ONLINE") {
+    const reviews = request.metadata?.reviews || {};
+    if (!["SECURITY_LOG_REVIEW", "HARDWARE_STATE_REVIEW", "MANAGER_REVIEW"].every((key) => reviews[key])) return false;
+    const approved = approvalDecisionsFor(request, decisions).filter((decision) => decision.decision === "APPROVED").length;
+    if (approved === 0 && session.role !== "SECURITY_ADMIN") return false;
+    if (approved === 1 && session.role !== "SUPER_ADMIN") return false;
+  }
   return !approvalDecisionsFor(request, decisions).some((decision) => String(decision.approverUserId || "") === String(session.user || ""));
 }
 
@@ -2456,7 +2489,11 @@ function renderApprovals(data, errorMessage = "") {
   }
   rows.forEach((request) => {
     const row = document.createElement("tr");
-    const button = canShowApprovalButton(request)
+    const reviewType = reviewTypeForRole(currentSession.role);
+    const reviewButton = canShowReviewButton(request)
+      ? `<button type="button" class="rbac-action-button" data-review-id="${escapeHtml(request.id)}" data-review-type="${escapeHtml(reviewType)}">Review</button>`
+      : "";
+    const approveButton = canShowApprovalButton(request)
       ? `<button type="button" class="rbac-action-button" data-approval-id="${escapeHtml(request.id)}">Approve</button>`
       : "";
     row.innerHTML = `
@@ -2464,9 +2501,9 @@ function renderApprovals(data, errorMessage = "") {
       <td>${escapeHtml(request.requesterUserId)}</td>
       <td>${escapeHtml(request.targetId || "-")}</td>
       <td><span class="rbac-status rbac-status-${escapeHtml(String(request.status || "").toLowerCase())}">${escapeHtml(request.status)}</span></td>
-      <td>${escapeHtml(approvalDecisionSummary(request))}</td>
+      <td>${escapeHtml(repositoryOnlineWorkflowSummary(request))}</td>
       <td>${escapeHtml(formatLogDate(request.expiresAt))}</td>
-      <td>${button}</td>
+      <td>${reviewButton}${approveButton}</td>
     `;
     approvalRequestsTable.appendChild(row);
   });
@@ -2574,6 +2611,8 @@ window.lockfixUiAuth = {
   visibleMenuDefinitions,
   canAccessView,
   approvalDecisionSummary,
+  repositoryOnlineWorkflowSummary,
+  canShowReviewButton,
   canShowApprovalButton,
 };
 
@@ -4097,6 +4136,24 @@ approvalTabs?.addEventListener("click", (event) => {
   renderApprovals(latestApprovalsData);
 });
 approvalRequestsTable?.addEventListener("click", async (event) => {
+  const reviewButton = event.target.closest("[data-review-id]");
+  if (reviewButton) {
+    const comment = window.prompt("Review comment") || "";
+    if (!comment.trim()) return;
+    reviewButton.disabled = true;
+    try {
+      await requestJson(`/api/approvals/${encodeURIComponent(reviewButton.dataset.reviewId)}/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reviewType: reviewButton.dataset.reviewType, comment }),
+      });
+      await reloadApprovals();
+    } catch (error) {
+      alert(error.message);
+      reviewButton.disabled = false;
+    }
+    return;
+  }
   const button = event.target.closest("[data-approval-id]");
   if (!button) return;
   button.disabled = true;

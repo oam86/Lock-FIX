@@ -79,11 +79,17 @@ class LockFixTests(unittest.TestCase):
         metadata = {"reason": "unit test emergency unlock"} if request_type == "EMERGENCY_UNLOCK" else {}
         request = controller.approvals.create_request(request_type, "requester", target_id=slot_id, metadata=metadata)
         required = int(request["requiredApprovals"])
-        approvers = [
-            ("approver-1", Role.SUPER_ADMIN),
-            ("approver-2", Role.SECURITY_ADMIN),
-            ("approver-3", Role.HARDWARE_ADMIN),
-        ]
+        if request_type == "DISK_ONLINE":
+            controller.approvals.review_request(request["id"], "security-reviewer", Role.SECURITY_ADMIN, "SECURITY_LOG_REVIEW", "isolation logs reviewed")
+            controller.approvals.review_request(request["id"], "hardware-reviewer", Role.HARDWARE_ADMIN, "HARDWARE_STATE_REVIEW", "disk and lock state checked")
+            controller.approvals.review_request(request["id"], "manager-reviewer", Role.SUPER_ADMIN, "MANAGER_REVIEW", "team opinions reviewed")
+            approvers = [("approver-1", Role.SECURITY_ADMIN), ("approver-2", Role.SUPER_ADMIN)]
+        else:
+            approvers = [
+                ("approver-1", Role.SUPER_ADMIN),
+                ("approver-2", Role.SECURITY_ADMIN),
+                ("approver-3", Role.HARDWARE_ADMIN),
+            ]
         result = {"request": request}
         for approver_id, role in approvers[:required]:
             result = controller.approvals.decide(request["id"], approver_id, role, "APPROVED")
@@ -371,14 +377,43 @@ class LockFixTests(unittest.TestCase):
         store = ApprovalStore(tmp_path / "approvals.json", audit)
 
         policy = store.policy_for("DISK_ONLINE")
-        request = store.create_request("DISK_ONLINE", requester_user_id="creator", target_id="BAY-01")
+        request = store.create_repository_online_request("creator", target_id="BAY-01", reason="Repository Online requested")
+        store.review_request(request["id"], "security-reviewer", Role.SECURITY_ADMIN, "SECURITY_LOG_REVIEW", "isolation period logs checked")
+        store.review_request(request["id"], "hardware-reviewer", Role.HARDWARE_ADMIN, "HARDWARE_STATE_REVIEW", "JBOD lock state checked")
+        store.review_request(request["id"], "manager-reviewer", Role.SUPER_ADMIN, "MANAGER_REVIEW", "team opinions confirmed")
         first = store.decide(request["id"], "approver-a", Role.SECURITY_ADMIN, "APPROVED")
-        second = store.decide(request["id"], "approver-b", Role.HARDWARE_ADMIN, "APPROVED")
+        second = store.decide(request["id"], "approver-b", Role.SUPER_ADMIN, "APPROVED")
 
         self.assertEqual(policy["requiredApprovals"], 2)
         self.assertEqual(first["request"]["status"], "PENDING")
         self.assertEqual(second["request"]["status"], "APPROVED")
         self.assertIsNotNone(store.approved_request_for("DISK_ONLINE", "BAY-01"))
+
+    def test_repository_online_workflow_requires_team_reviews_and_ordered_approval(self) -> None:
+        tmp_path = self.make_workspace()
+        store = ApprovalStore(tmp_path / "approvals.json", AuditLogger(tmp_path / "audit.jsonl"))
+        request = store.create_repository_online_request("backup-operator", "BAY-01", "restore repository access")
+
+        with self.assertRaisesRegex(PermissionError, "review required"):
+            store.decide(request["id"], "security-admin", Role.SECURITY_ADMIN, "APPROVED")
+
+        store.review_request(request["id"], "security-reviewer", Role.SECURITY_ADMIN, "SECURITY_LOG_REVIEW", "격리 기간 로그 정상")
+        store.review_request(request["id"], "hardware-reviewer", Role.HARDWARE_ADMIN, "HARDWARE_STATE_REVIEW", "디스크/JBOD/락 정상")
+        reviewed = store.review_request(request["id"], "manager", Role.SUPER_ADMIN, "MANAGER_REVIEW", "두 팀 의견 확인")
+
+        self.assertEqual(reviewed["request"]["metadata"]["workflowStatus"], "AWAITING_SECURITY_ADMIN_APPROVAL")
+        with self.assertRaisesRegex(PermissionError, "SECURITY_ADMIN"):
+            store.decide(request["id"], "super-admin", Role.SUPER_ADMIN, "APPROVED")
+
+        first = store.decide(request["id"], "security-admin", Role.SECURITY_ADMIN, "APPROVED")
+        self.assertEqual(first["request"]["metadata"]["workflowStatus"], "AWAITING_SUPER_ADMIN_APPROVAL")
+        second = store.decide(request["id"], "super-admin", Role.SUPER_ADMIN, "APPROVED")
+
+        self.assertEqual(second["request"]["status"], "APPROVED")
+        self.assertEqual(second["request"]["metadata"]["workflowStatus"], "APPROVED_READY_TO_EXECUTE")
+        audit_text = (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
+        self.assertIn("approval.notification.sent", audit_text)
+        self.assertIn("approval.review.created", audit_text)
 
     def test_approval_blocks_duplicate_and_creator_self_approval(self) -> None:
         tmp_path = self.make_workspace()
@@ -1312,6 +1347,10 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("migrations/001_lockfix_rbac_approval_audit.sql", source)
         self.assertIn("The request creator cannot approve their own request.", source)
         self.assertIn("Emergency unlock requires a reason, dual approval, and audit logging.", source)
+        self.assertIn("Repository Online workflow", source)
+        self.assertIn("SECURITY_LOG_REVIEW", source)
+        self.assertIn("HARDWARE_STATE_REVIEW", source)
+        self.assertIn("MANAGER_REVIEW", source)
         self.assertIn("python -m unittest tests.test_lockfix", source)
 
     def test_installer_and_default_config_use_live_operation_mode(self) -> None:
@@ -1408,6 +1447,9 @@ class LockFixTests(unittest.TestCase):
             self.assertIn(tab, html)
 
         self.assertIn("approvalDecisionSummary", app)
+        self.assertIn("repositoryOnlineWorkflowSummary", app)
+        self.assertIn("canShowReviewButton", app)
+        self.assertIn('data-review-id', app)
         self.assertIn("canShowApprovalButton", app)
         self.assertIn('`${approved} / ${required} approved`', app)
         self.assertIn('hasPermission("DISK_ONLINE_APPROVE"', app)

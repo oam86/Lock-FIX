@@ -18,12 +18,18 @@ REJECTED = "REJECTED"
 
 
 DEFAULT_APPROVER_ROLES = {
-    "DISK_ONLINE": [Role.SUPER_ADMIN.value, Role.SECURITY_ADMIN.value, Role.HARDWARE_ADMIN.value],
+    "DISK_ONLINE": [Role.SECURITY_ADMIN.value, Role.SUPER_ADMIN.value],
     "EMERGENCY_UNLOCK": [Role.SUPER_ADMIN.value, Role.SECURITY_ADMIN.value],
     "POLICY_CHANGE": [Role.SUPER_ADMIN.value, Role.SECURITY_ADMIN.value],
     "DISK_OFFLINE": [Role.SUPER_ADMIN.value, Role.SECURITY_ADMIN.value, Role.BACKUP_OPERATOR.value],
     "HARDWARE_POWER_OFF": [Role.SUPER_ADMIN.value, Role.SECURITY_ADMIN.value, Role.HARDWARE_ADMIN.value],
     "HARDWARE_POWER_ON": [Role.SUPER_ADMIN.value, Role.SECURITY_ADMIN.value, Role.HARDWARE_ADMIN.value],
+}
+
+REPOSITORY_ONLINE_REVIEW_TYPES = {
+    "SECURITY_LOG_REVIEW": Role.SECURITY_ADMIN.value,
+    "HARDWARE_STATE_REVIEW": Role.HARDWARE_ADMIN.value,
+    "MANAGER_REVIEW": Role.SUPER_ADMIN.value,
 }
 
 
@@ -170,7 +176,99 @@ class ApprovalStore:
         data["requests"].append(record)
         self.save(data)
         self.audit_event("approval.request.created", approval_request=record)
+        if normalized_type == "DISK_ONLINE":
+            self.audit_event(
+                "approval.notification.sent",
+                approval_request=record,
+                recipient_roles=[Role.SECURITY_ADMIN.value, Role.HARDWARE_ADMIN.value, Role.SUPER_ADMIN.value],
+                message="Repository Online approval request requires security review, hardware review, and manager confirmation.",
+            )
         return record
+
+    def create_repository_online_request(
+        self,
+        requester_user_id: str,
+        target_id: str,
+        reason: str,
+        repository_path: str = "",
+    ) -> dict[str, Any]:
+        metadata = {
+            "workflowType": "REPOSITORY_ONLINE",
+            "targetResourceType": "REPOSITORY",
+            "reason": str(reason or "").strip(),
+            "repositoryPath": str(repository_path or "").strip(),
+            "workflowStatus": "AWAITING_SECURITY_HARDWARE_REVIEW",
+            "reviews": {},
+        }
+        request = self.create_request("DISK_ONLINE", requester_user_id, target_id=target_id, metadata=metadata)
+        self.audit_event(
+            "repository.online.request.created",
+            approval_request=request,
+            requesterUserId=str(requester_user_id or "unknown"),
+            targetId=str(target_id or ""),
+        )
+        return request
+
+    def review_request(
+        self,
+        approval_request_id: str,
+        reviewer_user_id: str,
+        reviewer_role: Role | str,
+        review_type: str,
+        comment: str,
+    ) -> dict[str, Any]:
+        data = self.load()
+        request = self.find_request(data, approval_request_id)
+        self.expire_request_if_needed(data, request)
+        if request.get("status") != PENDING:
+            self.save(data)
+            raise PermissionError(f"approval request is not pending: {request.get('status')}")
+        reviewer = str(reviewer_user_id or "").strip()
+        if not reviewer:
+            raise ValueError("reviewerUserId is required")
+        if reviewer == str(request.get("requesterUserId") or ""):
+            raise PermissionError("request creator cannot review their own request")
+        normalized_type = str(review_type or "").strip().upper()
+        expected_role = REPOSITORY_ONLINE_REVIEW_TYPES.get(normalized_type)
+        if not expected_role:
+            raise ValueError("reviewType must be SECURITY_LOG_REVIEW, HARDWARE_STATE_REVIEW, or MANAGER_REVIEW")
+        role = normalize_role(reviewer_role)
+        if role.value != expected_role:
+            raise PermissionError(f"reviewer role is not allowed: {role.value}")
+        text = str(comment or "").strip()
+        if not text:
+            raise ValueError("comment is required")
+        metadata = request.setdefault("metadata", {})
+        reviews = metadata.setdefault("reviews", {})
+        if normalized_type in reviews:
+            raise PermissionError(f"duplicate review is not allowed: {normalized_type}")
+        review = {
+            "reviewType": normalized_type,
+            "reviewerUserId": reviewer,
+            "reviewerRole": role.value,
+            "comment": text,
+            "createdAt": iso(utc_now()),
+        }
+        reviews[normalized_type] = review
+        metadata["workflowStatus"] = self.repository_online_workflow_status(request)
+        request["updatedAt"] = review["createdAt"]
+        self.save(data)
+        self.audit_event("approval.review.created", approval_request=request, review=review)
+        if normalized_type in {"SECURITY_LOG_REVIEW", "HARDWARE_STATE_REVIEW"}:
+            self.audit_event(
+                "approval.notification.sent",
+                approval_request=request,
+                recipient_roles=[Role.SUPER_ADMIN.value],
+                message="Security and hardware review updates are ready for manager confirmation.",
+            )
+        if normalized_type == "MANAGER_REVIEW":
+            self.audit_event(
+                "approval.notification.sent",
+                approval_request=request,
+                recipient_roles=[Role.SECURITY_ADMIN.value, Role.SUPER_ADMIN.value],
+                message="Repository Online request is ready for first and second approval.",
+            )
+        return {"request": dict(request), "review": review}
 
     def decide(
         self,
@@ -202,6 +300,9 @@ class ApprovalStore:
         normalized_decision = str(decision or "").strip().upper()
         if normalized_decision not in {APPROVED, REJECTED}:
             raise ValueError("decision must be APPROVED or REJECTED")
+        if str(request.get("requestType") or "").upper() == "DISK_ONLINE" and normalized_decision == APPROVED:
+            self.require_repository_online_reviews(request)
+            self.require_repository_online_approval_order(data, request, role)
         created_at = iso(utc_now())
         decision_record = ApprovalDecision(
             id=uuid.uuid4().hex,
@@ -218,6 +319,8 @@ class ApprovalStore:
             request["status"] = REJECTED
         elif self.approval_count(data, approval_request_id) >= int(request.get("requiredApprovals") or 1):
             request["status"] = APPROVED
+        if str(request.get("requestType") or "").upper() == "DISK_ONLINE":
+            request.setdefault("metadata", {})["workflowStatus"] = self.repository_online_workflow_status(request, data)
         request["updatedAt"] = created_at
         self.save(data)
         self.audit_event(event, approval_request=request, decision=decision_dict)
@@ -226,6 +329,48 @@ class ApprovalStore:
         if request["status"] == REJECTED:
             self.audit_event("approval.request.rejected", approval_request=request)
         return {"request": dict(request), "decision": decision_dict}
+
+    def require_repository_online_reviews(self, request: dict[str, Any]) -> None:
+        reviews = (request.get("metadata") or {}).get("reviews")
+        if not isinstance(reviews, dict):
+            reviews = {}
+        required = {"SECURITY_LOG_REVIEW", "HARDWARE_STATE_REVIEW", "MANAGER_REVIEW"}
+        missing = sorted(required - set(reviews))
+        if missing:
+            raise PermissionError(f"repository online review required: {', '.join(missing)}")
+
+    def require_repository_online_approval_order(
+        self,
+        data: dict[str, Any],
+        request: dict[str, Any],
+        approver_role: Role,
+    ) -> None:
+        approved_count = self.approval_count(data, str(request.get("id") or ""))
+        expected_role = Role.SECURITY_ADMIN if approved_count == 0 else Role.SUPER_ADMIN
+        if approver_role != expected_role:
+            raise PermissionError(f"repository online approval order requires {expected_role.value}")
+
+    def repository_online_workflow_status(self, request: dict[str, Any], data: dict[str, Any] | None = None) -> str:
+        if request.get("status") == APPROVED:
+            return "APPROVED_READY_TO_EXECUTE"
+        if request.get("status") == REJECTED:
+            return "REJECTED"
+        if request.get("status") == EXPIRED:
+            return "EXPIRED"
+        reviews = (request.get("metadata") or {}).get("reviews")
+        if not isinstance(reviews, dict):
+            reviews = {}
+        if not {"SECURITY_LOG_REVIEW", "HARDWARE_STATE_REVIEW"}.issubset(reviews):
+            return "AWAITING_SECURITY_HARDWARE_REVIEW"
+        if "MANAGER_REVIEW" not in reviews:
+            return "AWAITING_MANAGER_REVIEW"
+        source = data or self.load()
+        count = self.approval_count(source, str(request.get("id") or ""))
+        if count == 0:
+            return "AWAITING_SECURITY_ADMIN_APPROVAL"
+        if count == 1:
+            return "AWAITING_SUPER_ADMIN_APPROVAL"
+        return "APPROVED_READY_TO_EXECUTE"
 
     def approved_request_for(self, request_type: str, target_id: str = "") -> dict[str, Any] | None:
         data = self.load()

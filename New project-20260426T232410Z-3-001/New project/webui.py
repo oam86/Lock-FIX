@@ -885,6 +885,11 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 payload = self.read_json_body()
                 approval_request_id = parsed.path.split("/")[3]
                 self.send_json(self.create_approval_decision(approval_request_id, payload))
+            elif parsed.path.startswith("/api/approvals/") and parsed.path.endswith("/reviews"):
+                self.require_auth(Permission.AIRGAP_POLICY_VIEW)
+                payload = self.read_json_body()
+                approval_request_id = parsed.path.split("/")[3]
+                self.send_json(self.create_approval_review(approval_request_id, payload))
             else:
                 self.send_error(404, "not found")
         except AuthorizationError as exc:
@@ -1444,6 +1449,16 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             approver_user_id=str(payload.get("approverUserId") or self.current_session_user()),
             approver_role=self.current_role(),
             decision=str(payload.get("decision") or ""),
+            comment=str(payload.get("comment") or ""),
+        )
+        return {"ok": True, **result}
+
+    def create_approval_review(self, approval_request_id: str, payload: dict) -> dict:
+        result = self.context.controller.approvals.review_request(
+            approval_request_id,
+            reviewer_user_id=str(payload.get("reviewerUserId") or self.current_session_user()),
+            reviewer_role=self.current_role(),
+            review_type=str(payload.get("reviewType") or ""),
             comment=str(payload.get("comment") or ""),
         )
         return {"ok": True, **result}

@@ -24,6 +24,20 @@ Security rules enforced by code:
 - Emergency unlock requires a reason, dual approval, and audit logging.
 - Super Admin still counts as only one approver and cannot complete dual approval alone.
 
+Repository Online workflow:
+
+```text
+Backup Operator creates a Repository Online request.
+LOCK-FIX creates the DISK_ONLINE approval request and records notification events for Security, Hardware, and Super Admin roles.
+Security team records SECURITY_LOG_REVIEW after checking isolation-period logs.
+Hardware team records HARDWARE_STATE_REVIEW after checking disk, JBOD, and lock state.
+Super Admin records MANAGER_REVIEW after confirming both team opinions.
+Security Admin performs the first approval.
+Super Admin performs the second approval.
+LOCK-FIX Agent is allowed to execute Disk Online only after the required reviews and approvals are complete.
+All request, review, approval, execution-blocked, execution, and failure events are written to Audit Log.
+```
+
 Database migration:
 
 ```text
