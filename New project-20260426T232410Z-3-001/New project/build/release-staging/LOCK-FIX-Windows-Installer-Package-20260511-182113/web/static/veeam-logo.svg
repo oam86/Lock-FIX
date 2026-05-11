@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 512" role="img" aria-label="Veeam">
+  <rect width="1024" height="512" fill="none"/>
+  <path d="M93 106h921v216c0 23-9 45-26 61l-74 74c-16 16-38 25-61 25H10V189c0-23 9-45 25-61l36-36c6-6 14-9 22-9Z" fill="#00c95f"/>
+  <path d="M10 213 180 383c22 22 58 22 80 0L560 83H430L10 213Z" fill="#16d978" opacity=".85"/>
+  <path d="M394 482c49 0 96-19 131-54L870 83H770L371 482h23Z" fill="#54e193" opacity=".75"/>
+  <text x="86" y="327" fill="#fff" font-family="Arial, Helvetica, sans-serif" font-size="198" font-weight="700" letter-spacing="-16">Veeam</text>
+</svg>

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 430" role="img" aria-label="OAM">
+  <defs>
+    <linearGradient id="oamTop" x1="36" y1="30" x2="328" y2="176" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#244fb3"/>
+      <stop offset="1" stop-color="#071127"/>
+    </linearGradient>
+    <linearGradient id="oamBody" x1="20" y1="210" x2="332" y2="412" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#202578"/>
+      <stop offset="1" stop-color="#061026"/>
+    </linearGradient>
+  </defs>
+  <path d="M180 8 354 108 180 206 6 108Z" fill="url(#oamTop)"/>
+  <path d="M180 32 326 113 180 188 34 113Z" fill="#ffffff"/>
+  <ellipse cx="180" cy="110" rx="80" ry="46" transform="rotate(-9 180 110)" fill="#214fae"/>
+  <path d="M6 113 164 205 164 428 98 268 72 318 128 419 0 356Z" fill="#202578"/>
+  <path d="M180 209 354 113 354 354 286 206 242 296 206 250 206 414 180 429Z" fill="#061026"/>
+  <path d="M164 205 180 209 180 429 164 428Z" fill="#ffffff"/>
+  <path d="M73 207 100 260 32 415 0 398Z" fill="#ffffff"/>
+  <path d="M203 253 239 297 239 413 211 428 211 300 190 273Z" fill="#ffffff"/>
+  <path d="M287 160 333 251 354 210 354 130Z" fill="#ffffff"/>
+  <path d="M180 206 354 108 354 130 180 229 6 130 6 108Z" fill="url(#oamBody)" opacity="0.98"/>
+</svg>
