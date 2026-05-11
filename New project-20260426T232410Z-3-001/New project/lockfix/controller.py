@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import secrets
 
+from .approvals import ApprovalStore
 from .audit import AuditLogger
 from .command import CommandRunner
 from .config import LockFixConfig, SlotConfig
@@ -28,12 +29,14 @@ class LockFixController:
         self.disk = DiskOperator(self.runner, self.audit)
         self.secure_store = LockFixSecureStore.from_runtime(config.audit_log_path.parent)
         self.online_approval_path = config.audit_log_path.parent / "online-approvals.json"
+        self.approvals = ApprovalStore(config.audit_log_path.parent / "approvals.json", self.audit)
 
     def set_state(self, slot_id: str, state: LockFixState, **payload: object) -> None:
         self.state.set(slot_id, state)
         self.audit.write("state.transition", slot_id=slot_id, state=state.value, **payload)
 
     def isolate(self, slot_id: str, repository_path: str = "") -> LockFixState:
+        self.approvals.require_approved("DISK_OFFLINE", slot_id)
         slot = self.repository_slot(self.config.slot(slot_id), repository_path)
         try:
             self.set_state(slot_id, LockFixState.BACKUP_COMPLETED)
@@ -80,6 +83,7 @@ class LockFixController:
             raise
 
     def reconnect(self, slot_id: str, repository_path: str = "") -> LockFixState:
+        self.approvals.require_approved("DISK_ONLINE", slot_id)
         base_slot = self.config.slot(slot_id)
         remembered_path = str(self.disk.read_storage_state(base_slot).get("accessPath") or "").strip()
         slot = self.repository_slot(base_slot, repository_path or remembered_path)
@@ -296,6 +300,7 @@ class LockFixController:
         return slot_uid(slot)
 
     def emergency_reconnect(self, slot_id: str, verification_hash: str = "", repository_path: str = "") -> LockFixState:
+        self.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)
         slot = self.config.slot(slot_id)
         storage_state = self.disk.read_storage_state(slot)
         remembered_path = str(storage_state.get("accessPath") or "").strip()

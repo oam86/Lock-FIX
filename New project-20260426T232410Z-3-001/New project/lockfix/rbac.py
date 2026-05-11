@@ -98,6 +98,8 @@ DEFAULT_POLICY_PATH = Path(__file__).resolve().parents[1] / "config" / "rbac_pol
 
 
 def normalize_role(value: object) -> Role:
+    if isinstance(value, Role):
+        return value
     text = str(value or Role.AUDITOR.value).strip().upper()
     try:
         return Role(text)

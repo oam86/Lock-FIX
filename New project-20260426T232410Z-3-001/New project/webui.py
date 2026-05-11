@@ -579,6 +579,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/admin/departments":
                 self.require_super_admin()
                 self.send_json({"items": self.admin_departments()})
+            elif parsed.path == "/api/approvals":
+                self.require_auth(Permission.AIRGAP_POLICY_VIEW)
+                self.send_json(self.approval_summary())
             else:
                 self.send_error(404, "not found")
         except AuthorizationError as exc:
@@ -857,6 +860,15 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 self.require_super_admin()
                 payload = self.read_json_body()
                 self.send_json(self.admin_create_user(payload), status=201)
+            elif parsed.path == "/api/approvals":
+                self.require_auth(Permission.AIRGAP_POLICY_MANAGE)
+                payload = self.read_json_body()
+                self.send_json(self.create_approval_request(payload), status=201)
+            elif parsed.path.startswith("/api/approvals/") and parsed.path.endswith("/decisions"):
+                self.require_auth(Permission.DISK_ONLINE_APPROVE)
+                payload = self.read_json_body()
+                approval_request_id = parsed.path.split("/")[3]
+                self.send_json(self.create_approval_decision(approval_request_id, payload))
             else:
                 self.send_error(404, "not found")
         except AuthorizationError as exc:
@@ -1334,6 +1346,36 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             user = self.context.user_directory.disable_user(user_id)
         self.audit_user_change("admin.user.disabled", user, before=before)
         return {"ok": True, "user": user}
+
+    def approval_summary(self) -> dict:
+        store = self.context.controller.approvals
+        expired = store.expire_pending_requests()
+        data = store.load()
+        return {
+            "policies": data["policies"],
+            "requests": data["requests"],
+            "decisions": data["decisions"],
+            "expired": expired,
+        }
+
+    def create_approval_request(self, payload: dict) -> dict:
+        request = self.context.controller.approvals.create_request(
+            str(payload.get("requestType") or ""),
+            requester_user_id=str(payload.get("requesterUserId") or self.current_session_user()),
+            target_id=str(payload.get("targetId") or ""),
+            metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+        )
+        return {"ok": True, "request": request}
+
+    def create_approval_decision(self, approval_request_id: str, payload: dict) -> dict:
+        result = self.context.controller.approvals.decide(
+            approval_request_id,
+            approver_user_id=str(payload.get("approverUserId") or self.current_session_user()),
+            approver_role=self.current_role(),
+            decision=str(payload.get("decision") or ""),
+            comment=str(payload.get("comment") or ""),
+        )
+        return {"ok": True, **result}
 
     def current_session_user(self) -> str:
         token = self.session_token()

@@ -16,6 +16,7 @@ from lockfix.command import CommandError, CommandRunner
 from lockfix.audit import AuditLogger
 from lockfix.hashcheck import manifest_digest
 from lockfix.identity import compute_uid, fingerprint_parts, slot_uid
+from lockfix.approvals import ApprovalStore
 from lockfix.rbac import AuthorizationError, Permission, Role, default_policy_document, has_permission, load_role_permissions
 from lockfix.state_store import StateStore
 from lockfix.states import LockFixState
@@ -61,6 +62,19 @@ class LockFixTests(unittest.TestCase):
         root = Path.cwd() / "runtime" / f"test-{uuid.uuid4().hex}"
         root.mkdir(parents=True, exist_ok=True)
         return root
+
+    def approve_operation(self, controller: LockFixController, request_type: str, slot_id: str = "BAY-01") -> dict:
+        request = controller.approvals.create_request(request_type, "requester", target_id=slot_id)
+        required = int(request["requiredApprovals"])
+        approvers = [
+            ("approver-1", Role.SUPER_ADMIN),
+            ("approver-2", Role.SECURITY_ADMIN),
+            ("approver-3", Role.HARDWARE_ADMIN),
+        ]
+        result = {"request": request}
+        for approver_id, role in approvers[:required]:
+            result = controller.approvals.decide(request["id"], approver_id, role, "APPROVED")
+        return result["request"]
 
     def test_compute_uid_is_stable(self) -> None:
         self.assertEqual(
@@ -162,6 +176,59 @@ class LockFixTests(unittest.TestCase):
 
         with self.assertRaises(AuthorizationError):
             handler.require_super_admin()
+
+    def test_approval_policy_defaults_and_two_person_approval(self) -> None:
+        tmp_path = self.make_workspace()
+        audit = AuditLogger(tmp_path / "audit.jsonl")
+        store = ApprovalStore(tmp_path / "approvals.json", audit)
+
+        policy = store.policy_for("DISK_ONLINE")
+        request = store.create_request("DISK_ONLINE", requester_user_id="creator", target_id="BAY-01")
+        first = store.decide(request["id"], "approver-a", Role.SECURITY_ADMIN, "APPROVED")
+        second = store.decide(request["id"], "approver-b", Role.HARDWARE_ADMIN, "APPROVED")
+
+        self.assertEqual(policy["requiredApprovals"], 2)
+        self.assertEqual(first["request"]["status"], "PENDING")
+        self.assertEqual(second["request"]["status"], "APPROVED")
+        self.assertIsNotNone(store.approved_request_for("DISK_ONLINE", "BAY-01"))
+
+    def test_approval_blocks_duplicate_and_creator_self_approval(self) -> None:
+        tmp_path = self.make_workspace()
+        store = ApprovalStore(tmp_path / "approvals.json", AuditLogger(tmp_path / "audit.jsonl"))
+        request = store.create_request("POLICY_CHANGE", requester_user_id="creator", target_id="policy")
+
+        with self.assertRaisesRegex(PermissionError, "creator cannot approve"):
+            store.decide(request["id"], "creator", Role.SECURITY_ADMIN, "APPROVED")
+
+        store.decide(request["id"], "approver-a", Role.SECURITY_ADMIN, "APPROVED")
+        with self.assertRaisesRegex(PermissionError, "duplicate"):
+            store.decide(request["id"], "approver-a", Role.SECURITY_ADMIN, "APPROVED")
+
+    def test_approval_expiration_updates_status_and_audit_log(self) -> None:
+        tmp_path = self.make_workspace()
+        store = ApprovalStore(tmp_path / "approvals.json", AuditLogger(tmp_path / "audit.jsonl"))
+        request = store.create_request("HARDWARE_POWER_ON", requester_user_id="creator", target_id="BAY-01")
+        data = store.load()
+        data["requests"][0]["expiresAt"] = "2000-01-01T00:00:00+00:00"
+        store.save(data)
+
+        expired = store.expire_pending_requests()
+
+        self.assertEqual(expired[0]["id"], request["id"])
+        self.assertEqual(expired[0]["status"], "EXPIRED")
+        self.assertIn("approval.request.expired", (tmp_path / "audit.jsonl").read_text(encoding="utf-8"))
+
+    def test_controller_blocks_disk_online_until_approval_is_complete(self) -> None:
+        tmp_path = self.make_workspace()
+        controller = LockFixController(load_config(write_config(tmp_path)))
+
+        with self.assertRaisesRegex(PermissionError, "approval required"):
+            controller.reconnect("BAY-01")
+
+        self.approve_operation(controller, "DISK_ONLINE")
+        state = controller.reconnect("BAY-01")
+
+        self.assertIn(state, {LockFixState.ONLINE_VERIFIED_RW, LockFixState.QUARANTINE})
 
     def test_install_properties_can_enable_live_operation_mode(self) -> None:
         tmp_path = self.make_workspace()
@@ -279,6 +346,7 @@ class LockFixTests(unittest.TestCase):
     def test_isolate_records_power_off_proof_requirement_when_status_is_unavailable(self) -> None:
         tmp_path = self.make_workspace()
         controller = LockFixController(load_config(write_config(tmp_path)))
+        self.approve_operation(controller, "DISK_OFFLINE")
 
         controller.isolate("BAY-01")
 
@@ -298,6 +366,7 @@ class LockFixTests(unittest.TestCase):
         }
         config_path.write_text(json.dumps(raw), encoding="utf-8")
         controller = LockFixController(load_config(config_path))
+        self.approve_operation(controller, "DISK_OFFLINE")
 
         controller.isolate("BAY-01")
 
@@ -319,6 +388,7 @@ class LockFixTests(unittest.TestCase):
         }
         config_path.write_text(json.dumps(raw), encoding="utf-8")
         controller = LockFixController(load_config(config_path))
+        self.approve_operation(controller, "DISK_OFFLINE")
 
         with self.assertRaisesRegex(ValueError, "protected Windows OS volume"):
             controller.isolate("BAY-01")
@@ -512,6 +582,7 @@ class LockFixTests(unittest.TestCase):
     def test_isolate_reaches_isolated(self) -> None:
         tmp_path = self.make_workspace()
         controller = LockFixController(load_config(write_config(tmp_path)))
+        self.approve_operation(controller, "DISK_OFFLINE")
 
         state = controller.isolate("BAY-01")
 
@@ -521,6 +592,7 @@ class LockFixTests(unittest.TestCase):
     def test_reconnect_uid_mismatch_quarantines(self) -> None:
         tmp_path = self.make_workspace()
         controller = LockFixController(load_config(write_config(tmp_path, expected_uid="wrong")))
+        self.approve_operation(controller, "DISK_ONLINE")
 
         state = controller.reconnect("BAY-01")
 
@@ -530,6 +602,7 @@ class LockFixTests(unittest.TestCase):
     def test_reconnect_recovers_access_path_when_power_on_fails_but_disk_is_visible(self) -> None:
         tmp_path = self.make_workspace()
         controller = LockFixController(load_config(write_config(tmp_path)))
+        self.approve_operation(controller, "DISK_ONLINE")
 
         class FailingPower:
             def on(self, slot_id: str) -> None:
@@ -555,6 +628,7 @@ class LockFixTests(unittest.TestCase):
     def test_emergency_reconnect_requires_matching_disk_hash(self) -> None:
         tmp_path = self.make_workspace()
         controller = LockFixController(load_config(write_config(tmp_path)))
+        self.approve_operation(controller, "EMERGENCY_UNLOCK")
 
         with self.assertRaises(PermissionError):
             controller.emergency_reconnect("BAY-01", "wrong-hash")
@@ -569,6 +643,8 @@ class LockFixTests(unittest.TestCase):
     def test_emergency_reconnect_verifies_then_reconnects_volume(self) -> None:
         tmp_path = self.make_workspace()
         controller = LockFixController(load_config(write_config(tmp_path)))
+        self.approve_operation(controller, "EMERGENCY_UNLOCK")
+        self.approve_operation(controller, "DISK_ONLINE")
 
         state = controller.emergency_reconnect("BAY-01", controller.emergency_access_hash("BAY-01"))
 
@@ -1649,6 +1725,7 @@ class LockFixTests(unittest.TestCase):
         class Probe:
             context = webui.WebContext(config_path)
 
+        self.approve_operation(Probe.context.controller, "DISK_OFFLINE")
         marker_path = webui.ROOT / "runtime" / "veeam_auto_isolate.json"
         old_value = marker_path.read_text(encoding="utf-8") if marker_path.exists() else None
         payload = {
@@ -2042,6 +2119,7 @@ class LockFixTests(unittest.TestCase):
         config_path.write_text(json.dumps(raw), encoding="utf-8")
         config = load_config(config_path)
         controller = LockFixController(config)
+        self.approve_operation(controller, "DISK_OFFLINE")
 
         diagnostics = {
             "success": True,
