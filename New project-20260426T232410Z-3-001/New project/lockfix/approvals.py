@@ -681,9 +681,7 @@ class ApprovalStore:
         if status == "NOT_REQUIRED":
             return
         if status == "BLOCKED":
-            if approver_role != Role.SUPER_ADMIN:
-                raise PermissionError("blocked department review requires Super Admin exception review")
-            return
+            raise PermissionError("blocked department review requires Super Admin exception review before approval")
         if status == "NEEDS_CHANGES":
             raise PermissionError("department review needs changes before approval")
         if status != "REVIEWED":

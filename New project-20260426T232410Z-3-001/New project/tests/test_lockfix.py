@@ -661,6 +661,8 @@ class LockFixTests(unittest.TestCase):
             store.decide(request["id"], "security-admin", Role.SECURITY_ADMIN, "APPROVED")
 
         store.block_department_review(request["id"], security_review["id"], "security-admin", Role.SECURITY_ADMIN, "security incident open")
+        with self.assertRaisesRegex(PermissionError, "blocked"):
+            store.decide(request["id"], "super-admin", Role.SUPER_ADMIN, "APPROVED")
         with self.assertRaisesRegex(PermissionError, "Super Admin"):
             store.mark_department_reviewed(request["id"], security_review["id"], "security-admin", Role.SECURITY_ADMIN, "try to override")
         override = store.mark_department_reviewed(request["id"], security_review["id"], "super-admin", Role.SUPER_ADMIN, "exception review started")
