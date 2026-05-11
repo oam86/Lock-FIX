@@ -5,6 +5,7 @@ using System.Drawing;
 using System.IO;
 using System.Net;
 using System.Net.Security;
+using System.Net.Sockets;
 using System.Text;
 using System.Web.Script.Serialization;
 using System.Threading;
@@ -165,7 +166,7 @@ namespace LockFix
             database.Text = "DB";
             database.Checked = true;
 
-            veeamHost.Text = "127.0.0.1";
+            veeamHost.Text = DetectPrimaryIpv4();
             veeamPort.Text = "9419";
             authType.Items.AddRange(new object[] { "Windows Authentication", "API Token", "Basic Account" });
             authType.SelectedIndex = 0;
@@ -1061,7 +1062,7 @@ namespace LockFix
             root["dry_run"] = false;
             veeam["enabled"] = true;
             veeam["base_url"] = baseUrl;
-            veeam["auto_discover"] = true;
+            veeam["auto_discover"] = false;
             veeam["discovery_candidates"] = new string[] { baseUrl };
             veeam["discovery_scan_local_subnet"] = false;
             veeam["api_version"] = "1.2-rev1";
@@ -1074,6 +1075,28 @@ namespace LockFix
             veeam["require_backup_copy"] = true;
 
             File.WriteAllText(configPath, serializer.Serialize(root));
+        }
+
+        private static string DetectPrimaryIpv4()
+        {
+            try
+            {
+                foreach (IPAddress address in Dns.GetHostEntry(Dns.GetHostName()).AddressList)
+                {
+                    if (address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(address))
+                    {
+                        string text = address.ToString();
+                        if (!text.StartsWith("169.254."))
+                        {
+                            return text;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+            }
+            return "127.0.0.1";
         }
 
         private static void CopyDirectory(string source, string target)

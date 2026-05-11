@@ -70,6 +70,8 @@ foreach ($pattern in @("*.sh", "*.bash", "*.service")) {
     Get-ChildItem -LiteralPath $PackageRoot -Recurse -File -Filter $pattern -ErrorAction SilentlyContinue |
         Remove-Item -Force
 }
+Get-ChildItem -LiteralPath $PackageRoot -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue |
+    Remove-Item -Recurse -Force
 New-Item -ItemType Directory -Force -Path (Join-Path $PackageRoot "integrated") | Out-Null
 Get-ChildItem -LiteralPath (Join-Path $Root "integrated") -File -ErrorAction SilentlyContinue |
     Copy-Item -Destination (Join-Path $PackageRoot "integrated") -Force
@@ -217,7 +219,7 @@ http://127.0.0.1:8088
 Veeam 계정과 비밀번호를 환경변수로 설정한 뒤 실행합니다.
 
 ```powershell
-$env:LOCKFIX_VEEAM_BASE_URL = "https://127.0.0.1:9419"
+$env:LOCKFIX_VEEAM_BASE_URL = "https://<TARGET_SERVER_IP>:9419"
 $env:LOCKFIX_VEEAM_EM_BASE_URL = "https://127.0.0.1:9398"
 $env:LOCKFIX_VEEAM_USER = "Veeam계정"
 $env:LOCKFIX_VEEAM_PASSWORD = "Veeam비밀번호"
@@ -256,7 +258,7 @@ PowerShell/curl 실패는 Windows Schannel 진단 이슈일 수 있으므로 실
 PowerShell 7 또는 Windows `curl.exe`만 실패하고 LOCK-FIX Python 검증은 성공하는 경우, Windows Schannel/TLS 경로를 별도로 진단합니다.
 
 ```powershell
-$env:LOCKFIX_VEEAM_BASE_URL = "https://127.0.0.1:9419"
+$env:LOCKFIX_VEEAM_BASE_URL = "https://<TARGET_SERVER_IP>:9419"
 $env:LOCKFIX_VEEAM_USER = "Veeam계정"
 $env:LOCKFIX_VEEAM_PASSWORD = "Veeam비밀번호"
 powershell -ExecutionPolicy Bypass -File .\tools\veeam_schannel_diagnostics.ps1 -TestCurl
@@ -268,7 +270,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\veeam_schannel_diagnostics.ps1 
 powershell -ExecutionPolicy Bypass -File .\tools\veeam_schannel_diagnostics.ps1 -ApplyStrongCrypto
 ```
 
-운영 환경에서는 Veeam REST 인증서를 로컬 컴퓨터의 신뢰할 수 있는 루트 인증 기관에 등록하고, 가능하면 `https://127.0.0.1:9419` 대신 인증서 이름과 맞는 `https://localhost:9419`, 서버명, 또는 FQDN을 사용합니다.
+운영 환경에서는 Veeam REST 인증서를 로컬 컴퓨터의 신뢰할 수 있는 루트 인증 기관에 등록하고, 설치 대상 서버 IP 또는 그 IP와 일치하도록 운영에서 승인한 서버명/FQDN 하나만 사용합니다. 이전 설치나 다른 서버에서 쓰던 IP 후보는 설정에 남기지 않습니다.
 
 결과 코드는 다음 기준으로 분류됩니다.
 
@@ -309,12 +311,12 @@ Veeam Backup Server IP는 Agent 대상 서버 IP와 별개입니다. Agent IP가
 
 ```json
 "veeam": {
-  "base_url": "https://127.0.0.1:9419",
-  "auto_discover": true,
+  "base_url": "https://<TARGET_SERVER_IP>:9419",
+  "auto_discover": false,
   "discovery_candidates": [
-    "https://192.168.219.230:9419"
+    "https://<TARGET_SERVER_IP>:9419"
   ],
-  "discovery_scan_local_subnet": true
+  "discovery_scan_local_subnet": false
 }
 ```
 
