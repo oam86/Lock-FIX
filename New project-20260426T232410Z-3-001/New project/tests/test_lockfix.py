@@ -19,6 +19,17 @@ from lockfix.identity import compute_uid, fingerprint_parts, slot_uid
 from lockfix.approvals import ApprovalStore
 from lockfix.audit_log import AUDIT_LOG_FIELDS, audit_logs_to_csv, read_audit_logs
 from lockfix.rbac import AuthorizationError, Permission, Role, default_policy_document, has_permission, load_role_permissions
+from lockfix.schema import (
+    LOCKFIX_TABLE_SCHEMA,
+    approval_decision_row,
+    approval_policy_row,
+    approval_request_row,
+    audit_log_row,
+    departments_row,
+    load_schema_sql,
+    role_permissions_rows,
+    users_row,
+)
 from lockfix.state_store import StateStore
 from lockfix.states import LockFixState
 from lockfix.users import UserDirectory
@@ -137,6 +148,131 @@ class LockFixTests(unittest.TestCase):
             ["Management", "Security", "Backup Operation", "Hardware Control", "Audit", "Development", "Web Design"],
         )
         self.assertEqual({"id", "name", "description", "createdAt", "updatedAt"}, set(departments[0]))
+
+    def test_lockfix_database_schema_matches_required_tables(self) -> None:
+        expected = {
+            "users": (
+                "id",
+                "email",
+                "name",
+                "password_hash",
+                "department_id",
+                "role",
+                "disabled",
+                "created_at",
+                "updated_at",
+            ),
+            "departments": ("id", "name", "description", "created_at", "updated_at"),
+            "role_permissions": ("id", "role", "permission"),
+            "approval_requests": (
+                "id",
+                "request_type",
+                "requested_by_user_id",
+                "target_resource_type",
+                "target_resource_id",
+                "reason",
+                "status",
+                "created_at",
+                "updated_at",
+            ),
+            "approval_policies": (
+                "id",
+                "request_type",
+                "required_approvals",
+                "allowed_approver_roles",
+                "expires_in_minutes",
+                "enabled",
+            ),
+            "approval_decisions": ("id", "approval_request_id", "approver_user_id", "decision", "comment", "created_at"),
+            "audit_logs": (
+                "id",
+                "actor_user_id",
+                "action",
+                "resource_type",
+                "resource_id",
+                "ip_address",
+                "user_agent",
+                "result",
+                "before_value",
+                "after_value",
+                "created_at",
+            ),
+        }
+        schema_sql = load_schema_sql()
+
+        self.assertEqual(expected, LOCKFIX_TABLE_SCHEMA)
+        for table, fields in expected.items():
+            self.assertIn(f"CREATE TABLE IF NOT EXISTS {table}", schema_sql)
+            for field in fields:
+                self.assertIn(field, schema_sql)
+        self.assertNotIn("audit_log_delete", schema_sql.lower())
+
+    def test_schema_row_mappers_preserve_snake_case_contract(self) -> None:
+        policy = load_role_permissions(Path("config/rbac_policy.json"))
+        user = users_row(
+            {
+                "id": "u1",
+                "email": "backup@example.test",
+                "name": "Backup Lead",
+                "passwordHash": "hash",
+                "departmentId": "backup-operation",
+                "role": "BACKUP_OPERATOR",
+                "disabled": False,
+                "createdAt": "2026-05-11T00:00:00Z",
+                "updatedAt": "2026-05-11T00:00:00Z",
+            }
+        )
+        department = departments_row({"id": "backup-operation", "name": "Backup Operation", "createdAt": "c", "updatedAt": "u"})
+        approval_policy = approval_policy_row(
+            {
+                "id": "disk-online",
+                "requestType": "DISK_ONLINE",
+                "requiredApprovals": 2,
+                "allowedApproverRoles": ["SUPER_ADMIN"],
+                "expiresInMinutes": 30,
+                "enabled": True,
+            }
+        )
+        approval_request = approval_request_row(
+            {
+                "id": "req1",
+                "requestType": "DISK_ONLINE",
+                "requesterUserId": "u1",
+                "targetId": "BAY-01",
+                "status": "PENDING",
+                "createdAt": "c",
+                "updatedAt": "u",
+                "metadata": {"targetResourceType": "DISK", "reason": "maintenance"},
+            }
+        )
+        approval_decision = approval_decision_row(
+            {"id": "dec1", "approvalRequestId": "req1", "approverUserId": "u2", "decision": "APPROVED", "createdAt": "c"}
+        )
+        audit_log = audit_log_row(
+            {
+                "id": "log1",
+                "actorUserId": "u1",
+                "action": "admin.user.created",
+                "resourceType": "USER",
+                "resourceId": "u1",
+                "ipAddress": "127.0.0.1",
+                "userAgent": "unit-test",
+                "result": "SUCCESS",
+                "beforeValue": {},
+                "afterValue": {"id": "u1"},
+                "createdAt": "c",
+            }
+        )
+
+        self.assertEqual(set(LOCKFIX_TABLE_SCHEMA["users"]), set(user))
+        self.assertEqual("backup-operation", user["department_id"])
+        self.assertEqual(set(LOCKFIX_TABLE_SCHEMA["departments"]), set(department))
+        self.assertTrue(role_permissions_rows(policy))
+        self.assertEqual("DISK_ONLINE", approval_policy["request_type"])
+        self.assertEqual("u1", approval_request["requested_by_user_id"])
+        self.assertEqual("DISK", approval_request["target_resource_type"])
+        self.assertEqual("u2", approval_decision["approver_user_id"])
+        self.assertEqual("127.0.0.1", audit_log["ip_address"])
 
     def test_super_admin_can_create_update_and_disable_users_with_audit_log(self) -> None:
         tmp_path = self.make_workspace()
