@@ -563,6 +563,32 @@ class LockFixTests(unittest.TestCase):
         with self.assertRaises(AuthorizationError):
             handler.require_audit_log_view()
 
+    def test_audit_log_api_filters_and_clamps_limit(self) -> None:
+        tmp_path = self.make_workspace()
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(write_config(tmp_path))
+        AuditLogger(tmp_path / "audit.jsonl").write(
+            "admin.user.disabled",
+            actorUserId="admin",
+            resourceType="USER",
+            resourceId="user-1",
+            result="SUCCESS",
+        )
+        AuditLogger(tmp_path / "audit.jsonl").write(
+            "security.permission_denied",
+            actorUserId="developer",
+            resourceType="API",
+            resourceId="/api/admin/users",
+            result="FAILED",
+        )
+
+        failed_api = handler.audit_logs("result=FAILED&resourceType=API&limit=999999")
+
+        self.assertEqual(1, len(failed_api))
+        self.assertEqual("security.permission_denied", failed_api[0]["action"])
+        self.assertEqual(5000, handler.audit_log_limit("999999"))
+        self.assertEqual(1000, handler.audit_log_limit("not-a-number"))
+
     def test_audit_log_export_is_csv_and_no_delete_api_is_defined(self) -> None:
         tmp_path = self.make_workspace()
         audit_path = tmp_path / "audit.jsonl"

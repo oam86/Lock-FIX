@@ -501,10 +501,10 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 self.send_json({"items": self.audit_items()})
             elif parsed.path == "/api/audit-logs":
                 self.require_audit_log_view()
-                self.send_json({"items": self.audit_logs()})
+                self.send_json({"items": self.audit_logs(parsed.query)})
             elif parsed.path == "/api/audit-logs/export":
                 self.require_audit_log_view()
-                self.send_audit_logs_export()
+                self.send_audit_logs_export(parsed.query)
             elif parsed.path == "/api/integrated":
                 self.require_auth(Permission.DASHBOARD_VIEW)
                 self.send_json(integrated_solution_summary())
@@ -1522,11 +1522,31 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             return str(record.get("user") or "unknown")
         return "legacy-admin" if record else "unknown"
 
-    def audit_logs(self) -> list[dict]:
-        return read_audit_logs(self.context.config.audit_log_path)
+    def audit_logs(self, query: str = "") -> list[dict]:
+        params = parse_qs(query)
+        limit = self.audit_log_limit(params.get("limit", ["1000"])[0])
+        logs = read_audit_logs(self.context.config.audit_log_path, limit=limit)
+        filters = {
+            "actorUserId": params.get("actorUserId", [""])[0],
+            "action": params.get("action", [""])[0],
+            "resourceType": params.get("resourceType", [""])[0],
+            "result": params.get("result", [""])[0],
+        }
+        for field, expected in filters.items():
+            text = str(expected or "").strip()
+            if text:
+                logs = [log for log in logs if str(log.get(field) or "").upper() == text.upper()]
+        return logs
 
-    def send_audit_logs_export(self) -> None:
-        self.send_download(audit_logs_to_csv(self.audit_logs()), "text/csv; charset=utf-8", "lockfix_audit_logs.csv")
+    def audit_log_limit(self, value: str) -> int:
+        try:
+            limit = int(value)
+        except (TypeError, ValueError):
+            limit = 1000
+        return max(1, min(limit, 5000))
+
+    def send_audit_logs_export(self, query: str = "") -> None:
+        self.send_download(audit_logs_to_csv(self.audit_logs(query)), "text/csv; charset=utf-8", "lockfix_audit_logs.csv")
 
     def summary(self) -> dict:
         config = self.context.config
