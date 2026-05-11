@@ -33,6 +33,7 @@ from lockfix.controller import LockFixController
 from lockfix.hashcheck import verify_manifest
 from lockfix.identity import fingerprint_formula, fingerprint_parts, slot_uid, verify_uid
 from lockfix.integrated import integrated_solution_summary
+from lockfix.rbac import AuthorizationError, Permission, Role, load_role_permissions, normalize_role, require_permission
 from lockfix.source_inventory import integrated_source_inventory
 from lockfix.veeam_diagnostics import run_veeam_diagnostics
 
@@ -58,6 +59,7 @@ class WebContext:
         self.emergency_jobs_lock = threading.Lock()
         self.login_security_path = ROOT / "runtime" / "login_security.json"
         self.login_security_lock = threading.Lock()
+        self.rbac_policy_path = ROOT / "config" / "rbac_policy.json"
 
     @property
     def app_config(self):
@@ -454,16 +456,22 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             elif parsed.path.startswith("/static/"):
                 self.serve_file(STATIC_DIR / parsed.path[len("/static/") :])
             elif parsed.path == "/api/session":
-                self.send_json({"authenticated": self.is_authenticated(), "license": self.license_status()})
+                self.send_json(
+                    {
+                        "authenticated": self.is_authenticated(),
+                        "role": self.current_role().value if self.is_authenticated() else "",
+                        "license": self.license_status(),
+                    }
+                )
             elif parsed.path == "/api/security-temp-password/approve":
                 self.approve_security_temp_password(parsed.query)
             elif parsed.path == "/open-latest-package-folder":
                 self.open_latest_package_folder()
             elif parsed.path == "/api/console/status":
-                self.require_auth()
+                self.require_auth(Permission.DASHBOARD_VIEW)
                 self.send_json(self.console_status())
             elif parsed.path == "/api/service/status":
-                self.require_auth()
+                self.require_auth(Permission.SYSTEM_SETTING_MANAGE)
                 self.send_json(self.lockfix_service_status())
             elif parsed.path == "/api/qr-login/status":
                 token = parse_qs(parsed.query).get("token", [""])[0]
@@ -473,54 +481,54 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     headers["Set-Cookie"] = f"lockfix_session={response['session']}; HttpOnly; SameSite=Lax; Path=/"
                 self.send_json(response, headers=headers)
             elif parsed.path == "/api/summary":
-                self.require_auth()
+                self.require_auth(Permission.DASHBOARD_VIEW)
                 self.send_json(self.summary())
             elif parsed.path == "/api/audit":
-                self.require_auth()
+                self.require_auth(Permission.AUDIT_LOG_VIEW)
                 self.send_json({"items": self.audit_items()})
             elif parsed.path == "/api/integrated":
-                self.require_auth()
+                self.require_auth(Permission.DASHBOARD_VIEW)
                 self.send_json(integrated_solution_summary())
             elif parsed.path == "/api/monitoring":
-                self.require_auth()
+                self.require_auth(Permission.DASHBOARD_VIEW)
                 params = parse_qs(parsed.query)
                 self.send_json(self.monitoring_summary(params.get("start", [""])[0], params.get("end", [""])[0]))
             elif parsed.path == "/api/monitoring.csv":
-                self.require_auth()
+                self.require_auth(Permission.REPORT_EXPORT)
                 params = parse_qs(parsed.query)
                 self.send_monitoring_csv(params.get("start", [""])[0], params.get("end", [""])[0])
             elif parsed.path == "/api/report":
-                self.require_auth()
+                self.require_auth(Permission.REPORT_EXPORT)
                 self.send_json(self.report_summary())
             elif parsed.path == "/api/report/extras":
-                self.require_auth()
+                self.require_auth(Permission.REPORT_EXPORT)
                 self.send_json(self.report_extras_record())
             elif parsed.path == "/api/report.csv":
-                self.require_auth()
+                self.require_auth(Permission.REPORT_EXPORT)
                 self.send_report_csv()
             elif parsed.path == "/api/report.xlsx":
-                self.require_auth()
+                self.require_auth(Permission.REPORT_EXPORT)
                 self.send_report_xlsx()
             elif parsed.path == "/api/report.docx":
-                self.require_auth()
+                self.require_auth(Permission.REPORT_EXPORT)
                 self.send_report_docx()
             elif parsed.path == "/api/dashboard":
-                self.require_auth()
+                self.require_auth(Permission.DASHBOARD_VIEW)
                 self.send_json(self.dashboard_summary())
             elif parsed.path == "/api/notification":
-                self.require_auth()
+                self.require_auth(Permission.DASHBOARD_VIEW)
                 self.send_json(self.notification_summary())
             elif parsed.path == "/api/detect":
-                self.require_auth()
+                self.require_auth(Permission.AIRGAP_POLICY_VIEW)
                 self.send_json(self.detect_summary())
             elif parsed.path == "/api/network-status":
-                self.require_auth()
+                self.require_auth(Permission.DASHBOARD_VIEW)
                 self.send_json(self.network_status_summary())
             elif parsed.path == "/api/veeam-backup":
-                self.require_auth()
+                self.require_auth(Permission.VEEAM_VIEW)
                 self.send_json(self.veeam_backup_summary())
             elif parsed.path == "/api/logs":
-                self.require_auth()
+                self.require_auth(Permission.AUDIT_LOG_VIEW)
                 params = parse_qs(parsed.query)
                 self.send_json(
                     self.logs_summary(
@@ -534,7 +542,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     )
                 )
             elif parsed.path == "/api/logs.csv":
-                self.require_auth()
+                self.require_auth(Permission.REPORT_EXPORT)
                 params = parse_qs(parsed.query)
                 self.send_logs_csv(
                     params.get("start", [""])[0],
@@ -545,21 +553,23 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     params.get("q", [""])[0],
                 )
             elif parsed.path == "/api/license":
-                self.require_auth()
+                self.require_auth(Permission.SYSTEM_SETTING_MANAGE)
                 self.send_json(self.license_status())
             elif parsed.path == "/api/sources":
-                self.require_auth()
+                self.require_auth(Permission.AIRGAP_POLICY_VIEW)
                 inventory = integrated_source_inventory()
                 inventory["air_gap"] = self.air_gap_summary()
                 self.send_json(inventory)
             elif parsed.path == "/api/emergency-reconnect/status":
-                self.require_auth()
+                self.require_auth(Permission.DISK_ONLINE_APPROVE)
                 params = parse_qs(parsed.query)
                 slot_id = self.query_slot(parsed.query)
                 job_id = str(params.get("job_id", [""])[0])
                 self.send_json(self.context.emergency_reconnect_status(slot_id, job_id))
             else:
                 self.send_error(404, "not found")
+        except AuthorizationError as exc:
+            self.send_json({"error": str(exc), "permission": exc.permission.value, "role": exc.role.value}, status=403)
         except PermissionError as exc:
             self.send_json({"error": str(exc)}, status=401)
         except Exception as exc:
@@ -585,7 +595,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                         message="LOCK-FIX login succeeded with primary password.",
                     )
                     token = secrets.token_urlsafe(32)
-                    self.context.sessions[token] = time.time()
+                    self.context.sessions[token] = self.session_record(email, Role.SUPER_ADMIN)
                     self.send_json(
                         {"authenticated": True},
                         headers={"Set-Cookie": f"lockfix_session={token}; HttpOnly; SameSite=Lax; Path=/"},
@@ -603,7 +613,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                         message="LOCK-FIX login succeeded with an administrator-approved temporary password.",
                     )
                     token = secrets.token_urlsafe(32)
-                    self.context.sessions[token] = time.time()
+                    self.context.sessions[token] = self.session_record(email, Role.SUPER_ADMIN)
                     self.send_json(
                         {"authenticated": True},
                         headers={"Set-Cookie": f"lockfix_session={token}; HttpOnly; SameSite=Lax; Path=/"},
@@ -763,33 +773,33 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     headers={"Set-Cookie": "lockfix_session=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/"},
                 )
             elif parsed.path == "/api/license/register":
-                self.require_auth()
+                self.require_auth(Permission.SYSTEM_SETTING_MANAGE)
                 payload = self.read_json_body()
                 self.send_json(self.register_license(payload))
             elif parsed.path == "/api/report/customer":
-                self.require_auth()
+                self.require_auth(Permission.REPORT_EXPORT)
                 payload = self.read_json_body()
                 self.send_json(self.save_report_customer(payload))
             elif parsed.path == "/api/report/extras":
-                self.require_auth()
+                self.require_auth(Permission.REPORT_EXPORT)
                 payload = self.read_json_body()
                 self.send_json(self.save_report_extras(payload))
             elif parsed.path == "/api/service/control":
-                self.require_auth()
+                self.require_auth(Permission.SYSTEM_SETTING_MANAGE)
                 payload = self.read_json_body()
                 self.send_json(self.lockfix_service_control(str(payload.get("action") or "")))
             elif parsed.path == "/api/isolate":
-                self.require_auth()
+                self.require_auth(Permission.DISK_OFFLINE_EXECUTE)
                 slot_id = self.query_slot(parsed.query)
                 state = self.context.controller.isolate(slot_id)
                 self.send_json({"slot_id": slot_id, "state": state.value, "summary": self.summary()})
             elif parsed.path == "/api/reconnect":
-                self.require_auth()
+                self.require_auth(Permission.DISK_ONLINE_APPROVE)
                 slot_id = self.query_slot(parsed.query)
                 state = self.context.controller.reconnect(slot_id)
                 self.send_json({"slot_id": slot_id, "state": state.value, "summary": self.summary()})
             elif parsed.path == "/api/emergency-reconnect":
-                self.require_auth()
+                self.require_auth(Permission.DISK_ONLINE_APPROVE)
                 payload = self.read_json_body()
                 slot_id = self.query_slot(parsed.query)
                 slot = self.context.config.slot(slot_id)
@@ -828,6 +838,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 )
             else:
                 self.send_error(404, "not found")
+        except AuthorizationError as exc:
+            self.send_json({"error": str(exc), "permission": exc.permission.value, "role": exc.role.value}, status=403)
         except PermissionError as exc:
             self.send_json({"error": str(exc)}, status=401)
         except Exception as exc:
@@ -1042,9 +1054,10 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         token = self.session_token()
         if not token:
             return False
-        created_at = self.context.sessions.get(token)
-        if not created_at:
+        record = self.context.sessions.get(token)
+        if not record:
             return False
+        created_at = self.session_created_at(record)
         if time.time() - created_at > self.session_ttl_seconds:
             self.context.sessions.pop(token, None)
             return False
@@ -1187,7 +1200,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             return {"approved": False, "expired": False}
 
         session = secrets.token_urlsafe(32)
-        self.context.sessions[session] = time.time()
+        self.context.sessions[session] = self.session_record("qr-admin", Role.SUPER_ADMIN)
         self.context.qr_tokens.pop(token, None)
         return {
             "approved": True,
@@ -1195,9 +1208,34 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "session": session,
         }
 
-    def require_auth(self) -> None:
+    def session_record(self, user: str, role: Role) -> dict:
+        return {
+            "created_at": time.time(),
+            "user": str(user or "unknown"),
+            "role": role.value,
+        }
+
+    def session_created_at(self, record: object) -> float:
+        if isinstance(record, dict):
+            return float(record.get("created_at") or 0)
+        return float(record or 0)
+
+    def current_role(self) -> Role:
+        token = self.session_token()
+        if not token:
+            return Role.AUDITOR
+        record = self.context.sessions.get(token)
+        if isinstance(record, dict):
+            return normalize_role(record.get("role"))
+        if record:
+            return Role.SUPER_ADMIN
+        return Role.AUDITOR
+
+    def require_auth(self, permission: Permission | None = None) -> None:
         if not self.is_authenticated():
             raise PermissionError("authentication required")
+        if permission:
+            require_permission(self.current_role(), permission, load_role_permissions(self.context.rbac_policy_path))
 
     def summary(self) -> dict:
         config = self.context.config

@@ -16,6 +16,7 @@ from lockfix.command import CommandError, CommandRunner
 from lockfix.audit import AuditLogger
 from lockfix.hashcheck import manifest_digest
 from lockfix.identity import compute_uid, fingerprint_parts, slot_uid
+from lockfix.rbac import AuthorizationError, Permission, Role, default_policy_document, has_permission, load_role_permissions
 from lockfix.state_store import StateStore
 from lockfix.states import LockFixState
 from lockfix.veeam_client import VeeamAuthenticationError, VeeamClient, VeeamSettings, enrich_summary_with_logs, filter_target_repositories, match_backups, restore_point_summary, session_summary
@@ -75,6 +76,39 @@ class LockFixTests(unittest.TestCase):
         config = load_config(config_path)
 
         self.assertEqual(config.slot("BAY-01").device, "D:\\")
+
+    def test_rbac_policy_has_required_roles_and_no_audit_delete_permission(self) -> None:
+        policy = load_role_permissions(Path("config/rbac_policy.json"))
+
+        self.assertEqual(set(policy), set(Role))
+        self.assertNotIn("AUDIT_LOG_DELETE", {permission.value for permission in Permission})
+        self.assertNotIn("AUDIT_LOG_DELETE", json.dumps(default_policy_document()))
+        self.assertTrue(has_permission(Role.SUPER_ADMIN, Permission.AUDIT_LOG_VIEW, policy))
+        self.assertFalse(has_permission(Role.SUPER_ADMIN, Permission("AUDIT_LOG_VIEW"), {Role.SUPER_ADMIN: set()}))
+
+    def test_rbac_denies_missing_api_permission_with_forbidden_error(self) -> None:
+        tmp_path = self.make_workspace()
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(write_config(tmp_path))
+        handler.headers = {"Cookie": "lockfix_session=test-token"}
+        handler.context.sessions["test-token"] = handler.session_record("auditor", Role.AUDITOR)
+
+        with self.assertRaises(AuthorizationError) as raised:
+            handler.require_auth(Permission.DISK_OFFLINE_EXECUTE)
+
+        self.assertEqual(raised.exception.permission, Permission.DISK_OFFLINE_EXECUTE)
+        self.assertEqual(raised.exception.role, Role.AUDITOR)
+
+    def test_rbac_allows_super_admin_existing_session_format(self) -> None:
+        tmp_path = self.make_workspace()
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(write_config(tmp_path))
+        handler.headers = {"Cookie": "lockfix_session=legacy-token"}
+        handler.context.sessions["legacy-token"] = 9999999999.0
+
+        handler.require_auth(Permission.DISK_OFFLINE_EXECUTE)
+
+        self.assertEqual(handler.current_role(), Role.SUPER_ADMIN)
 
     def test_install_properties_can_enable_live_operation_mode(self) -> None:
         tmp_path = self.make_workspace()
