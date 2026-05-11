@@ -266,6 +266,27 @@ class LockFixTests(unittest.TestCase):
         )
         self.assertEqual({"id", "name", "description", "createdAt", "updatedAt"}, set(departments[0]))
 
+    def test_user_directory_hashes_password_and_keeps_user_contract(self) -> None:
+        tmp_path = self.make_workspace()
+        directory = UserDirectory(tmp_path / "users.json")
+
+        user = directory.create_user(
+            {
+                "email": "operator@example.test",
+                "name": "Operator",
+                "password": "backup@1234",
+                "departmentId": "backup-operation",
+                "role": "BACKUP_OPERATOR",
+            }
+        )
+
+        self.assertEqual(user["departmentId"], "backup-operation")
+        self.assertEqual(user["role"], "BACKUP_OPERATOR")
+        self.assertIn("passwordHash", user)
+        self.assertTrue(user["passwordHash"].startswith("pbkdf2_sha256$"))
+        self.assertNotEqual(user["passwordHash"], "backup@1234")
+        self.assertNotIn("password", user)
+
     def test_lockfix_database_schema_matches_required_tables(self) -> None:
         expected = {
             "users": (
@@ -476,6 +497,7 @@ class LockFixTests(unittest.TestCase):
             {
                 "email": "backup@example.com",
                 "name": "Backup Operator",
+                "password": "backup@1234",
                 "departmentId": "backup-operation",
                 "role": "BACKUP_OPERATOR",
             }
@@ -487,12 +509,15 @@ class LockFixTests(unittest.TestCase):
         disabled = handler.admin_disable_user(created["id"])["user"]
 
         self.assertEqual(created["departmentId"], "backup-operation")
+        self.assertNotIn("passwordHash", created)
         self.assertEqual(updated["role"], "SECURITY_ADMIN")
         self.assertTrue(disabled["disabled"])
         audit_text = (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
         self.assertIn('"event": "admin.user.created"', audit_text)
         self.assertIn('"event": "admin.user.updated"', audit_text)
         self.assertIn('"event": "admin.user.disabled"', audit_text)
+        self.assertNotIn("backup@1234", audit_text)
+        self.assertNotIn("passwordHash", audit_text)
 
     def test_non_super_admin_cannot_manage_users(self) -> None:
         tmp_path = self.make_workspace()

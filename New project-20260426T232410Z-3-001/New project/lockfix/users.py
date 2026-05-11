@@ -4,6 +4,7 @@ import json
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from hashlib import pbkdf2_hmac
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,7 @@ class User:
     id: str
     email: str
     name: str
+    passwordHash: str
     departmentId: str
     role: str
     disabled: bool
@@ -48,6 +50,25 @@ def utc_now() -> str:
 
 def department_id_for(name: str) -> str:
     return name.strip().lower().replace(" ", "-")
+
+
+def hash_password(password: str) -> str:
+    salt = uuid.uuid4().hex
+    digest = pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 120_000).hex()
+    return f"pbkdf2_sha256${salt}${digest}"
+
+
+def password_hash_from_payload(payload: dict[str, Any], existing: str = "") -> str:
+    if "password" in payload:
+        password = str(payload.get("password") or "")
+        if not password:
+            raise ValueError("password is required")
+        return hash_password(password)
+    if "passwordHash" in payload:
+        return str(payload.get("passwordHash") or "").strip()
+    if "password_hash" in payload:
+        return str(payload.get("password_hash") or "").strip()
+    return existing
 
 
 def default_departments(now: str | None = None) -> list[Department]:
@@ -112,6 +133,7 @@ class UserDirectory:
             id=str(payload.get("id") or uuid.uuid4().hex),
             email=email,
             name=name,
+            passwordHash=password_hash_from_payload(payload),
             departmentId=department_id,
             role=normalize_role(payload.get("role") or Role.AUDITOR.value).value,
             disabled=False,
@@ -142,6 +164,8 @@ class UserDirectory:
             if not name:
                 raise ValueError("name is required")
             user["name"] = name
+        if any(key in payload for key in ("password", "passwordHash", "password_hash")):
+            user["passwordHash"] = password_hash_from_payload(payload, str(user.get("passwordHash") or ""))
         if "departmentId" in payload:
             user["departmentId"] = self.require_department(data, str(payload.get("departmentId") or ""))
         if "role" in payload:

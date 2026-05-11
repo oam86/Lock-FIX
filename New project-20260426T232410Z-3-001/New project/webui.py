@@ -1393,31 +1393,40 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
 
     def admin_users(self) -> list[dict]:
         with self.context.user_directory_lock:
-            return self.context.user_directory.users()
+            return [self.public_user(user) for user in self.context.user_directory.users()]
+
+    def public_user(self, user: dict) -> dict:
+        record = dict(user)
+        record.pop("password", None)
+        record.pop("passwordHash", None)
+        record.pop("password_hash", None)
+        return record
 
     def audit_user_change(self, event: str, user: dict, before: dict | None = None) -> None:
+        public_user = self.public_user(user)
+        public_before = self.public_user(before or {}) if before is not None else {}
         self.context.controller.audit.write(
             event,
             actor=self.current_session_user(),
             actor_role=self.current_role().value,
-            user_id=str(user.get("id") or ""),
-            user_email=str(user.get("email") or ""),
-            department_id=str(user.get("departmentId") or ""),
-            role=str(user.get("role") or ""),
-            disabled=bool(user.get("disabled")),
-            before=before or {},
-            beforeValue=before or {},
-            afterValue=user,
+            user_id=str(public_user.get("id") or ""),
+            user_email=str(public_user.get("email") or ""),
+            department_id=str(public_user.get("departmentId") or ""),
+            role=str(public_user.get("role") or ""),
+            disabled=bool(public_user.get("disabled")),
+            before=public_before,
+            beforeValue=public_before,
+            afterValue=public_user,
             result="SUCCESS",
         )
-        before_role = str((before or {}).get("role") or "")
-        after_role = str(user.get("role") or "")
+        before_role = str(public_before.get("role") or "")
+        after_role = str(public_user.get("role") or "")
         if before is not None and before_role and before_role != after_role:
             self.context.controller.audit.write(
                 "admin.role.changed",
                 actorUserId=self.current_session_user(),
                 resourceType="ROLE",
-                resourceId=str(user.get("id") or ""),
+                resourceId=str(public_user.get("id") or ""),
                 beforeValue={"role": before_role},
                 afterValue={"role": after_role},
                 result="SUCCESS",
@@ -1427,7 +1436,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         with self.context.user_directory_lock:
             user = self.context.user_directory.create_user(payload)
         self.audit_user_change("admin.user.created", user)
-        return {"ok": True, "user": user}
+        return {"ok": True, "user": self.public_user(user)}
 
     def admin_update_user(self, user_id: str, payload: dict) -> dict:
         with self.context.user_directory_lock:
@@ -1435,14 +1444,14 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             user = self.context.user_directory.update_user(user_id, payload)
         user.pop("previousEmail", None)
         self.audit_user_change("admin.user.updated", user, before=before)
-        return {"ok": True, "user": user}
+        return {"ok": True, "user": self.public_user(user)}
 
     def admin_disable_user(self, user_id: str) -> dict:
         with self.context.user_directory_lock:
             before = next((dict(user) for user in self.context.user_directory.users() if str(user.get("id") or "") == user_id), {})
             user = self.context.user_directory.disable_user(user_id)
         self.audit_user_change("admin.user.disabled", user, before=before)
-        return {"ok": True, "user": user}
+        return {"ok": True, "user": self.public_user(user)}
 
     def approval_summary(self) -> dict:
         store = self.context.controller.approvals
