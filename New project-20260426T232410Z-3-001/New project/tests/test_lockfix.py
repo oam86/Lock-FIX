@@ -19,6 +19,7 @@ from lockfix.identity import compute_uid, fingerprint_parts, slot_uid
 from lockfix.rbac import AuthorizationError, Permission, Role, default_policy_document, has_permission, load_role_permissions
 from lockfix.state_store import StateStore
 from lockfix.states import LockFixState
+from lockfix.users import UserDirectory
 from lockfix.veeam_client import VeeamAuthenticationError, VeeamClient, VeeamSettings, enrich_summary_with_logs, filter_target_repositories, match_backups, restore_point_summary, session_summary
 from lockfix.veeam_console_logs import latest_backup_copy_console_log_summary
 from lockfix.veeam_factory import create_veeam_client
@@ -109,6 +110,58 @@ class LockFixTests(unittest.TestCase):
         handler.require_auth(Permission.DISK_OFFLINE_EXECUTE)
 
         self.assertEqual(handler.current_role(), Role.SUPER_ADMIN)
+
+    def test_user_directory_seeds_default_departments(self) -> None:
+        tmp_path = self.make_workspace()
+        directory = UserDirectory(tmp_path / "users.json")
+
+        departments = directory.departments()
+
+        self.assertEqual(
+            [department["name"] for department in departments],
+            ["Management", "Security", "Backup Operation", "Hardware Control", "Audit", "Development", "Web Design"],
+        )
+        self.assertEqual({"id", "name", "description", "createdAt", "updatedAt"}, set(departments[0]))
+
+    def test_super_admin_can_create_update_and_disable_users_with_audit_log(self) -> None:
+        tmp_path = self.make_workspace()
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(write_config(tmp_path))
+        handler.context.user_directory_path = tmp_path / "users.json"
+        handler.headers = {"Cookie": "lockfix_session=admin-token"}
+        handler.context.sessions["admin-token"] = handler.session_record("admin", Role.SUPER_ADMIN)
+
+        created = handler.admin_create_user(
+            {
+                "email": "backup@example.com",
+                "name": "Backup Operator",
+                "departmentId": "backup-operation",
+                "role": "BACKUP_OPERATOR",
+            }
+        )["user"]
+        updated = handler.admin_update_user(
+            created["id"],
+            {"name": "Backup Lead", "departmentId": "security", "role": "SECURITY_ADMIN"},
+        )["user"]
+        disabled = handler.admin_disable_user(created["id"])["user"]
+
+        self.assertEqual(created["departmentId"], "backup-operation")
+        self.assertEqual(updated["role"], "SECURITY_ADMIN")
+        self.assertTrue(disabled["disabled"])
+        audit_text = (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
+        self.assertIn('"event": "admin.user.created"', audit_text)
+        self.assertIn('"event": "admin.user.updated"', audit_text)
+        self.assertIn('"event": "admin.user.disabled"', audit_text)
+
+    def test_non_super_admin_cannot_manage_users(self) -> None:
+        tmp_path = self.make_workspace()
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(write_config(tmp_path))
+        handler.headers = {"Cookie": "lockfix_session=security-token"}
+        handler.context.sessions["security-token"] = handler.session_record("security-admin", Role.SECURITY_ADMIN)
+
+        with self.assertRaises(AuthorizationError):
+            handler.require_super_admin()
 
     def test_install_properties_can_enable_live_operation_mode(self) -> None:
         tmp_path = self.make_workspace()

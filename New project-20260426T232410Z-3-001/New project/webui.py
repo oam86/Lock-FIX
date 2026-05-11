@@ -35,6 +35,7 @@ from lockfix.identity import fingerprint_formula, fingerprint_parts, slot_uid, v
 from lockfix.integrated import integrated_solution_summary
 from lockfix.rbac import AuthorizationError, Permission, Role, load_role_permissions, normalize_role, require_permission
 from lockfix.source_inventory import integrated_source_inventory
+from lockfix.users import UserDirectory
 from lockfix.veeam_diagnostics import run_veeam_diagnostics
 
 
@@ -60,6 +61,8 @@ class WebContext:
         self.login_security_path = ROOT / "runtime" / "login_security.json"
         self.login_security_lock = threading.Lock()
         self.rbac_policy_path = ROOT / "config" / "rbac_policy.json"
+        self.user_directory_path = ROOT / "runtime" / "users.json"
+        self.user_directory_lock = threading.Lock()
 
     @property
     def app_config(self):
@@ -72,6 +75,10 @@ class WebContext:
     @property
     def controller(self) -> LockFixController:
         return LockFixController(self.config)
+
+    @property
+    def user_directory(self) -> UserDirectory:
+        return UserDirectory(self.user_directory_path)
 
     def login_security_now(self) -> str:
         return datetime.now().isoformat(timespec="seconds")
@@ -566,12 +573,22 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 slot_id = self.query_slot(parsed.query)
                 job_id = str(params.get("job_id", [""])[0])
                 self.send_json(self.context.emergency_reconnect_status(slot_id, job_id))
+            elif parsed.path == "/api/admin/users":
+                self.require_super_admin()
+                self.send_json({"items": self.admin_users()})
+            elif parsed.path == "/api/admin/departments":
+                self.require_super_admin()
+                self.send_json({"items": self.admin_departments()})
             else:
                 self.send_error(404, "not found")
         except AuthorizationError as exc:
             self.send_json({"error": str(exc), "permission": exc.permission.value, "role": exc.role.value}, status=403)
         except PermissionError as exc:
             self.send_json({"error": str(exc)}, status=401)
+        except KeyError as exc:
+            self.send_json({"error": str(exc)}, status=404)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, status=400)
         except Exception as exc:
             self.send_json({"error": str(exc)}, status=500)
 
@@ -836,12 +853,45 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     },
                     status=202,
                 )
+            elif parsed.path == "/api/admin/users":
+                self.require_super_admin()
+                payload = self.read_json_body()
+                self.send_json(self.admin_create_user(payload), status=201)
             else:
                 self.send_error(404, "not found")
         except AuthorizationError as exc:
             self.send_json({"error": str(exc), "permission": exc.permission.value, "role": exc.role.value}, status=403)
         except PermissionError as exc:
             self.send_json({"error": str(exc)}, status=401)
+        except KeyError as exc:
+            self.send_json({"error": str(exc)}, status=404)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            self.send_json({"error": str(exc), "summary": self.summary()}, status=500)
+
+    def do_PATCH(self) -> None:
+        try:
+            parsed = urlparse(self.path)
+            match = re.fullmatch(r"/api/admin/users/([^/]+)(/disable)?", parsed.path)
+            if not match:
+                self.send_error(404, "not found")
+                return
+            self.require_super_admin()
+            user_id = match.group(1)
+            if match.group(2):
+                self.send_json(self.admin_disable_user(user_id))
+            else:
+                payload = self.read_json_body()
+                self.send_json(self.admin_update_user(user_id, payload))
+        except AuthorizationError as exc:
+            self.send_json({"error": str(exc), "permission": exc.permission.value, "role": exc.role.value}, status=403)
+        except PermissionError as exc:
+            self.send_json({"error": str(exc)}, status=401)
+        except KeyError as exc:
+            self.send_json({"error": str(exc)}, status=404)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, status=400)
         except Exception as exc:
             self.send_json({"error": str(exc), "summary": self.summary()}, status=500)
 
@@ -1236,6 +1286,61 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             raise PermissionError("authentication required")
         if permission:
             require_permission(self.current_role(), permission, load_role_permissions(self.context.rbac_policy_path))
+
+    def require_super_admin(self) -> None:
+        self.require_auth(Permission.USER_MANAGE)
+        if self.current_role() != Role.SUPER_ADMIN:
+            raise AuthorizationError(Permission.USER_MANAGE, self.current_role())
+
+    def admin_departments(self) -> list[dict]:
+        with self.context.user_directory_lock:
+            return self.context.user_directory.departments()
+
+    def admin_users(self) -> list[dict]:
+        with self.context.user_directory_lock:
+            return self.context.user_directory.users()
+
+    def audit_user_change(self, event: str, user: dict, before: dict | None = None) -> None:
+        self.context.controller.audit.write(
+            event,
+            actor=self.current_session_user(),
+            actor_role=self.current_role().value,
+            user_id=str(user.get("id") or ""),
+            user_email=str(user.get("email") or ""),
+            department_id=str(user.get("departmentId") or ""),
+            role=str(user.get("role") or ""),
+            disabled=bool(user.get("disabled")),
+            before=before or {},
+            result="SUCCESS",
+        )
+
+    def admin_create_user(self, payload: dict) -> dict:
+        with self.context.user_directory_lock:
+            user = self.context.user_directory.create_user(payload)
+        self.audit_user_change("admin.user.created", user)
+        return {"ok": True, "user": user}
+
+    def admin_update_user(self, user_id: str, payload: dict) -> dict:
+        with self.context.user_directory_lock:
+            before = next((dict(user) for user in self.context.user_directory.users() if str(user.get("id") or "") == user_id), {})
+            user = self.context.user_directory.update_user(user_id, payload)
+        user.pop("previousEmail", None)
+        self.audit_user_change("admin.user.updated", user, before=before)
+        return {"ok": True, "user": user}
+
+    def admin_disable_user(self, user_id: str) -> dict:
+        with self.context.user_directory_lock:
+            before = next((dict(user) for user in self.context.user_directory.users() if str(user.get("id") or "") == user_id), {})
+            user = self.context.user_directory.disable_user(user_id)
+        self.audit_user_change("admin.user.disabled", user, before=before)
+        return {"ok": True, "user": user}
+
+    def current_session_user(self) -> str:
+        token = self.session_token()
+        record = self.context.sessions.get(token) if token else None
+        if isinstance(record, dict):
+            return str(record.get("user") or "unknown")
+        return "legacy-admin" if record else "unknown"
 
     def summary(self) -> dict:
         config = self.context.config
