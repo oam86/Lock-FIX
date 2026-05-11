@@ -592,12 +592,12 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 self.require_super_admin()
                 self.send_json({"items": self.admin_departments()})
             elif parsed.path == "/api/approvals":
-                self.require_auth(Permission.AIRGAP_POLICY_VIEW)
+                self.require_auth(Permission.APPROVAL_REQUEST_VIEW)
                 self.send_json(self.approval_summary())
             else:
                 review_match = re.fullmatch(r"/api/approval-requests/([^/]+)/reviews", parsed.path)
                 if review_match:
-                    self.require_auth(Permission.AIRGAP_POLICY_VIEW)
+                    self.require_auth(Permission.APPROVAL_REQUEST_VIEW)
                     self.send_json({"items": self.approval_department_reviews(review_match.group(1))})
                     return
                 self.send_error(404, "not found")
@@ -882,16 +882,16 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 payload = self.read_json_body()
                 self.send_json(self.admin_create_user(payload), status=201)
             elif parsed.path == "/api/approvals":
-                self.require_auth(Permission.AIRGAP_POLICY_MANAGE)
+                self.require_auth(Permission.APPROVAL_REQUEST_CREATE)
                 payload = self.read_json_body()
                 self.send_json(self.create_approval_request(payload), status=201)
             elif parsed.path.startswith("/api/approvals/") and parsed.path.endswith("/decisions"):
-                self.require_auth(Permission.DISK_ONLINE_APPROVE)
+                self.require_auth(Permission.APPROVAL_REQUEST_APPROVE)
                 payload = self.read_json_body()
                 approval_request_id = parsed.path.split("/")[3]
                 self.send_json(self.create_approval_decision(approval_request_id, payload))
             elif parsed.path.startswith("/api/approvals/") and parsed.path.endswith("/reviews"):
-                self.require_auth(Permission.AIRGAP_POLICY_VIEW)
+                self.require_auth(Permission.DEPARTMENT_REVIEW)
                 payload = self.read_json_body()
                 approval_request_id = parsed.path.split("/")[3]
                 self.send_json(self.create_approval_review(approval_request_id, payload))
@@ -901,7 +901,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     parsed.path,
                 )
                 if review_match:
-                    self.require_auth(Permission.AIRGAP_POLICY_VIEW)
+                    self.require_auth(Permission.DEPARTMENT_REVIEW)
                     payload = self.read_json_body()
                     self.send_json(
                         self.update_department_review(
