@@ -783,6 +783,54 @@
             <button type="button" id="settingsApplyButton" data-i18n="settings.apply">Apply</button>
             <span id="settingsApplyStatus" data-i18n="settings.pending">Select options, then click Apply.</span>
           </div>
+          <section class="settings-section" aria-labelledby="adminSettingsTitle">
+            <div class="settings-section-head">
+              <h2 id="adminSettingsTitle" data-i18n="settings.adminTitle">Administrator Settings</h2>
+              <p data-i18n="settings.adminDesc">Configure access, approvals, integration, and system operation from a protected area.</p>
+            </div>
+            <div class="settings-tile-grid">
+              <button type="button" class="settings-tile" data-settings-view="userManagement">
+                <strong data-i18n="settings.adminUsers">Users & Roles</strong>
+                <span data-i18n="settings.adminUsersDesc">Department users, roles, and disabled account control.</span>
+              </button>
+              <button type="button" class="settings-tile" data-settings-view="approvals">
+                <strong data-i18n="settings.adminApprovals">Approval Policy</strong>
+                <span data-i18n="settings.adminApprovalsDesc">Request workflow, department review, and final approval status.</span>
+              </button>
+              <button type="button" class="settings-tile" data-settings-view="veeam">
+                <strong data-i18n="settings.adminVeeam">Veeam Connection</strong>
+                <span data-i18n="settings.adminVeeamDesc">Connection status and backup integration checks.</span>
+              </button>
+              <button type="button" class="settings-tile" data-settings-view="sources">
+                <strong data-i18n="settings.adminAgent">Agent / Isolation</strong>
+                <span data-i18n="settings.adminAgentDesc">Repository isolation state and agent-controlled actions.</span>
+              </button>
+            </div>
+          </section>
+          <section class="settings-section" aria-labelledby="supportSettingsTitle">
+            <div class="settings-section-head">
+              <h2 id="supportSettingsTitle" data-i18n="settings.supportTitle">Support & Advanced Diagnostics</h2>
+              <p data-i18n="settings.supportDesc">Keep support evidence and advanced checks available without exposing them in daily operation screens.</p>
+            </div>
+            <div class="settings-diagnostics-grid">
+              <article class="settings-diagnostic-item">
+                <span data-i18n="settings.diagHealth">System Health</span>
+                <strong data-i18n="settings.diagHealthState">Available from this settings screen</strong>
+              </article>
+              <article class="settings-diagnostic-item">
+                <span data-i18n="settings.diagAgent">Agent Diagnostics</span>
+                <strong data-i18n="settings.diagRestricted">Restricted administrator area</strong>
+              </article>
+              <article class="settings-diagnostic-item">
+                <span data-i18n="settings.diagApi">API Connectivity</span>
+                <strong data-i18n="settings.diagRestricted">Restricted administrator area</strong>
+              </article>
+              <article class="settings-diagnostic-item">
+                <span data-i18n="settings.diagLogs">Support Log Export</span>
+                <strong data-i18n="settings.diagEvidence">Evidence for support and audit review</strong>
+              </article>
+            </div>
+          </section>
           <article class="settings-console-panel">
             <div>
               <h2>Web UI Console</h2>

@@ -287,6 +287,25 @@ const translations = {
     "settings.apply": "Apply",
     "settings.pending": "Select options, then click Apply.",
     "settings.applied": "Settings have been applied.",
+    "settings.adminTitle": "Administrator Settings",
+    "settings.adminDesc": "Configure access, approvals, integration, and system operation from a protected area.",
+    "settings.adminUsers": "Users & Roles",
+    "settings.adminUsersDesc": "Department users, roles, and disabled account control.",
+    "settings.adminApprovals": "Approval Policy",
+    "settings.adminApprovalsDesc": "Request workflow, department review, and final approval status.",
+    "settings.adminVeeam": "Veeam Connection",
+    "settings.adminVeeamDesc": "Connection status and backup integration checks.",
+    "settings.adminAgent": "Agent / Isolation",
+    "settings.adminAgentDesc": "Repository isolation state and agent-controlled actions.",
+    "settings.supportTitle": "Support & Advanced Diagnostics",
+    "settings.supportDesc": "Keep support evidence and advanced checks available without exposing them in daily operation screens.",
+    "settings.diagHealth": "System Health",
+    "settings.diagHealthState": "Available from this settings screen",
+    "settings.diagAgent": "Agent Diagnostics",
+    "settings.diagRestricted": "Restricted administrator area",
+    "settings.diagApi": "API Connectivity",
+    "settings.diagLogs": "Support Log Export",
+    "settings.diagEvidence": "Evidence for support and audit review",
     "veeam.title": "Post-Backup Isolation Procedure",
     "veeam.subtitle": "Check backup progress, success or failure, and API logs every second.",
     "veeam.job": "Backup Job",
@@ -402,6 +421,25 @@ const translations = {
     "settings.apply": "적용",
     "settings.pending": "항목을 선택한 뒤 적용 버튼을 누르세요.",
     "settings.applied": "설정이 적용되었습니다.",
+    "settings.adminTitle": "관리자 설정",
+    "settings.adminDesc": "접근 권한, 승인 정책, 연동, 시스템 운영 항목을 보호된 영역에서 설정합니다.",
+    "settings.adminUsers": "사용자 및 역할",
+    "settings.adminUsersDesc": "부서별 사용자, 역할, 비활성 계정을 관리합니다.",
+    "settings.adminApprovals": "승인 정책",
+    "settings.adminApprovalsDesc": "요청 워크플로우, 부서 검토, 최종 승인 상태를 확인합니다.",
+    "settings.adminVeeam": "Veeam 연결",
+    "settings.adminVeeamDesc": "백업 연동 상태와 연결 확인 항목을 관리합니다.",
+    "settings.adminAgent": "Agent / 격리",
+    "settings.adminAgentDesc": "Repository 격리 상태와 Agent 제어 항목을 확인합니다.",
+    "settings.supportTitle": "지원 및 고급진단",
+    "settings.supportDesc": "일상 운영 화면에는 노출하지 않고, 지원 증적과 고급 점검 항목을 설정 화면에서 확인합니다.",
+    "settings.diagHealth": "시스템 상태",
+    "settings.diagHealthState": "설정 화면에서 확인 가능",
+    "settings.diagAgent": "Agent 진단",
+    "settings.diagRestricted": "제한된 관리자 영역",
+    "settings.diagApi": "API 연결 확인",
+    "settings.diagLogs": "지원 로그 내보내기",
+    "settings.diagEvidence": "지원 및 감사 검토용 증적",
     "veeam.title": "백업 완료 후 격리 절차",
     "veeam.subtitle": "백업 진행률, 성공/실패 여부, API 상세 로그를 1초 단위로 확인합니다.",
     "veeam.job": "백업 작업",
@@ -4550,6 +4588,9 @@ logRetentionSelect?.addEventListener("change", () => {
   settingsApplyStatus.textContent = translations[pendingUiSettings.language]?.["settings.pending"] || translations.en["settings.pending"];
 });
 settingsApplyButton.addEventListener("click", applyPendingUiSettings);
+document.querySelectorAll("[data-settings-view]").forEach((button) => {
+  button.addEventListener("click", () => showView(button.dataset.settingsView || "settings"));
+});
 serviceStartButton?.addEventListener("click", () => controlLockfixService("start"));
 serviceStopButton?.addEventListener("click", () => controlLockfixService("stop"));
 applySidebarState();

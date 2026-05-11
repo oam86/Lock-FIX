@@ -830,6 +830,72 @@ button {
   font-weight: 800;
 }
 
+.settings-section {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #d8e0e6;
+  border-radius: 8px;
+  padding: 16px;
+  background: #ffffff;
+}
+
+.settings-section-head h2 {
+  margin: 0;
+  color: #0b2e79;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.settings-section-head p {
+  margin: 6px 0 0;
+  color: #667789;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.settings-tile-grid,
+.settings-diagnostics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-tile,
+.settings-diagnostic-item {
+  min-height: 92px;
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  border: 1px solid #e1e9f0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfdff;
+  text-align: left;
+}
+
+.settings-tile {
+  cursor: pointer;
+}
+
+.settings-tile:hover {
+  border-color: #9db8d8;
+  background: #f5f9ff;
+}
+
+.settings-tile strong,
+.settings-diagnostic-item strong {
+  color: #16283a;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.settings-tile span,
+.settings-diagnostic-item span {
+  color: #617286;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .settings-console-panel {
   display: grid;
   gap: 12px;
@@ -6210,6 +6276,11 @@ td {
   .settings-card {
     grid-template-columns: 1fr;
   }
+
+  .settings-tile-grid,
+  .settings-diagnostics-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 :root[data-theme="dark"] body {
@@ -6226,6 +6297,9 @@ td {
 :root[data-theme="dark"] .content-area,
 :root[data-theme="dark"] .monitoring-panel,
 :root[data-theme="dark"] .settings-card,
+:root[data-theme="dark"] .settings-section,
+:root[data-theme="dark"] .settings-tile,
+:root[data-theme="dark"] .settings-diagnostic-item,
 :root[data-theme="dark"] .dashboard-panel,
 :root[data-theme="dark"] .notification-panel,
 :root[data-theme="dark"] .detect-panel,
@@ -6256,6 +6330,9 @@ td {
 :root[data-theme="dark"] .placeholder-view h1,
 :root[data-theme="dark"] .monitoring-title-row h2,
 :root[data-theme="dark"] .settings-card h2,
+:root[data-theme="dark"] .settings-section-head h2,
+:root[data-theme="dark"] .settings-tile strong,
+:root[data-theme="dark"] .settings-diagnostic-item strong,
 :root[data-theme="dark"] .airgap-panel-head h2,
 :root[data-theme="dark"] .report-table-head h2,
 :root[data-theme="dark"] .network-chart-panel h1,
@@ -6271,6 +6348,9 @@ td {
 
 :root[data-theme="dark"] .monitoring-header p,
 :root[data-theme="dark"] .settings-card p,
+:root[data-theme="dark"] .settings-section-head p,
+:root[data-theme="dark"] .settings-tile span,
+:root[data-theme="dark"] .settings-diagnostic-item span,
 :root[data-theme="dark"] .placeholder-view p,
 :root[data-theme="dark"] .report-summary-panel p,
 :root[data-theme="dark"] .airgap-kpi p,
