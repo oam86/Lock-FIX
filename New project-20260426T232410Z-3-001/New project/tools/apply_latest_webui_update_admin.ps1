@@ -2,12 +2,12 @@ param(
     [string]$SourceRoot = "",
     [string]$InstallRoot = "$env:LOCALAPPDATA\Programs\OAM\LOCK-FIX",
     [string]$ServiceName = "LOCKFIXWebUI",
-    [string]$VeeamHost = "192.168.219.230",
+    [string]$VeeamHost = "127.0.0.1",
     [int]$VeeamPort = 9419,
     [string]$VeeamUser = "administrator",
     [string]$ApiVersion = "1.2-rev1",
-    [string]$JobName = "Agent_backup",
-    [string]$JobId = "a61d20b5-2555-4635-ab65-86b6fc2bf449",
+    [string]$JobName = "Backup Copy Job 1",
+    [string]$JobId = "",
     [ValidateSet("simulation", "live")]
     [string]$OperationMode = "live"
 )
@@ -212,7 +212,7 @@ function Update-VeeamConfig {
     $config.veeam.isolate_on_status = @("Success")
     $config.veeam.auto_discover = $true
     $config.veeam.discovery_candidates = @($BaseUrl)
-    $config.veeam.discovery_scan_local_subnet = $true
+    $config.veeam.discovery_scan_local_subnet = $false
     Write-Utf8NoBom -Path $ConfigPath -Value (($config | ConvertTo-Json -Depth 20) + [Environment]::NewLine)
 }
 

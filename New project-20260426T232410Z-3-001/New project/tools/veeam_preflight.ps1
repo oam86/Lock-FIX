@@ -3,6 +3,8 @@ param(
     [string]$Username = $env:LOCKFIX_VEEAM_USER,
     [string]$Password = $env:LOCKFIX_VEEAM_PASSWORD,
     [string]$ApiVersion = $(if ($env:LOCKFIX_VEEAM_API_VERSION) { $env:LOCKFIX_VEEAM_API_VERSION } else { "1.2-rev1" }),
+    [string]$JobName = $env:LOCKFIX_VEEAM_JOB_NAME,
+    [string]$JobId = $env:LOCKFIX_VEEAM_JOB_ID,
     [switch]$VerifySsl,
     [switch]$NoPythonFallback
 )
@@ -144,3 +146,93 @@ try {
     Invoke-PythonFallback -Reason $code
     exit 1
 }
+
+function Invoke-VeeamGet {
+    param([string]$Path)
+    $params = @{
+        Method = "Get"
+        Uri = "$BaseUrl$Path"
+        Headers = @{ "x-api-version" = $ApiVersion; "Authorization" = "Bearer $($token.access_token)" }
+        TimeoutSec = 10
+    }
+    if (-not $VerifySsl -and $SupportsSkipCertificateCheck) {
+        $params["SkipCertificateCheck"] = $true
+    }
+    Invoke-RestMethod @params
+}
+
+function Get-ItemCount {
+    param([object]$Value)
+    if ($null -eq $Value) { return 0 }
+    if ($Value.data) { return @($Value.data).Count }
+    if ($Value.items) { return @($Value.items).Count }
+    if ($Value.results) { return @($Value.results).Count }
+    if ($Value.value) { return @($Value.value).Count }
+    return 0
+}
+
+$jobsOk = $false
+$backupsOk = $false
+$jobMatched = [string]::IsNullOrWhiteSpace($JobName) -and [string]::IsNullOrWhiteSpace($JobId)
+
+try {
+    $jobs = Invoke-VeeamGet -Path "/api/v1/jobs"
+    $jobsOk = $true
+    $jobCount = Get-ItemCount $jobs
+    if (-not $jobMatched) {
+        foreach ($item in @($jobs.data) + @($jobs.items) + @($jobs.results) + @($jobs.value)) {
+            if ($null -eq $item) { continue }
+            $name = [string]$item.name
+            if ([string]::IsNullOrWhiteSpace($name)) { $name = [string]$item.jobName }
+            $id = [string]$item.id
+            if ([string]::IsNullOrWhiteSpace($id)) { $id = [string]$item.jobId }
+            if ((-not [string]::IsNullOrWhiteSpace($JobName) -and $name -ieq $JobName) -or
+                (-not [string]::IsNullOrWhiteSpace($JobId) -and $id -ieq $JobId)) {
+                $jobMatched = $true
+                break
+            }
+        }
+    }
+    Write-Result -Step "jobs" -Ok $true -Code "OK" -Message "/api/v1/jobs query succeeded. count=$jobCount"
+} catch {
+    $code = Convert-ErrorCode $_
+    Write-Result -Step "jobs" -Ok $false -Code $code -Message $_.Exception.Message
+}
+
+try {
+    $backups = Invoke-VeeamGet -Path "/api/v1/backups"
+    $backupsOk = $true
+    $backupCount = Get-ItemCount $backups
+    if (-not $jobMatched) {
+        foreach ($item in @($backups.data) + @($backups.items) + @($backups.results) + @($backups.value)) {
+            if ($null -eq $item) { continue }
+            $name = [string]$item.name
+            if ([string]::IsNullOrWhiteSpace($name)) { $name = [string]$item.jobName }
+            $id = [string]$item.id
+            if ([string]::IsNullOrWhiteSpace($id)) { $id = [string]$item.jobId }
+            if ((-not [string]::IsNullOrWhiteSpace($JobName) -and $name -ieq $JobName) -or
+                (-not [string]::IsNullOrWhiteSpace($JobId) -and $id -ieq $JobId)) {
+                $jobMatched = $true
+                break
+            }
+        }
+    }
+    Write-Result -Step "backups" -Ok $true -Code "OK" -Message "/api/v1/backups query succeeded. count=$backupCount"
+} catch {
+    $code = Convert-ErrorCode $_
+    Write-Result -Step "backups" -Ok $false -Code $code -Message $_.Exception.Message
+}
+
+if (-not $jobsOk -and -not $backupsOk) {
+    Write-Result -Step "inventory_permission" -Ok $false -Code "403" -Message "Token was issued, but neither jobs nor backups inventory could be queried. Grant at least Veeam Backup Viewer permission."
+    exit 1
+}
+
+if ($jobMatched) {
+    Write-Result -Step "job_match" -Ok $true -Code "OK" -Message "Configured job identity is present, or no job identity was supplied."
+} else {
+    Write-Result -Step "job_match" -Ok $false -Code "NO_MATCH" -Message "Configured job name/id was not found. Sessions may be empty on a new server, but the configured Veeam job must exist before automatic LOCK-FIX isolation can match it."
+    exit 1
+}
+
+Write-Result -Step "install_gate" -Ok $true -Code "OK" -Message "Preflight passed. A missing matching completed session is not an install blocker; LOCK-FIX will wait for the next successful Veeam session."

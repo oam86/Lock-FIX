@@ -1,6 +1,6 @@
 param(
     [string]$InstallRoot = "$env:LOCALAPPDATA\Programs\OAM\LOCK-FIX",
-    [string]$VeeamHost = "192.168.219.230",
+    [string]$VeeamHost = "127.0.0.1",
     [int]$VeeamPort = 9419,
     [string]$VeeamUser = "administrator",
     [string]$ApiVersion = "1.2-rev1",
@@ -83,7 +83,7 @@ $config.veeam.enabled = $true
 $config.veeam.base_url = $baseUrl
 $config.veeam.auto_discover = $true
 $config.veeam.discovery_candidates = @($baseUrl)
-$config.veeam.discovery_scan_local_subnet = $true
+$config.veeam.discovery_scan_local_subnet = $false
 $config.veeam.api_version = $ApiVersion
 $config.veeam.username = $VeeamUser
 $config.veeam.username_env = "LOCKFIX_VEEAM_USER"
