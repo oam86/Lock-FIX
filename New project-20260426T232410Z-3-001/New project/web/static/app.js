@@ -2545,6 +2545,26 @@ function renderRepositoryOnlineRequestPanel(request) {
   `;
 }
 
+function renderFinalApprovalPanel(request, decisions = latestApprovalsData.decisions) {
+  if (!request || departmentReviewStatus(request) !== "REVIEWED" || request.status !== "PENDING") return "";
+  const reviews = departmentReviewsFor(request);
+  const approved = approvalDecisionsFor(request, decisions).filter((decision) => decision.decision === "APPROVED").length;
+  const required = Number(request.requiredApprovals || 1);
+  const reviewLines = reviews.length
+    ? reviews.map((review) => `<span>${escapeHtml(departmentDisplayName(review.departmentId))}: ${escapeHtml(departmentReviewDisplayStatus(review.status))}</span>`).join("")
+    : `<span>부서 검토: 검토 완료</span>`;
+  return `
+    <div class="final-approval-wait-card">
+      <strong>[최종 승인 대기]</strong>
+      <div class="final-approval-review-lines">${reviewLines}</div>
+      <dl>
+        <dt>승인 상태:</dt>
+        <dd>${approved} / ${required} 승인 완료</dd>
+      </dl>
+    </div>
+  `;
+}
+
 function roleDepartmentIds(role) {
   return {
     SECURITY_ADMIN: ["security"],
@@ -2699,15 +2719,18 @@ function renderApprovals(data, errorMessage = "") {
     const approveButton = canShowApprovalButton(request)
       ? `<button type="button" class="rbac-action-button" data-approval-id="${escapeHtml(request.id)}">Approve</button>`
       : "";
+    const rejectButton = canShowApprovalButton(request)
+      ? `<button type="button" class="rbac-action-button rbac-danger-action" data-reject-id="${escapeHtml(request.id)}">Reject</button>`
+      : "";
     const history = ["consultationOpinion", "completedHistory", "auditRecord"].includes(activeApprovalTab) ? renderWorkflowHistory(request) : "";
     row.innerHTML = `
       <td>${escapeHtml(request.requestType)}</td>
       <td>${escapeHtml(request.requesterUserId)}</td>
       <td>${escapeHtml(request.targetId || "-")}</td>
       <td><span class="rbac-status rbac-status-${escapeHtml(String(request.status || "").toLowerCase())}">${escapeHtml(request.status)}</span></td>
-      <td>${renderRepositoryOnlineRequestPanel(request)}${escapeHtml(repositoryOnlineWorkflowSummary(request))}<br><span class="approval-review-state">최종 승인 가능 여부: ${canShowApprovalButton(request) ? "가능" : "불가"} · 검토 완료 상태: ${escapeHtml(departmentReviewStatus(request))}</span>${history}</td>
+      <td>${renderRepositoryOnlineRequestPanel(request)}${renderFinalApprovalPanel(request)}${escapeHtml(repositoryOnlineWorkflowSummary(request))}<br><span class="approval-review-state">최종 승인 가능 여부: ${canShowApprovalButton(request) ? "가능" : "불가"} · 검토 완료 상태: ${escapeHtml(departmentReviewStatus(request))}</span>${history}</td>
       <td>${escapeHtml(formatLogDate(request.expiresAt))}</td>
-      <td>${departmentButtons}${reviewButton}${approveButton}</td>
+      <td>${departmentButtons}${reviewButton}${approveButton}${rejectButton}</td>
     `;
     approvalRequestsTable.appendChild(row);
   });
@@ -2820,6 +2843,7 @@ window.lockfixUiAuth = {
   departmentReviewStatus,
   departmentReviewSummary,
   renderRepositoryOnlineRequestPanel,
+  renderFinalApprovalPanel,
   workflowHistoryItems,
   renderWorkflowHistory,
   canShowReviewButton,
@@ -4393,6 +4417,25 @@ approvalRequestsTable?.addEventListener("click", async (event) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ decision: "APPROVED", comment: "Approved from LOCK-FIX Web UI" }),
+    });
+    await reloadApprovals();
+  } catch (error) {
+    alert(error.message);
+    button.disabled = false;
+  }
+});
+
+approvalRequestsTable?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-reject-id]");
+  if (!button) return;
+  const comment = prompt("반려 사유를 입력하세요.", "Rejected from LOCK-FIX Web UI");
+  if (comment === null) return;
+  button.disabled = true;
+  try {
+    await requestJson(`/api/approvals/${encodeURIComponent(button.dataset.rejectId)}/decisions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "REJECTED", comment }),
     });
     await reloadApprovals();
   } catch (error) {

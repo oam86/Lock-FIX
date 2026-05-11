@@ -8173,6 +8173,52 @@ body,
   gap: 4px;
 }
 
+.final-approval-wait-card {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid #d9e8dc;
+  border-radius: 8px;
+  background: #f7fcf8;
+  color: #1f3a2b;
+}
+
+.final-approval-wait-card strong {
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.final-approval-review-lines {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.final-approval-wait-card dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 10px;
+  margin: 0;
+}
+
+.final-approval-wait-card dt,
+.final-approval-wait-card dd {
+  margin: 0;
+  font-size: 12px;
+}
+
+.final-approval-wait-card dt {
+  color: #557363;
+  font-weight: 900;
+}
+
+.rbac-danger-action {
+  border-color: #f2c4c4;
+  color: #9f1f1f;
+  background: #fff7f7;
+}
+
 .access-denied-view {
   min-height: 360px;
 }
