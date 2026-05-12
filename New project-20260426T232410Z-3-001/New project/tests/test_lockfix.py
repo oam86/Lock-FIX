@@ -1750,6 +1750,19 @@ class LockFixTests(unittest.TestCase):
         self.assertNotIn("settingsApplyButton", html)
         self.assertIn("applyPendingUiSettings()", app)
 
+    def test_operational_ui_hides_development_mode_copy(self) -> None:
+        root = Path.cwd()
+        html = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        app = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
+
+        self.assertNotIn("LOCK-FIX PoC", html)
+        self.assertNotIn("Integrated PoC", html)
+        self.assertNotIn("DRY-RUN MOCK", app)
+        self.assertNotIn('slot.dry_run ? "dry-run" : "live"', app)
+        self.assertIn("Enterprise Backup Isolation Platform", html)
+        self.assertIn("Protected Preview", app)
+        self.assertIn("Repository isolation targets", app)
+
     def test_web_ui_approval_tabs_and_button_visibility_are_testable(self) -> None:
         root = Path.cwd()
         html = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
