@@ -146,6 +146,8 @@ const themeSelect = document.querySelector("#themeSelect");
 const logRetentionSelect = document.querySelector("#logRetentionSelect");
 const settingsApplyButton = document.querySelector("#settingsApplyButton");
 const settingsApplyStatus = document.querySelector("#settingsApplyStatus");
+const settingsWorkspaceCard = document.querySelector("#settingsWorkspaceCard");
+const settingsWorkspaceButtons = document.querySelectorAll("[data-settings-view]");
 const consoleStatusText = document.querySelector("#consoleStatusText");
 const consoleStatusDetail = document.querySelector("#consoleStatusDetail");
 const serviceControlStatus = document.querySelector("#serviceControlStatus");
@@ -226,21 +228,25 @@ let currentSession = { authenticated: false, user: "", role: "", permissions: []
 let latestApprovalsData = { policies: [], requests: [], decisions: [], departmentReviews: [], reviewComments: [], notifications: [] };
 let activeApprovalTab = "approvalRequestBox";
 localStorage.setItem("lockfix.sidebarCollapsed", "false");
+const settingsWorkspaceViews = new Set(["hardware", "approvals", "userManagement", "auditLogs"]);
 
 const menuDefinitions = [
-  { view: "dashboard", label: "Dashboard", permissions: ["DASHBOARD_VIEW"] },
-  { view: "veeam", label: "Veeam Integration", permissions: ["VEEAM_VIEW"] },
-  { view: "sources", label: "Air-Gap Policy", permissions: ["AIRGAP_POLICY_VIEW"] },
-  { view: "hardware", label: "Hardware Control", permissions: ["HARDWARE_CONTROL"] },
+  { view: "dashboard", label: "Dashboard", permissions: ["DASHBOARD_VIEW"], section: "customer" },
+  { view: "monitoring", label: "Monitoring", permissions: ["DASHBOARD_VIEW"], section: "customer" },
+  { view: "detect2", label: "Hardware Detect", permissions: ["DASHBOARD_VIEW"], section: "customer" },
+  { view: "sources", label: "Air-Gap Status", permissions: ["AIRGAP_POLICY_VIEW"], section: "customer" },
+  { view: "report", label: "Reports", permissions: ["REPORT_EXPORT"], section: "customer" },
+  { view: "license2", label: "License", permissions: ["DASHBOARD_VIEW"], section: "customer" },
+  { view: "hardware", label: "Hardware Control", permissions: ["HARDWARE_CONTROL"], section: "operator" },
   {
     view: "approvals",
     label: "협업/승인 워크플로우",
     anyPermissions: ["DISK_ONLINE_APPROVE", "AIRGAP_POLICY_MANAGE", "DISK_OFFLINE_REQUEST", "DISK_ONLINE_REQUEST", "HARDWARE_CONTROL"],
+    section: "operator",
   },
-  { view: "userManagement", label: "User & Role Management", roles: ["SUPER_ADMIN"], anyPermissions: ["USER_MANAGE", "ROLE_MANAGE"] },
-  { view: "auditLogs", label: "Audit Logs", permissions: ["AUDIT_LOG_VIEW"] },
-  { view: "report", label: "Reports", permissions: ["REPORT_EXPORT"] },
-  { view: "settings", label: "System Settings", permissions: ["SYSTEM_SETTING_MANAGE"] },
+  { view: "userManagement", label: "User & Role Management", roles: ["SUPER_ADMIN"], anyPermissions: ["USER_MANAGE", "ROLE_MANAGE"], section: "admin" },
+  { view: "auditLogs", label: "Audit Logs", permissions: ["AUDIT_LOG_VIEW"], section: "admin" },
+  { view: "settings", label: "Settings", permissions: ["DASHBOARD_VIEW"], section: "customer" },
 ];
 
 const approvalTabDefinitions = [
@@ -259,6 +265,7 @@ const translations = {
     "nav.report": "Report",
     "nav.dashboard": "Dashboard",
     "nav.detect": "Detect",
+    "nav.hardwareDetect": "Hardware Detect",
     "nav.notification": "Notification",
     "nav.securityAudit": "Security Audit",
     "nav.logs": "Logs",
@@ -270,6 +277,9 @@ const translations = {
     "nav.veeam": "Veeam Backup",
     "nav.settings": "Settings",
     "nav.logout": "Logout",
+    "nav.customerWorkspace": "Customer View",
+    "nav.operatorWorkspace": "Operation",
+    "nav.adminWorkspace": "Admin / Developer",
     "settings.title": "Settings",
     "settings.subtitle": "Configure display language and screen theme.",
     "settings.languageTitle": "Language",
@@ -278,6 +288,12 @@ const translations = {
     "settings.themeDesc": "Switch between white and black backgrounds.",
     "settings.logRetentionTitle": "Log Retention",
     "settings.logRetentionDesc": "Choose how many days logs are retained.",
+    "settings.workspaceTitle": "Advanced Workspace",
+    "settings.workspaceDesc": "Operational, administrative, and development tools are available only to authorized users.",
+    "settings.workspaceOperation": "Operation",
+    "settings.workspaceHardware": "Hardware",
+    "settings.workspaceAdmin": "User & Role",
+    "settings.workspaceAudit": "Audit Logs",
     "settings.serviceTitle": "LOCK-FIX Service",
     "settings.serviceDesc": "Start or stop the installed LOCK-FIX Windows service.",
     "settings.serviceStart": "Start",
@@ -374,6 +390,7 @@ const translations = {
     "nav.report": "보고서",
     "nav.dashboard": "대시보드",
     "nav.detect": "탐지 내역",
+    "nav.hardwareDetect": "하드웨어 탐지",
     "nav.notification": "알림",
     "nav.securityAudit": "보안 감사",
     "nav.logs": "로그",
@@ -385,6 +402,9 @@ const translations = {
     "nav.veeam": "Veeam 백업",
     "nav.settings": "설정",
     "nav.logout": "로그아웃",
+    "nav.customerWorkspace": "고객 확인",
+    "nav.operatorWorkspace": "운영 작업",
+    "nav.adminWorkspace": "관리 / 개발",
     "settings.title": "설정",
     "settings.subtitle": "표시 언어와 화면 테마를 설정합니다.",
     "settings.languageTitle": "언어",
@@ -393,6 +413,12 @@ const translations = {
     "settings.themeDesc": "흰색 배경 또는 검은색 배경으로 전환합니다.",
     "settings.logRetentionTitle": "로그 보관 기간",
     "settings.logRetentionDesc": "로그를 보관할 기간을 선택합니다.",
+    "settings.workspaceTitle": "고급 작업 공간",
+    "settings.workspaceDesc": "운영, 관리, 개발성 도구는 권한이 있는 사용자에게만 표시됩니다.",
+    "settings.workspaceOperation": "운영 작업",
+    "settings.workspaceHardware": "하드웨어",
+    "settings.workspaceAdmin": "사용자/권한",
+    "settings.workspaceAudit": "감사 로그",
     "settings.serviceTitle": "LOCK-FIX 서비스",
     "settings.serviceDesc": "설치된 LOCK-FIX Windows 서비스를 시작하거나 중지합니다.",
     "settings.serviceStart": "시작",
@@ -1038,6 +1064,7 @@ function firstAllowedView(session = currentSession) {
 
 function applyMenuVisibility() {
   const allowedViews = new Set(visibleMenuDefinitions().map((item) => item.view));
+  const visibleSections = new Set();
   document.querySelectorAll(".side-item[data-view]").forEach((item) => {
     const view = item.dataset.view || "";
     if (view === "logout") {
@@ -1045,9 +1072,39 @@ function applyMenuVisibility() {
       return;
     }
     const isRbacMenu = item.classList.contains("rbac-menu");
-    item.hidden = !isRbacMenu || !allowedViews.has(view);
+    const isVisible = isRbacMenu && allowedViews.has(view);
+    item.hidden = !isVisible;
+    if (isVisible && item.dataset.menuSection) {
+      visibleSections.add(item.dataset.menuSection);
+    }
   });
+  document.querySelectorAll(".side-section-label[data-menu-section]").forEach((label) => {
+    label.hidden = !visibleSections.has(label.dataset.menuSection);
+  });
+  applySettingsWorkspaceVisibility();
   applySidebarTooltips();
+}
+
+function canAccessSettingsShortcut(button, session = currentSession) {
+  const view = button?.dataset?.settingsView || "";
+  if (!view || !canAccessView(view, session)) return false;
+  const permission = button.dataset.permission || "";
+  if (permission && !hasPermission(permission, session)) return false;
+  const anyPermissions = String(button.dataset.anyPermission || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return hasAnyPermission(anyPermissions, session);
+}
+
+function applySettingsWorkspaceVisibility() {
+  let visibleCount = 0;
+  settingsWorkspaceButtons.forEach((button) => {
+    const visible = canAccessSettingsShortcut(button);
+    button.hidden = !visible;
+    if (visible) visibleCount += 1;
+  });
+  if (settingsWorkspaceCard) settingsWorkspaceCard.hidden = visibleCount === 0;
 }
 
 function showAccessDenied(view) {
@@ -1088,7 +1145,7 @@ function applyPendingUiSettings() {
   logsRange.page = 1;
   localStorage.setItem("lockfix.logRetentionDays", String(logsRange.retention));
   applyUiSettings();
-  settingsApplyStatus.textContent = t("settings.applied");
+  if (settingsApplyStatus) settingsApplyStatus.textContent = t("settings.applied");
   if (latestMonitoringData) {
     renderMonitoring(latestMonitoringData);
   }
@@ -1216,7 +1273,10 @@ function showView(name) {
     if (window.location.hash !== `#${targetView}`) history.replaceState(null, "", `#${targetView}`);
     return;
   }
-  sideItems.forEach((item) => item.classList.toggle("active", item.dataset.view === targetView));
+  sideItems.forEach((item) => {
+    const isSettingsWorkspace = item.dataset.view === "settings" && settingsWorkspaceViews.has(targetView);
+    item.classList.toggle("active", item.dataset.view === targetView || isSettingsWorkspace);
+  });
   views.forEach((view) => view.classList.remove("view-active"));
   const target = document.querySelector(`#${targetView}View`);
   if (target) {
@@ -1790,7 +1850,6 @@ function renderDetect(data) {
     const latency = fingerprint.detection_latency_seconds ?? data.detection_latency_seconds ?? "0.5";
     const fingerprintValue = String(fingerprint.value || "-");
     const shortFingerprint = fingerprintValue.length > 12 ? `${fingerprintValue.slice(0, 12)}...` : fingerprintValue;
-    const backgroundFormula = `${fingerprint.formula_title || "LOCK-FIX-DISK-FINGERPRINT ="}\n${fingerprint.formula || ""}`;
     detectFingerprintRoot.innerHTML = `
       <div class="detect-judgement-page">
         <header class="detect-judgement-head">
@@ -1834,31 +1893,6 @@ function renderDetect(data) {
             <button type="button" class="detect-action-secondary" data-detect-action="airgap">격리 유지</button>
             <button type="button" class="detect-action-secondary" data-detect-action="settings">등록 요청</button>
           </div>
-        </section>
-        <section class="detect-background-fingerprint" aria-label="Background fingerprint judgement basis">
-          <h2>Background Judgement Basis</h2>
-          <div class="detect-background-grid">
-            <article>
-              <span>REGISTERED FINGERPRINT</span>
-              <strong>${escapeHtml(fingerprint.registered_value || "-")}</strong>
-            </article>
-            <article>
-              <span>CURRENT STATUS</span>
-              <strong class="${isNormal ? "detect-text-normal" : "detect-text-abnormal"}">${escapeHtml(status)}</strong>
-            </article>
-            <article>
-              <span>FORMULA</span>
-              <strong>${escapeHtml(backgroundFormula.replace(/\n/g, " "))}</strong>
-            </article>
-          </div>
-        </section>
-        <section class="detect-parts-grid" aria-label="Disk identity fingerprint parts">
-          ${parts.map((part) => `
-            <article>
-              <span>${escapeHtml(part.label || "-")}</span>
-              <strong>${escapeHtml(part.value || "-")}</strong>
-            </article>
-          `).join("")}
         </section>
       </div>
     `;
@@ -3501,15 +3535,15 @@ function renderSources(data) {
         <colgroup>
           <col class="veeam-log-col-name" />
           <col class="veeam-log-col-status" />
-          <col class="veeam-log-col-action" />
           <col class="veeam-log-col-duration" />
+          <col class="veeam-log-col-action" />
         </colgroup>
         <thead>
           <tr>
             <th>Name</th>
             <th>Status</th>
-            <th>Action</th>
             <th>Duration</th>
+            <th>Action</th>
           </tr>
         </thead>
         <tbody>
@@ -3517,10 +3551,10 @@ function renderSources(data) {
             <tr>
               <td class="veeam-session-name">${escapeHtml(log.name || "-")}</td>
               <td><span class="veeam-session-status veeam-session-${statusVisualClass(log)}">${escapeHtml(statusDisplay(log))}</span></td>
-              <td colspan="2">
+              <td class="veeam-session-duration">${escapeHtml(log.duration || "-")}</td>
+              <td>
                 <div class="veeam-session-scroll-row" data-scroll-key="${escapeHtml(`${index}:${log.name || "-"}`)}">
                   <div class="veeam-session-actions">${actionLines(log)}${transferMetaHtml(log)}</div>
-                  <span class="veeam-session-duration">${escapeHtml(log.duration || "-")}</span>
                 </div>
               </td>
             </tr>
@@ -4364,6 +4398,12 @@ logoutSideButton.addEventListener("click", logout);
 licenseForm.addEventListener("submit", registerLicense);
 sidebarToggle?.addEventListener("click", toggleSidebar);
 sideItems.forEach((item) => item.addEventListener("click", () => showView(item.dataset.view)));
+settingsWorkspaceButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const target = button.dataset.settingsView || "";
+    if (canAccessSettingsShortcut(button)) showView(target);
+  });
+});
 approvalTabs?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-approval-tab]");
   if (!button) return;
@@ -4540,16 +4580,16 @@ metricFilterButtons.forEach((button) => {
 });
 languageSelect.addEventListener("change", () => {
   pendingUiSettings.language = languageSelect.value;
-  settingsApplyStatus.textContent = translations[pendingUiSettings.language]?.["settings.pending"] || translations.en["settings.pending"];
+  applyPendingUiSettings();
 });
 themeSelect.addEventListener("change", () => {
   pendingUiSettings.theme = themeSelect.value;
-  settingsApplyStatus.textContent = translations[pendingUiSettings.language]?.["settings.pending"] || translations.en["settings.pending"];
+  applyPendingUiSettings();
 });
 logRetentionSelect?.addEventListener("change", () => {
-  settingsApplyStatus.textContent = translations[pendingUiSettings.language]?.["settings.pending"] || translations.en["settings.pending"];
+  applyPendingUiSettings();
 });
-settingsApplyButton.addEventListener("click", applyPendingUiSettings);
+settingsApplyButton?.addEventListener("click", applyPendingUiSettings);
 serviceStartButton?.addEventListener("click", () => controlLockfixService("start"));
 serviceStopButton?.addEventListener("click", () => controlLockfixService("stop"));
 applySidebarState();

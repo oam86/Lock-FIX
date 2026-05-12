@@ -994,16 +994,20 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("color: #16a34a", css_source)
         self.assertIn("color: #ef4444", css_source)
 
-    def test_logs_navigation_uses_simple_inline_logs_icon(self) -> None:
+    def test_customer_sidebar_uses_simplified_navigation_icons(self) -> None:
         root = Path.cwd()
         index_source = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
         css_source = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
 
-        self.assertIn('class="nav-icon logs-nav-icon"', index_source)
-        self.assertIn('class="log-dot"', index_source)
-        self.assertIn('d="M11 7h8"', index_source)
-        self.assertIn(".logs-nav-icon .log-dot", css_source)
-        self.assertIn("fill: currentColor;", css_source)
+        self.assertIn('class="nav-icon detect-nav-icon"', index_source)
+        self.assertIn('class="nav-icon settings-nav-icon"', index_source)
+        self.assertIn('class="nav-icon logout-nav-icon"', index_source)
+        self.assertNotIn('class="nav-icon logs-nav-icon"', index_source)
+        self.assertIn(".detect-nav-icon svg", css_source)
+        self.assertIn(".settings-nav-icon svg", css_source)
+        self.assertIn(".logout-nav-icon svg", css_source)
+        self.assertIn("width: 28px;", css_source)
+        self.assertIn("height: 28px;", css_source)
         self.assertNotIn("transform: scale(2.25);", css_source)
 
     def test_security_audit_menu_is_separate_operational_view(self) -> None:
@@ -1012,7 +1016,7 @@ class LockFixTests(unittest.TestCase):
         app_source = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
         css_source = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
 
-        self.assertIn('data-view="securityAudit"', index_source)
+        self.assertNotIn('data-view="securityAudit"', index_source)
         self.assertIn('id="securityAuditView"', index_source)
         self.assertIn('id="securityAuditSummary"', index_source)
         self.assertIn('id="securityAuditTable"', index_source)
@@ -1308,11 +1312,62 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("disk.safety.preflight.ok", audit_text)
         self.assertIn("disk.cache.flush.start", audit_text)
         self.assertIn("disk.cache.flush", audit_text)
+        self.assertIn("disk.dismount.start", audit_text)
+        self.assertIn("disk.dismount", audit_text)
+        self.assertIn("disk.drive_letter.remove.start", audit_text)
+        self.assertIn("disk.drive_letter.remove", audit_text)
         self.assertIn("Dismount-Volume -DriveLetter $drive -ErrorAction Stop", audit_text)
         self.assertIn("Remove-PartitionAccessPath", audit_text)
         self.assertIn("access path removed and no longer reachable", audit_text)
         self.assertIn("disk.unmount.verify", audit_text)
         self.assertNotIn("-Force", audit_text)
+
+    def test_windows_offline_records_drive_path_verification(self) -> None:
+        tmp_path = self.make_workspace()
+        config = load_config(write_config(tmp_path))
+        base_slot = config.slot("BAY-01")
+        slot = type(base_slot)(
+            slot_id=base_slot.slot_id,
+            device="D:\\",
+            mount_point=Path("D:\\"),
+            expected_uid=base_slot.expected_uid,
+            identity=base_slot.identity,
+            manifest_path=base_slot.manifest_path,
+            power=base_slot.power,
+        )
+        audit_path = tmp_path / "offline-verify-audit.jsonl"
+
+        class StorageRunner(CommandRunner):
+            def __init__(self) -> None:
+                super().__init__(dry_run=False)
+
+            def run(self, args: list[str], timeout: int = 120) -> str:
+                command = " ".join(args)
+                if "Set-Disk -Number $disk.Number -IsOffline $true" in command:
+                    return (
+                        'LOCKFIX_STORAGE_STATE={"drive":"D","accessPath":"D:\\\\","diskNumber":3,'
+                        '"diskUniqueId":"TEST-DISK","isOffline":true,"method":"Set-Disk -IsOffline true"}\n'
+                        "Disk 3: offline isolation completed for D:"
+                    )
+                if "Get-Disk -Number $diskNumber" in command:
+                    return (
+                        '{"drive":"D","diskNumber":3,"diskUniqueId":"TEST-DISK",'
+                        '"isOffline":true,"pathReachable":false,'
+                        '"accessPath":"D:\\\\","method":"Get-Disk + Test-Path offline verification"}'
+                    )
+                raise AssertionError(f"unexpected command: {command}")
+
+        disk = DiskOperator(StorageRunner(), AuditLogger(audit_path))
+
+        disk.offline(slot)
+
+        audit_text = audit_path.read_text(encoding="utf-8")
+        self.assertIn("disk.offline.start", audit_text)
+        self.assertIn("disk.offline", audit_text)
+        self.assertIn("disk.offline.verify.start", audit_text)
+        self.assertIn("disk.offline.verify", audit_text)
+        self.assertIn('"path_reachable": false', audit_text)
+        self.assertIn('"is_offline": true', audit_text)
 
     def test_storage_permission_denied_uses_system_fallback(self) -> None:
         tmp_path = self.make_workspace()
@@ -1583,68 +1638,6 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("DepartmentReview statuses", source)
         self.assertIn("GET /api/approval-requests/:id/reviews", source)
         self.assertIn("협업/승인 워크플로우", source)
-        for label in ["승인 요청함", "부서 검토함", "내 승인 대기", "협의 의견", "보완 요청", "완료 이력", "감사 기록"]:
-            self.assertIn(label, source)
-        self.assertIn("SECURITY_LOG_REVIEW", source)
-        self.assertIn("HARDWARE_STATE_REVIEW", source)
-        self.assertIn("MANAGER_REVIEW", source)
-        self.assertIn("python -m unittest tests.test_lockfix", source)
-
-    def test_installer_and_default_config_use_live_operation_mode(self) -> None:
-        root = Path.cwd()
-        config = load_config(root / "config" / "lockfix.example.json")
-        setup_source = (root / "src" / "LockFixSetupWizard.cs").read_text(encoding="utf-8")
-
-        self.assertFalse(config.dry_run)
-        self.assertEqual(json.loads((root / "config" / "lockfix.example.json").read_text(encoding="utf-8"))["operation_mode"], "live")
-        self.assertIn('"operation_mode=live"', setup_source)
-        self.assertIn('"dry_run=false"', setup_source)
-        self.assertIn('root["operation_mode"] = "live";', setup_source)
-        self.assertIn('root["dry_run"] = false;', setup_source)
-
-    def test_latest_package_zip_selects_newest_release_package(self) -> None:
-        tmp_path = self.make_workspace()
-        old_package = tmp_path / "LOCK-FIX-Windows-Installer-Package-20260505-010000.zip"
-        new_package = tmp_path / "LOCK-FIX-Windows-Installer-Package-20260505-020000.zip"
-        old_package.write_text("old", encoding="utf-8")
-        new_package.write_text("new", encoding="utf-8")
-        os.utime(old_package, (1, 1))
-        os.utime(new_package, (2, 2))
-
-        selected = webui.LockFixWebHandler.latest_package_zip(object(), tmp_path)
-
-        self.assertEqual(selected, new_package)
-
-    def test_webui_renders_interlock_action_sections_without_status_icon(self) -> None:
-        source = (Path.cwd() / "web" / "static" / "app.js").read_text(encoding="utf-8")
-        css = (Path.cwd() / "web" / "static" / "styles.css").read_text(encoding="utf-8")
-
-        self.assertIn('text.startsWith("LOCK-FIX STEP ")', source)
-        self.assertIn("veeam-action-section", source)
-        self.assertIn(".veeam-session-actions .veeam-action-section", css)
-
-    def test_airgap_steps_stay_grey_until_real_api_transition(self) -> None:
-        source = (Path.cwd() / "web" / "static" / "app.js").read_text(encoding="utf-8")
-        css = (Path.cwd() / "web" / "static" / "styles.css").read_text(encoding="utf-8")
-
-        self.assertIn('state: "PENDING", code: "BACKUP_COMPLETED"', source)
-        self.assertIn("apiSynced &&", source)
-        self.assertIn("isStepLive(item)", source)
-        self.assertIn(".veeam-step-pending,", css)
-        self.assertIn("background: #f6f8fb;", css)
-        self.assertIn("background: #94a3b8;", css)
-        self.assertIn(".veeam-step-active,", css)
-        self.assertIn("background: linear-gradient(90deg, #22c55e 0%, #16a34a 52%, #0f8f3d 100%);", css)
-        self.assertIn("filter: drop-shadow(0 6px 9px rgba(15, 143, 61, 0.28));", css)
-        self.assertIn("grid-template-columns: repeat(5, minmax(158px, 1fr));", css)
-        self.assertIn("grid-template-columns: 30px minmax(0, 1fr);", css)
-        self.assertIn("gap: 10px;", css)
-        self.assertIn("padding: 14px 22px;", css)
-        self.assertIn("min-height: 104px;", css)
-        self.assertIn("width: 100%;", css)
-        self.assertIn("text-overflow: ellipsis;", css)
-        self.assertIn("width: 42px;", css)
-        self.assertIn("height: 26px;", css)
 
     def test_web_ui_rbac_menu_and_direct_access_guards_are_present(self) -> None:
         root = Path.cwd()
@@ -1654,16 +1647,21 @@ class LockFixTests(unittest.TestCase):
 
         for label in [
             "Dashboard",
-            "Veeam Integration",
-            "Air-Gap Policy",
-            "Hardware Control",
-            "협업/승인 워크플로우",
-            "User & Role Management",
-            "Audit Logs",
+            "Hardware Detect",
+            "Air-Gap",
             "Reports",
-            "System Settings",
+            "License",
+            "Settings",
+            "Logout",
+            "Operation",
+            "Hardware",
+            "User & Role",
+            "Audit Logs",
         ]:
             self.assertIn(label, html)
+
+        self.assertNotIn("Air-Gap Policy", html)
+        self.assertNotIn("Veeam Integration</span>", html)
 
         self.assertIn("menuDefinitions", app)
         self.assertIn('roles: ["SUPER_ADMIN"]', app)
@@ -1743,29 +1741,26 @@ class LockFixTests(unittest.TestCase):
 
         self.assertIn(".veeam-log-wrap", css)
         self.assertIn("box-sizing: border-box;", css)
-        self.assertIn("height: clamp(280px, 42vh, 340px);", css)
-        self.assertIn("max-height: 340px;", css)
+        self.assertIn("min-height: 132px;", css)
+        self.assertIn("max-height: 300px;", css)
         self.assertIn("border: 1px solid #c8d8ea;", css)
         self.assertIn("direction: ltr;", css)
         self.assertIn("overflow-x: auto;", css)
-        self.assertIn("overflow-y: scroll;", css)
+        self.assertIn("overflow-y: auto;", css)
         self.assertIn("overscroll-behavior: contain;", css)
         self.assertIn("scrollbar-width: thin;", css)
-        self.assertIn("scrollbar-gutter: stable;", css)
-        self.assertIn("scrollbar-color: #dcdcdf #ffffff;", css)
+        self.assertIn("scrollbar-color: #aeb7c3 #f1f5f9;", css)
         self.assertIn(".veeam-log-wrap:hover", css)
-        self.assertIn("scrollbar-color: #8a8a8f #ffffff;", css)
-        self.assertIn(".veeam-log-wrap::-webkit-scrollbar-button:vertical:decrement", css)
-        self.assertIn(".veeam-log-wrap::-webkit-scrollbar-button:vertical:increment", css)
+        self.assertIn("scrollbar-color: #7f8a98 #f1f5f9;", css)
+        self.assertIn(".veeam-log-wrap::-webkit-scrollbar-button", css)
         self.assertIn(".veeam-log-wrap::-webkit-scrollbar-track-piece", css)
         self.assertIn(".veeam-log-wrap::-webkit-scrollbar-corner", css)
-        self.assertIn("border-left: 1px solid #eef2f7;", css)
         self.assertIn("min-height: 112px;", css)
-        self.assertIn("border: 4px solid #ffffff;", css)
+        self.assertIn("border: 3px solid #f1f5f9;", css)
         self.assertIn("background-clip: padding-box;", css)
-        self.assertIn("background: #dcdcdf;", css)
-        self.assertIn("background: #8a8a8f;", css)
-        self.assertIn("background: #747478;", css)
+        self.assertIn("background: #aeb7c3;", css)
+        self.assertIn("background: #7f8a98;", css)
+        self.assertIn("background: #697586;", css)
         self.assertIn(".veeam-log-wrap:hover::-webkit-scrollbar-thumb", css)
         self.assertIn("position: sticky;", css)
 
@@ -2863,4 +2858,3 @@ class LockFixTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

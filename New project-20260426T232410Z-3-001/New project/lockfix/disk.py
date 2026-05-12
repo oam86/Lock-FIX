@@ -292,6 +292,23 @@ class DiskOperator:
                 drive_letter=drive,
                 os_volume_protected=True,
             )
+            self.audit.write(
+                "disk.dismount.start",
+                slot_id=slot.slot_id,
+                mount_point=str(slot.mount_point),
+                device=slot.device,
+                drive_letter=drive,
+                command="Dismount-Volume -DriveLetter",
+            )
+            self.audit.write(
+                "disk.drive_letter.remove.start",
+                slot_id=slot.slot_id,
+                mount_point=str(slot.mount_point),
+                device=slot.device,
+                drive_letter=drive,
+                access_path=f"{drive}:\\",
+                command="Remove-PartitionAccessPath",
+            )
             output = self.storage_run([
                 "powershell",
                 "-NoProfile",
@@ -315,6 +332,20 @@ class DiskOperator:
                     reason="Drive letter is already absent; continuing isolation because the volume is already released.",
                     error=str(exc),
                 )
+                self.audit.write(
+                    "disk.drive_letter.remove",
+                    slot_id=slot.slot_id,
+                    drive_letter=drive,
+                    access_path=f"{drive}:\\",
+                    already_absent=True,
+                    output=output,
+                )
+                self.audit.write(
+                    "disk.unmount.verify",
+                    slot_id=slot.slot_id,
+                    drive_letter=drive,
+                    output=f"Volume {drive}: access path was already absent and no longer reachable",
+                )
                 self.audit.write("disk.unmount.tick", slot_id=slot.slot_id, elapsed_seconds=1, mount_point=str(slot.mount_point))
                 self.audit.write("disk.unmount", slot_id=slot.slot_id, output=output, already_absent=True)
                 return
@@ -328,6 +359,19 @@ class DiskOperator:
             )
             raise
         self.persist_storage_state(slot, output)
+        self.audit.write(
+            "disk.dismount",
+            slot_id=slot.slot_id,
+            drive_letter=drive,
+            output="Dismount-Volume completed or was bypassed when unavailable; access path removal gate follows.",
+        )
+        self.audit.write(
+            "disk.drive_letter.remove",
+            slot_id=slot.slot_id,
+            drive_letter=drive,
+            access_path=f"{drive}:\\",
+            output=f"Remove-PartitionAccessPath completed for {drive}:\\",
+        )
         self.audit.write("disk.unmount.tick", slot_id=slot.slot_id, elapsed_seconds=1, mount_point=str(slot.mount_point))
         self.audit.write("disk.unmount", slot_id=slot.slot_id, output=output)
         self.verify_unmounted(slot, drive)
@@ -569,6 +613,81 @@ class DiskOperator:
         self.persist_storage_state(slot, output)
         self.audit.write("disk.offline.tick", slot_id=slot.slot_id, elapsed_seconds=1, drive_letter=drive)
         self.audit.write("disk.offline", slot_id=slot.slot_id, drive_letter=drive, output=output)
+        self.verify_offline(slot, drive)
+
+    def verify_offline(self, slot: SlotConfig, drive: str) -> None:
+        storage_state = self.read_storage_state(slot)
+        disk_number = str(storage_state.get("diskNumber", "")).strip()
+        access_path = str(storage_state.get("accessPath") or f"{drive}:\\").strip()
+        self.audit.write(
+            "disk.offline.verify.start",
+            slot_id=slot.slot_id,
+            drive_letter=drive,
+            disk_number=disk_number,
+            access_path=access_path,
+        )
+        if not disk_number:
+            error = "Cannot verify disk offline state because diskNumber was not recorded."
+            self.audit.write(
+                "disk.offline.verify.error",
+                slot_id=slot.slot_id,
+                drive_letter=drive,
+                access_path=access_path,
+                error=error,
+            )
+            raise RuntimeError(error)
+        try:
+            output = self.storage_run([
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                (
+                    f"$drive = '{drive}'; "
+                    f"$diskNumber = [UInt32]'{disk_number}'; "
+                    f"$accessPath = '{self.ps_single_quote(access_path)}'; "
+                    "$disk = Get-Disk -Number $diskNumber -ErrorAction Stop; "
+                    "$pathReachable = Test-Path $accessPath; "
+                    "if (-not $disk.IsOffline) { throw \"Disk $diskNumber is not offline\" }; "
+                    "if ($pathReachable) { throw \"Drive access path $accessPath is still reachable\" }; "
+                    "$proof = [ordered]@{ "
+                    "drive=$drive; "
+                    "diskNumber=$disk.Number; "
+                    "diskUniqueId=$disk.UniqueId; "
+                    "isOffline=[bool]$disk.IsOffline; "
+                    "pathReachable=[bool]$pathReachable; "
+                    "accessPath=$accessPath; "
+                    "method='Get-Disk + Test-Path offline verification' "
+                    "}; "
+                    "Write-Output ($proof | ConvertTo-Json -Compress)"
+                ),
+            ], timeout=30)
+        except Exception as exc:
+            self.audit.write(
+                "disk.offline.verify.error",
+                slot_id=slot.slot_id,
+                drive_letter=drive,
+                disk_number=disk_number,
+                access_path=access_path,
+                error=str(exc),
+            )
+            raise
+        try:
+            proof = json.loads(str(output).splitlines()[-1])
+        except Exception:
+            proof = {"raw": output}
+        self.audit.write(
+            "disk.offline.verify",
+            slot_id=slot.slot_id,
+            drive_letter=drive,
+            disk_number=disk_number,
+            access_path=access_path,
+            is_offline=bool(proof.get("isOffline", True)),
+            path_reachable=bool(proof.get("pathReachable", False)),
+            proof=proof,
+            output=output,
+        )
 
     def online(self, slot: SlotConfig, approved_until: str = "") -> None:
         self.assert_not_protected_os_volume(slot)

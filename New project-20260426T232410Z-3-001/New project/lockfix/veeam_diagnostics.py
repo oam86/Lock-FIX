@@ -12,6 +12,7 @@ from .veeam_client import (
     is_success_status,
     match_sessions,
     normalized_job_id,
+    parse_veeam_time,
     session_id,
     session_job_id,
     session_name,
@@ -347,6 +348,9 @@ def parse_time_epoch(value: str) -> float | None:
     text = (value or "").strip()
     if not text or text == "-":
         return None
+    parsed = parse_veeam_time(text)
+    if parsed:
+        return parsed.timestamp()
     candidates = [text]
     if text.endswith("Z"):
         candidates.append(text[:-1] + "+00:00")

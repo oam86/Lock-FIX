@@ -1736,6 +1736,15 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         veeam_runtime = self.veeam_interlock_runtime(now)
         current_step = veeam_runtime["current_step"]
         veeam_connected = bool(veeam_runtime.get("api_synced") or veeam_runtime.get("connected"))
+        if int(veeam_runtime.get("current_step") or 1) <= 1 and int(veeam_runtime.get("progress_percent") or 0) <= 0:
+            for log in veeam_runtime.get("step_logs") or []:
+                if not isinstance(log, dict):
+                    continue
+                log["state"] = "PENDING"
+                log["transition_allowed"] = False
+                log["progress_percent"] = ""
+                if int(log.get("step") or 0) == 1:
+                    log["detail"] = "새로운 Veeam Backup Done 완료 잡이 확인되기 전까지 1번 단계를 비활성화합니다."
         veeam_states = [
             {"step": 1, "title": "Backup completed", "label": "백업 완료", "state": "PENDING", "code": "BACKUP_COMPLETED"},
             {"step": 2, "title": "Flush running", "label": "Flush 실행", "state": "PENDING", "code": "FLUSHING"},
@@ -1744,13 +1753,16 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             {"step": 5, "title": "Offline", "label": "오프라인", "state": "PENDING", "code": "DISK_OFFLINING"},
         ]
         for item in veeam_states:
+            log = veeam_runtime["step_logs"][item["step"] - 1]
             if veeam_connected:
                 if item["step"] < current_step:
                     item["state"] = "DONE"
                 elif item["step"] == current_step:
                     item["state"] = "ACTIVE"
+            if isinstance(log, dict) and log.get("state"):
+                item["state"] = log["state"]
             item["checked_at"] = veeam_runtime["last_checked"]
-            item["log"] = veeam_runtime["step_logs"][item["step"] - 1]
+            item["log"] = log
         bays = []
         for index, slot in enumerate(summary["slots"], start=1):
             locked = (tick + index) % 5 != 0
@@ -2335,13 +2347,49 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             }
         payload["auto_isolate"] = auto_isolate
         session_completed = raw_result in {"SUCCESS", "SUCCEEDED", "COMPLETED"} or progress >= 100
+        pre_checks = payload.get("checks") if isinstance(payload.get("checks"), dict) else {}
+        pre_session_check = pre_checks.get("sessions") if isinstance(pre_checks.get("sessions"), dict) else {}
+        backup_restore_point_evidence = bool(
+            payload.get("backup_match_strategy")
+            or payload.get("restore_point_scope")
+            or payload.get("restore_point_id")
+            or payload.get("session_id")
+        )
+        pre_session_match_missing = (
+            not backup_restore_point_evidence
+            and (
+                str(pre_session_check.get("match_strategy") or "").lower() == "no_match"
+                or "no vbr 9419 session matched" in str(pre_session_check.get("message") or "").lower()
+            )
+        )
+        force_waiting_for_new_backup = (
+            ((not session_completed or pre_session_match_missing) and current_step <= 1)
+            or (
+                auto_isolate.get("state") in {"WAITING_FOR_NEW_BACKUP", "ISOLATED"}
+                and bool(auto_isolate.get("processed"))
+                and auto_isolate.get("triggered") is not True
+            )
+        )
+        if force_waiting_for_new_backup:
+            current_step = 1
+            progress = 0
+            for item in step_logs:
+                step_number = int(item.get("step") or 0)
+                item["state"] = "PENDING"
+                item["transition_allowed"] = False
+                item["progress_percent"] = ""
+                item["detail"] = (
+                    "새로운 Veeam Backup Done 완료 잡이 확인되기 전까지 단계 전환을 비활성화합니다."
+                    if step_number == 1
+                    else "새 백업 완료 신호가 들어오기 전까지 이 단계는 비활성 상태로 유지됩니다."
+                )
         processed_backup_waiting = (
             connected
             and session_completed
             and auto_isolate.get("state") == "WAITING_FOR_NEW_BACKUP"
             and bool(auto_isolate.get("processed"))
         )
-        if processed_backup_waiting:
+        if processed_backup_waiting and not force_waiting_for_new_backup:
             current_step = 1
             progress = 100
             for item in step_logs:
@@ -2359,7 +2407,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     item["transition_allowed"] = False
                     item["progress_percent"] = ""
                     item["detail"] = "과거 처리 완료된 백업 정보입니다. 새 백업 완료 접수 전까지 이 단계로 전환하지 않습니다."
-        elif connected and session_completed and auto_isolate.get("triggered") is not True and auto_isolate.get("state") != "ISOLATED":
+        elif connected and session_completed and not force_waiting_for_new_backup and auto_isolate.get("triggered") is not True and auto_isolate.get("state") != "ISOLATED":
             current_step = 1
             for item in step_logs:
                 step_number = int(item.get("step") or 0)
@@ -2380,7 +2428,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             and bool(auto_isolate.get("processed"))
             and auto_isolate.get("triggered") is not True
         )
-        if processed_isolated_waiting:
+        if processed_isolated_waiting and not force_waiting_for_new_backup:
             current_step = 1
             progress = 100
             for item in step_logs:
@@ -2398,7 +2446,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     item["transition_allowed"] = False
                     item["progress_percent"] = ""
                     item["detail"] = "이미 격리 완료된 백업 이력입니다. 새 백업 완료 접수 전까지 이 단계로 전환하지 않습니다."
-        elif auto_isolate.get("state") == "ISOLATED":
+        elif auto_isolate.get("state") == "ISOLATED" and not force_waiting_for_new_backup:
             current_step = 5
             progress = 100
             for item in step_logs:
@@ -2535,9 +2583,40 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             )
         slot_id = str(auto_isolate.get("slot_id") or payload.get("slot_id") or os.environ.get("LOCKFIX_SLOT_ID") or next(iter(self.context.config.slots), "BAY-01"))
         interlock_actions = []
-        history_step = 5 if processed_isolated_waiting else current_step
+        controller_state = ""
+        try:
+            controller_state = str(self.context.controller.status().get(slot_id, "") or "").upper()
+        except Exception:
+            controller_state = ""
+        recent_offline_records = LockFixWebHandler.recent_power_off_audit_records(self, slot_id, 4)
+        recent_offline_failed = any(
+            str(record.get("event") or "") in {"disk.offline.error", "disk.offline.verify.error"}
+            or str(record.get("event") or "").endswith(".off.error")
+            for record in recent_offline_records
+        )
+        historical_error_flow = controller_state == "ERROR" or recent_offline_failed
+        history_step = 5 if (processed_isolated_waiting or historical_error_flow) else current_step
+        if historical_error_flow:
+            current_step = 5
+            for item in step_logs:
+                step_number = int(item.get("step") or 0)
+                if step_number < 5:
+                    item["state"] = "DONE"
+                    item["transition_allowed"] = True
+                    item["progress_percent"] = 100
+                    if step_number == 2:
+                        item["detail"] = "Flush / cache flush audit evidence exists in the LOCK-FIX transition log."
+                    elif step_number == 3:
+                        item["detail"] = "I/O quiet window audit evidence exists in the LOCK-FIX transition log."
+                    elif step_number == 4:
+                        item["detail"] = "Unmount and drive-letter removal evidence exists in the LOCK-FIX transition log."
+                elif step_number == 5:
+                    item["state"] = "ERROR"
+                    item["transition_allowed"] = False
+                    item["progress_percent"] = ""
+                    item["detail"] = "Disk Offline failed. The latest audit trail is shown below and manual inspection is required."
         if not processed_backup_waiting:
-            if processed_isolated_waiting:
+            if processed_isolated_waiting or historical_error_flow:
                 if LockFixWebHandler.recent_flush_audit_records(self, slot_id, 1):
                     interlock_actions += LockFixWebHandler.veeam_flush_operation_actions(self, slot_id, history_step)
                 if LockFixWebHandler.recent_io_quiet_audit_records(self, slot_id, 1):
@@ -2588,6 +2667,51 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             for entry in session_logs:
                 entry["status"] = "Success"
                 entry["progress_percent"] = 100
+        checks = payload.get("checks") if isinstance(payload.get("checks"), dict) else {}
+        session_check = checks.get("sessions") if isinstance(checks.get("sessions"), dict) else {}
+        backup_restore_point_evidence = bool(
+            payload.get("backup_match_strategy")
+            or payload.get("restore_point_scope")
+            or payload.get("restore_point_id")
+            or payload.get("session_id")
+        )
+        session_match_missing = (
+            not backup_restore_point_evidence
+            and (
+                str(session_check.get("match_strategy") or "").lower() == "no_match"
+                or "no vbr 9419 session matched" in str(session_check.get("message") or "").lower()
+                or any(
+                    "no vbr 9419 session matched" in "\n".join(str(action or "") for action in (entry.get("actions") if isinstance(entry, dict) and isinstance(entry.get("actions"), list) else [])).lower()
+                    for entry in session_logs
+                )
+            )
+        )
+        real_backup_complete = (
+            connected
+            and progress >= 100
+            and str(status or "").upper() in {"SUCCESS", "SUCCEEDED", "COMPLETED"}
+            and not session_match_missing
+        )
+        if current_step <= 1 and not real_backup_complete:
+            current_step = 1
+            progress = 0
+            status = "Waiting"
+            payload["progress_percent"] = 0
+            payload["status"] = "Waiting"
+            payload["result"] = "WAITING"
+            for item in step_logs:
+                step_number = int(item.get("step") or 0)
+                item["state"] = "PENDING"
+                item["transition_allowed"] = False
+                item["progress_percent"] = ""
+                item["detail"] = (
+                    "새로운 Veeam Backup Done 완료 잡이 매칭되기 전까지 1번 단계를 비활성화합니다."
+                    if step_number == 1
+                    else "새 백업 완료 세션이 매칭되기 전까지 이 단계는 비활성 상태입니다."
+                )
+            for entry in session_logs:
+                entry["status"] = "Waiting"
+                entry["progress_percent"] = 0
         if connected and session_logs:
             saver = getattr(self, "save_veeam_last_logs", None)
             if callable(saver):
@@ -2623,7 +2747,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             str(payload.get(key) or "")
             for key in ("result", "status", "session_state", "state")
         ).upper()
-        if any(token in status_text for token in ("SUCCESS", "SUCCEEDED", "COMPLETED", "BACKUP_COMPLETED")):
+        if any(token in status_text for token in ("SUCCESS", "SUCCEEDED", "COMPLETED")):
             return True
         if progress >= 100:
             return True
@@ -2642,7 +2766,6 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     "JOB FINISHED",
                     "HAS BEEN COMPLETED, STATUS: 'SUCCESS'",
                     "STATUS: 'SUCCESS'",
-                    "BACKUP_COMPLETED",
                 )
             ):
                 return True
@@ -2893,6 +3016,10 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "disk.cache.flush",
             "disk.cache.flush.error",
             "disk.unmount.start",
+            "disk.dismount.start",
+            "disk.dismount",
+            "disk.drive_letter.remove.start",
+            "disk.drive_letter.remove",
             "disk.unmount.tick",
             "disk.unmount",
             "disk.unmount.error",
@@ -2944,6 +3071,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 completions.append(record)
             elif event == "disk.unmount.verify":
                 verifications.append(record)
+            elif event in {"disk.dismount", "disk.drive_letter.remove"}:
+                completions.append(record)
             elif event in {"disk.unmount.error", "disk.safety.preflight.error", "disk.cache.flush.error"}:
                 errors.append(record)
             elif event == "disk.os_volume.blocked":
@@ -3005,6 +3134,25 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
             mount_point = LockFixWebHandler.compact_log_value(self, record.get("mount_point") or "-")
             return f"{prefix}LOCK-FIX Unmount START - slot {slot_id}, drive {drive}, mount {mount_point}"
+        if event == "disk.dismount.start":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            command = LockFixWebHandler.compact_log_value(self, record.get("command") or "Dismount-Volume")
+            return f"{prefix}LOCK-FIX Dismount START - slot {slot_id}, drive {drive}, command {command}"
+        if event == "disk.dismount":
+            output = LockFixWebHandler.compact_log_value(self, record.get("output") or "Dismount-Volume completed")
+            return f"{prefix}LOCK-FIX Dismount OK - slot {slot_id}, {output}"
+        if event == "disk.drive_letter.remove.start":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            access_path = LockFixWebHandler.compact_log_value(self, record.get("access_path") or f"{drive}:\\")
+            command = LockFixWebHandler.compact_log_value(self, record.get("command") or "Remove-PartitionAccessPath")
+            return f"{prefix}LOCK-FIX Drive Letter REMOVE START - slot {slot_id}, target {access_path}, command {command}"
+        if event == "disk.drive_letter.remove":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            access_path = LockFixWebHandler.compact_log_value(self, record.get("access_path") or f"{drive}:\\")
+            output = LockFixWebHandler.compact_log_value(self, record.get("output") or "drive letter removed")
+            if record.get("already_absent"):
+                return f"{prefix}LOCK-FIX Drive Letter ABSENT - slot {slot_id}, target {access_path}, already removed. {output}"
+            return f"{prefix}LOCK-FIX Drive Letter REMOVED - slot {slot_id}, target {access_path}. {output}"
         if event == "disk.unmount.tick":
             elapsed = LockFixWebHandler.compact_log_value(self, record.get("elapsed_seconds") or 1)
             mount_point = LockFixWebHandler.compact_log_value(self, record.get("mount_point") or "-")
@@ -3069,6 +3217,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "disk.offline.tick",
             "disk.offline",
             "disk.offline.error",
+            "disk.offline.verify.start",
+            "disk.offline.verify",
+            "disk.offline.verify.error",
             "disk.offline.proof",
             "disk.online.unauthorized.reblock",
             "disk.online.unauthorized.reblock.error",
@@ -3110,8 +3261,12 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 completions.append(record)
             elif event.endswith(".off.error") or event == "disk.offline.error":
                 errors.append(record)
+            elif event == "disk.offline.verify.error":
+                errors.append(record)
             elif ".status" in event:
                 statuses.append(record)
+            elif event in {"disk.offline.verify.start", "disk.offline.verify"}:
+                proofs.append(record)
             elif event in {"power.off.proof", "power.off.proof.required", "disk.offline.proof"}:
                 proofs.append(record)
         normalized.extend(record for _, record in sorted(ticks.items()))
@@ -3150,9 +3305,23 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         if event.endswith(".off.tick") or event == "disk.offline.tick":
             elapsed = LockFixWebHandler.compact_log_value(self, record.get("elapsed_seconds") or 1)
             return f"{prefix}LOCK-FIX Offline TICK {elapsed}s - slot {slot_id}"
+        if event == "disk.offline.verify.start":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            disk_number = LockFixWebHandler.compact_log_value(self, record.get("disk_number") or "-")
+            access_path = LockFixWebHandler.compact_log_value(self, record.get("access_path") or f"{drive}:\\")
+            return f"{prefix}LOCK-FIX Offline VERIFY START - slot {slot_id}, disk {disk_number}, drive {drive}, path {access_path}"
+        if event == "disk.offline.verify":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            disk_number = LockFixWebHandler.compact_log_value(self, record.get("disk_number") or "-")
+            is_offline = LockFixWebHandler.compact_log_value(self, record.get("is_offline"))
+            path_reachable = LockFixWebHandler.compact_log_value(self, record.get("path_reachable"))
+            return f"{prefix}LOCK-FIX Offline VERIFY OK - slot {slot_id}, disk {disk_number}, drive {drive}, IsOffline={is_offline}, PathReachable={path_reachable}"
         if event.endswith(".off.error") or event == "disk.offline.error":
             error = LockFixWebHandler.compact_log_value(self, record.get("error") or "offline command failed")
             return f"{prefix}LOCK-FIX Offline ERROR - slot {slot_id}, {error}"
+        if event == "disk.offline.verify.error":
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "offline verification failed")
+            return f"{prefix}LOCK-FIX Offline VERIFY ERROR - slot {slot_id}, {error}"
         if event in {"power.mock.off", "power.command.off", "disk.offline"}:
             output = LockFixWebHandler.compact_log_value(self, record.get("output") or f"{mode} offline completed")
             return f"{prefix}LOCK-FIX Power OFF OK - slot {slot_id}, {output}"
@@ -3382,6 +3551,76 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         has_unique_session_identity = bool(any(identity_parts[index] for index in (0, 1, 3, 4, 5)))
         return session_key, has_unique_session_identity
 
+    def veeam_auto_approval_enabled(self) -> bool:
+        veeam_config = self.context.app_config.get("veeam", {})
+        raw = veeam_config.get("auto_approve_disk_offline_after_success", True)
+        if isinstance(raw, bool):
+            return raw
+        return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+    def ensure_veeam_disk_offline_approval(self, slot_id: str, session_key: str, payload: dict) -> dict:
+        approvals = self.context.controller.approvals
+        existing = approvals.approved_request_for("DISK_OFFLINE", slot_id)
+        if existing:
+            return existing
+
+        request = approvals.create_request(
+            "DISK_OFFLINE",
+            requester_user_id="lockfix-veeam-watcher",
+            target_id=slot_id,
+            metadata={
+                "approvalSource": "VEEAM_BACKUP_COPY_POLICY",
+                "sessionKey": session_key,
+                "jobName": str(payload.get("job") or payload.get("name") or ""),
+                "repositoryPath": str(payload.get("repository_path") or ""),
+                "reason": "Automatic repository isolation after verified Veeam Backup Copy success.",
+            },
+        )
+        data = approvals.load()
+        now = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+        for review in data.get("departmentReviews", []):
+            if str(review.get("approvalRequestId") or "") != str(request.get("id") or ""):
+                continue
+            review["reviewerUserId"] = "lockfix-policy-reviewer"
+            review["status"] = "REVIEWED"
+            review["comment"] = "Pre-approved Veeam Backup Copy isolation policy review."
+            review["updatedAt"] = now
+            data.setdefault("reviewComments", []).append(
+                {
+                    "id": uuid.uuid4().hex,
+                    "approvalRequestId": str(request.get("id") or ""),
+                    "departmentReviewId": str(review.get("id") or ""),
+                    "authorUserId": "lockfix-policy-reviewer",
+                    "comment": "Pre-approved Veeam Backup Copy isolation policy review.",
+                    "createdAt": now,
+                    "status": "REVIEWED",
+                }
+            )
+            approvals.audit_event(
+                "department.review.marked_reviewed",
+                approval_request=request,
+                departmentReview=dict(review),
+                automation="VEEAM_BACKUP_COPY_POLICY",
+            )
+        approvals.save(data)
+        decision = approvals.decide(
+            approval_request_id=str(request.get("id") or ""),
+            approver_user_id="lockfix-backup-policy",
+            approver_role="BACKUP_OPERATOR",
+            decision="APPROVED",
+            comment="Automatic DISK_OFFLINE approval for verified Veeam Backup Copy success.",
+        )
+        approved_request = decision.get("request") if isinstance(decision, dict) else None
+        self.context.controller.audit.write(
+            "veeam.auto_isolate.policy_approved",
+            slot_id=slot_id,
+            session_key=session_key,
+            approvalRequestId=str(request.get("id") or ""),
+            approvalSource="VEEAM_BACKUP_COPY_POLICY",
+            message="DISK_OFFLINE approval policy was satisfied before automatic Step 2 Flush.",
+        )
+        return approved_request if isinstance(approved_request, dict) else request
+
     def auto_isolate_after_veeam_success(self, payload: dict, status: str, checked_at: str) -> dict:
         result = str(payload.get("result") or status or "").upper()
         progress = int(payload.get("progress_percent") or payload.get("progress") or 0)
@@ -3444,6 +3683,13 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         try:
             restore_scope = payload.get("restore_point_scope") if isinstance(payload.get("restore_point_scope"), dict) else {}
             repository_path = str(payload.get("repository_path") or restore_scope.get("repository_path") or "")
+            if LockFixWebHandler.veeam_auto_approval_enabled(self):
+                LockFixWebHandler.ensure_veeam_disk_offline_approval(
+                    self,
+                    slot_id,
+                    session_key,
+                    {**payload, "repository_path": repository_path},
+                )
             state = self.context.controller.isolate(slot_id, repository_path=repository_path)
             processed_session_keys.add(session_key)
             marker_path.parent.mkdir(parents=True, exist_ok=True)
@@ -4066,7 +4312,14 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         event = str(record.get("event") or "")
         if event.startswith("license"):
             return "license"
-        if event.startswith("disk.offline") or event.startswith("disk.online") or event.startswith("disk.storage_api"):
+        if (
+            event.startswith("disk.offline")
+            or event.startswith("disk.online")
+            or event.startswith("disk.storage_api")
+            or event.startswith("disk.dismount")
+            or event.startswith("disk.drive_letter")
+            or event.startswith("disk.unmount")
+        ):
             return "storage"
         if event.startswith("emergency.reconnect"):
             return "reconnect"
@@ -4151,6 +4404,24 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             elapsed = LockFixWebHandler.compact_log_value(self, record.get("elapsed_seconds") or "1")
             drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
             return f"LOCK-FIX Offline CHECK - slot {slot_id}, drive {drive}: 오프라인 증명 확인 {elapsed}s 경과."
+        if event == "disk.dismount.start":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            return f"LOCK-FIX Dismount START - slot {slot_id}, drive {drive}: Windows Dismount-Volume 절차를 시작했습니다."
+        if event == "disk.dismount":
+            output = LockFixWebHandler.compact_log_value(self, record.get("output") or "Dismount completed")
+            return f"LOCK-FIX Dismount CONFIRMED - slot {slot_id}, {output}"
+        if event == "disk.drive_letter.remove.start":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            access_path = LockFixWebHandler.compact_log_value(self, record.get("access_path") or f"{drive}:\\")
+            return f"LOCK-FIX Drive Letter REMOVE START - slot {slot_id}, target {access_path}: Remove-PartitionAccessPath 실행을 시작했습니다."
+        if event == "disk.drive_letter.remove":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            access_path = LockFixWebHandler.compact_log_value(self, record.get("access_path") or f"{drive}:\\")
+            result = "already absent" if record.get("already_absent") else "removed"
+            return f"LOCK-FIX Drive Letter {result.upper()} - slot {slot_id}, drive {drive}, target {access_path}."
+        if event == "disk.unmount.verify":
+            output = LockFixWebHandler.compact_log_value(self, record.get("output") or "access path removed")
+            return f"LOCK-FIX Unmount VERIFY - slot {slot_id}, {output}"
         if event == "disk.offline":
             proof = LockFixWebHandler.extract_lockfix_storage_state(self, record.get("output"))
             drive = LockFixWebHandler.compact_log_value(self, proof.get("drive") or record.get("drive_letter") or "-")
@@ -4170,6 +4441,20 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 f"LOCK-FIX Offline PROOF - slot {slot_id}, drive {drive}, disk {disk_number}, "
                 f"IsOffline={is_offline}, evidence=Get-Disk/Set-Disk, method={method}."
             )
+        if event == "disk.offline.verify.start":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            disk_number = LockFixWebHandler.compact_log_value(self, record.get("disk_number") or "-")
+            access_path = LockFixWebHandler.compact_log_value(self, record.get("access_path") or f"{drive}:\\")
+            return f"LOCK-FIX Offline VERIFY START - slot {slot_id}, drive {drive}, disk {disk_number}, path {access_path}."
+        if event == "disk.offline.verify":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            disk_number = LockFixWebHandler.compact_log_value(self, record.get("disk_number") or "-")
+            is_offline = LockFixWebHandler.compact_log_value(self, record.get("is_offline"))
+            path_reachable = LockFixWebHandler.compact_log_value(self, record.get("path_reachable"))
+            return f"LOCK-FIX Offline VERIFY CONFIRMED - slot {slot_id}, drive {drive}, disk {disk_number}, IsOffline={is_offline}, PathReachable={path_reachable}."
+        if event == "disk.offline.verify.error":
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "offline verification failed")
+            return f"LOCK-FIX Offline VERIFY ERROR - slot {slot_id}, {error}"
         if event == "disk.offline.error":
             error = LockFixWebHandler.compact_log_value(self, record.get("error") or "offline failed")
             return f"LOCK-FIX Offline ERROR - slot {slot_id}, {error}"

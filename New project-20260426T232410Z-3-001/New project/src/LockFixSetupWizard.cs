@@ -166,12 +166,13 @@ namespace LockFix
             database.Text = "DB";
             database.Checked = true;
 
-            veeamHost.Text = DetectPrimaryIpv4();
+            // Temporary PoC default. Replace with customer-specific input before production packaging.
+            veeamHost.Text = "192.168.219.165";
             veeamPort.Text = "9419";
             authType.Items.AddRange(new object[] { "Windows Authentication", "API Token", "Basic Account" });
             authType.SelectedIndex = 0;
-            veeamUser.Text = "administrator";
-            veeamPassword.Text = "backup@1234";
+            veeamUser.Text = "DESKTOP-I3DF527\\OAM";
+            veeamPassword.Text = "";
             veeamPassword.PasswordChar = '*';
             veeamPasswordToggle.Text = "표시";
             veeamPasswordToggle.Click += delegate { ToggleVeeamPasswordVisibility(); };

@@ -535,7 +535,7 @@ button {
 
 .side-nav {
   display: grid;
-  gap: 16px;
+  gap: 10px;
   margin-top: 28px;
   opacity: 1;
   transform: translateX(0);
@@ -549,6 +549,25 @@ button {
   opacity: 1;
   pointer-events: auto;
   transform: none;
+}
+
+.side-section-label {
+  display: block;
+  margin: 14px 0 2px;
+  color: #7a8b9d;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.side-section-label:first-child {
+  margin-top: 0;
+}
+
+.side-section-label[hidden] {
+  display: none;
 }
 
 .side-item {
@@ -603,6 +622,15 @@ button {
   justify-items: center;
   border-radius: 6px;
   color: #3f5868;
+}
+
+.sidebar-collapsed .side-section-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .sidebar-collapsed .side-item:hover,
@@ -681,9 +709,21 @@ button {
   stroke: none;
 }
 
-.report-nav-icon svg,
-.settings-nav-icon svg {
+.report-nav-icon svg {
   stroke-width: 1.8;
+}
+
+.detect-nav-icon svg,
+.settings-nav-icon svg,
+.logout-nav-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.detect-nav-icon svg,
+.settings-nav-icon svg,
+.logout-nav-icon svg {
+  stroke-width: 1.95;
 }
 
 .nav-icon img {
@@ -770,6 +810,34 @@ button {
   font-weight: 800;
 }
 
+.settings-workspace-card {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.settings-workspace-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-workspace-actions button {
+  min-height: 42px;
+  border: 1px solid #ccd8e3;
+  border-radius: 8px;
+  background: #f7fafc;
+  color: #16304a;
+  font-weight: 900;
+}
+
+.settings-workspace-actions button:hover {
+  border-color: #1d6fb8;
+  background: #eef7ff;
+}
+
+.settings-workspace-actions button[hidden] {
+  display: none;
+}
+
 .settings-service-card strong {
   display: inline-flex;
   width: fit-content;
@@ -807,59 +875,6 @@ button {
 
 #serviceStopButton {
   background: #cc3b35;
-}
-
-.settings-actions {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.settings-actions button {
-  min-width: 120px;
-  height: 44px;
-  border-radius: 8px;
-  background: #0b2e79;
-  color: #ffffff;
-  font-weight: 900;
-}
-
-.settings-actions span {
-  color: #667789;
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.settings-console-panel {
-  display: grid;
-  gap: 12px;
-  border: 1px solid #d8e0e6;
-  border-radius: 8px;
-  padding: 18px;
-  background: #ffffff;
-}
-
-.settings-console-panel h2 {
-  margin: 0 0 6px;
-  color: #0b2e79;
-  font-size: 18px;
-}
-
-.settings-console-panel p {
-  margin: 0;
-  color: #405866;
-  font-weight: 700;
-}
-
-.settings-console-panel pre {
-  margin: 0;
-  border-radius: 8px;
-  padding: 14px;
-  overflow: auto;
-  background: #0f172a;
-  color: #e2e8f0;
-  font-family: Consolas, "Courier New", monospace;
-  font-size: 13px;
 }
 
 .view {
@@ -1871,82 +1886,68 @@ button {
 
 .veeam-log-wrap {
   box-sizing: border-box;
-  height: clamp(280px, 42vh, 340px);
-  min-height: 280px;
-  max-height: 340px;
+  min-height: 132px;
+  max-height: 300px;
   border: 1px solid #c8d8ea;
   border-left: 13px solid #1767a9;
   border-radius: 6px;
   background: #ffffff;
   direction: ltr;
   overflow-x: auto;
-  overflow-y: scroll;
+  overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  scrollbar-gutter: stable;
-  scrollbar-color: #dcdcdf #ffffff;
+  scrollbar-color: #aeb7c3 #f1f5f9;
 }
 
 .veeam-log-wrap:hover {
-  scrollbar-color: #8a8a8f #ffffff;
+  scrollbar-color: #7f8a98 #f1f5f9;
 }
 
 .veeam-log-wrap::-webkit-scrollbar {
-  width: 14px;
-  height: 12px;
-  background: #ffffff;
+  width: 12px;
+  height: 10px;
+  background: #f1f5f9;
 }
 
 .veeam-log-wrap::-webkit-scrollbar-track {
-  border-left: 1px solid #eef2f7;
-  background: #ffffff;
+  border: 0;
+  border-radius: 999px;
+  background: #f1f5f9;
 }
 
 .veeam-log-wrap::-webkit-scrollbar-track-piece {
-  background: #ffffff;
+  border-radius: 999px;
+  background: #f1f5f9;
 }
 
 .veeam-log-wrap::-webkit-scrollbar-thumb {
   min-height: 112px;
-  border: 4px solid #ffffff;
+  border: 3px solid #f1f5f9;
   border-radius: 999px;
-  background: #dcdcdf;
+  background: #aeb7c3;
   background-clip: padding-box;
 }
 
 .veeam-log-wrap:hover::-webkit-scrollbar-thumb,
 .veeam-log-wrap::-webkit-scrollbar-thumb:hover {
-  background: #8a8a8f;
+  background: #7f8a98;
   background-clip: padding-box;
 }
 
 .veeam-log-wrap::-webkit-scrollbar-thumb:active {
-  background: #747478;
+  background: #697586;
   background-clip: padding-box;
 }
 
 .veeam-log-wrap::-webkit-scrollbar-corner {
-  background: #ffffff;
+  background: #f1f5f9;
 }
 
-.veeam-log-wrap::-webkit-scrollbar-button:vertical:decrement {
-  height: 16px;
-  border-left: 1px solid #eef2f7;
-  background: #ffffff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='M8 4.25 3.9 9.75h8.2z' fill='%23d9d9dd'/%3E%3C/svg%3E") center / 12px 12px no-repeat;
-}
-
-.veeam-log-wrap::-webkit-scrollbar-button:vertical:increment {
-  height: 16px;
-  border-left: 1px solid #eef2f7;
-  background: #ffffff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='M8 11.75 3.9 6.25h8.2z' fill='%23d9d9dd'/%3E%3C/svg%3E") center / 12px 12px no-repeat;
-}
-
-.veeam-log-wrap:hover::-webkit-scrollbar-button:vertical:decrement {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='M8 4.25 3.9 9.75h8.2z' fill='%238f8f94'/%3E%3C/svg%3E");
-}
-
-.veeam-log-wrap:hover::-webkit-scrollbar-button:vertical:increment {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='M8 11.75 3.9 6.25h8.2z' fill='%238f8f94'/%3E%3C/svg%3E");
+.veeam-log-wrap::-webkit-scrollbar-button {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .veeam-monitoring-panel {
@@ -1987,7 +1988,7 @@ button {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  min-width: 1080px;
+  min-width: 980px;
 }
 
 .veeam-log-col-name {
@@ -1999,7 +2000,7 @@ button {
 }
 
 .veeam-log-col-duration {
-  width: 92px;
+  width: 96px;
 }
 
 .veeam-log-table th {
@@ -2028,10 +2029,6 @@ button {
   color: #52677d;
   font-size: 12.5px;
   font-weight: 700;
-}
-
-.veeam-log-table th:last-child {
-  text-align: right;
 }
 
 .veeam-session-name {
@@ -2113,7 +2110,7 @@ button {
 }
 
 .veeam-session-actions {
-  min-width: 560px;
+  min-width: 0;
   overflow-x: hidden;
 }
 
@@ -2171,10 +2168,12 @@ button {
 .veeam-progress-summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid #e4ebf2;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid #e4ebf2;
+  border-radius: 8px;
+  background: #f8fbff;
 }
 
 .veeam-progress-summary span {
@@ -2202,23 +2201,19 @@ button {
 }
 
 .veeam-session-duration {
-  width: 80px;
   color: #111827;
   font-weight: 800;
-  text-align: right;
+  text-align: left;
   white-space: nowrap;
 }
 
 .veeam-session-scroll-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 80px;
-  column-gap: 12px;
-  max-height: 170px;
+  display: block;
+  max-height: 150px;
   overflow-x: hidden;
   overflow-y: auto;
-  padding-right: 8px;
+  padding-right: 6px;
   scrollbar-width: thin;
-  scrollbar-gutter: stable;
   scrollbar-color: #dcdcdf #ffffff;
 }
 
@@ -6210,6 +6205,10 @@ td {
   .settings-card {
     grid-template-columns: 1fr;
   }
+
+  .settings-workspace-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 :root[data-theme="dark"] body {
@@ -6284,7 +6283,7 @@ td {
 :root[data-theme="dark"] .date-download-button,
 :root[data-theme="dark"] .chart-tools button,
 :root[data-theme="dark"] .settings-card select,
-:root[data-theme="dark"] .settings-actions span,
+:root[data-theme="dark"] .settings-workspace-actions button,
 :root[data-theme="dark"] .report-export-actions a,
 :root[data-theme="dark"] .dashboard-panel h2,
 :root[data-theme="dark"] .dashboard-panel-head,

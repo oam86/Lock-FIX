@@ -61,6 +61,12 @@ Copy-ItemClean -Source (Join-Path $Root "config") -Destination (Join-Path $Packa
 Copy-ItemClean -Source (Join-Path $Root "lockfix") -Destination (Join-Path $PackageRoot "lockfix")
 Copy-ItemClean -Source (Join-Path $Root "web") -Destination (Join-Path $PackageRoot "web")
 Copy-ItemClean -Source (Join-Path $Root "tools") -Destination (Join-Path $PackageRoot "tools")
+if (Test-Path -LiteralPath (Join-Path $Root "scripts")) {
+    Copy-ItemClean -Source (Join-Path $Root "scripts") -Destination (Join-Path $PackageRoot "scripts")
+}
+if (Test-Path -LiteralPath (Join-Path $Root "docs")) {
+    Copy-ItemClean -Source (Join-Path $Root "docs") -Destination (Join-Path $PackageRoot "docs")
+}
 $PythonRuntime = Find-PythonRuntime
 if (-not $PythonRuntime) {
     throw "Offline Python runtime was not found. Set LOCKFIX_PYTHON_RUNTIME to a folder that contains python.exe before building the Windows Server offline package."
@@ -221,8 +227,8 @@ Veeam 계정과 비밀번호를 환경변수로 설정한 뒤 실행합니다.
 ```powershell
 $env:LOCKFIX_VEEAM_BASE_URL = "https://<TARGET_SERVER_IP>:9419"
 $env:LOCKFIX_VEEAM_EM_BASE_URL = "https://127.0.0.1:9398"
-$env:LOCKFIX_VEEAM_USER = "Veeam계정"
-$env:LOCKFIX_VEEAM_PASSWORD = "Veeam비밀번호"
+$env:LOCKFIX_VEEAM_USER = "<VEEAM_USER>"
+$env:LOCKFIX_VEEAM_PASSWORD = "<VEEAM_PASSWORD>"
 powershell -ExecutionPolicy Bypass -File .\tools\veeam_preflight.ps1
 ```
 
@@ -259,8 +265,8 @@ PowerShell 7 또는 Windows `curl.exe`만 실패하고 LOCK-FIX Python 검증은
 
 ```powershell
 $env:LOCKFIX_VEEAM_BASE_URL = "https://<TARGET_SERVER_IP>:9419"
-$env:LOCKFIX_VEEAM_USER = "Veeam계정"
-$env:LOCKFIX_VEEAM_PASSWORD = "Veeam비밀번호"
+$env:LOCKFIX_VEEAM_USER = "<VEEAM_USER>"
+$env:LOCKFIX_VEEAM_PASSWORD = "<VEEAM_PASSWORD>"
 powershell -ExecutionPolicy Bypass -File .\tools\veeam_schannel_diagnostics.ps1 -TestCurl
 ```
 
