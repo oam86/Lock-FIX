@@ -40,6 +40,29 @@ $env:LOCKFIX_SMTP_TLS = "true"
 
 If SMTP is not configured, the report and JSON log are still generated and the email result is recorded as not sent.
 
+## 3-Hour Offline / Emergency Reconnect Validation
+
+After the repository reaches Offline, run the 3-hour validation to make sure the emergency reconnect flow remains safe across Windows agent installations.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\send-lockfix-offline-reconnect-check.ps1
+```
+
+The check is intentionally non-destructive. It does not force the production disk online/offline during routine validation. It verifies:
+
+- Offline or offline-equivalent proof is recorded.
+- Drive letter and repository access path are blocked.
+- Emergency reconnect remains blocked until approval is valid.
+- If an approved online window is active, LOCK-FIX verifies that the original repository volume mount/access path is restored and records `offline.reconnect.validation.reconnect.verify`.
+- Windows agent portability is safe: backend selection, non-C: repository drive, Windows repository path, and disk identity mapping.
+
+Outputs:
+
+- `reports\offline-reconnect-report-yyyyMMdd-HHmmss.html`
+- `runtime\offline-reconnect-validation-yyyyMMdd-HHmmss.json`
+
+If the path is blocked but Disk Offline proof cannot be found, treat it as an issue. That means LOCK-FIX has blocked access, but the operator still needs stronger disk-level evidence before considering the offline state fully proven.
+
 If the script is run from a source checkout instead of an installed LOCK-FIX package, pass Veeam credentials explicitly or set the same environment variables:
 
 ```powershell

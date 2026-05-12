@@ -63,6 +63,7 @@
           <button class="side-item rbac-menu" data-menu-section="customer" data-view="monitoring" data-permission="DASHBOARD_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="3" height="8" rx="1"></rect><rect x="10.5" y="6" width="3" height="12" rx="1"></rect><rect x="17" y="3" width="3" height="15" rx="1"></rect></svg></span><span data-i18n="nav.monitoring">Monitoring</span></button>
           <button class="side-item rbac-menu" data-menu-section="customer" data-view="detect2" data-permission="DASHBOARD_VIEW"><span class="nav-icon detect-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"></circle><path d="m15 15 4 4"></path><path d="M10.5 7.5v6"></path><path d="M7.5 10.5h6"></path></svg></span><span data-i18n="nav.hardwareDetect">Hardware Detect</span></button>
           <button class="side-item rbac-menu airgap-side" data-menu-section="customer" data-view="sources" data-permission="AIRGAP_POLICY_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path><path d="M12 14v2"></path></svg></span><span data-i18n="nav.airgap">Air-Gap</span></button>
+          <button class="side-item rbac-menu" data-menu-section="customer" data-view="logs2" data-permission="DASHBOARD_VIEW"><span class="nav-icon logs-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v16H6z"></path><path d="M9 8h6"></path><path d="M9 12h6"></path><path d="M9 16h4"></path></svg></span><span data-i18n="nav.logs">Logs</span></button>
           <button class="side-item rbac-menu" data-menu-section="customer" data-view="report" data-permission="REPORT_EXPORT"><span class="nav-icon report-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h8.8l3.2 3.2v13.8h-12Z"></path><path d="M15 3.8V7h3.2"></path><path d="M9 12.2h5.5"></path><path d="M9 15.5h3.5"></path></svg></span><span data-i18n="nav.report">Reports</span></button>
           <button class="side-item rbac-menu" data-menu-section="customer" data-view="license2" data-permission="DASHBOARD_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 7v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7Z"></path><path d="m9 12 2 2 4-5"></path></svg></span><span data-i18n="nav.license">License</span></button>
           <button class="side-item rbac-menu" data-menu-section="customer" data-view="settings" data-permission="DASHBOARD_VIEW"><span class="nav-icon settings-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"></circle><path d="M12 3.8v2.4"></path><path d="M12 17.8v2.4"></path><path d="m5 7 2 1.2"></path><path d="m17 15.8 2 1.2"></path><path d="m19 7-2 1.2"></path><path d="m7 15.8-2 1.2"></path></svg></span><span data-i18n="nav.settings">Settings</span></button>
@@ -124,7 +125,7 @@
           </div>
           <div class="legend metric-filter" role="group" aria-label="Monitoring metric filter"><button type="button" class="metric-filter-button active" data-metric="cpu"><i class="cpu-dot"></i>CPU</button><button type="button" class="metric-filter-button" data-metric="memory"><i class="memory-dot"></i>Memory</button><button type="button" class="metric-filter-button" data-metric="disk"><i class="disk-dot"></i>Disk</button><button type="button" class="metric-filter-button" data-metric="network"><i class="network-dot"></i>Network</button><button type="button" class="metric-filter-button" data-metric="interface"><i class="interface-dot"></i>Interface</button></div>
           <div class="monitoring-summary-strip" id="monitoringSummaryStrip" aria-live="polite"></div>
-          <svg class="line-chart" id="monitoringChart" viewBox="0 0 920 320" role="img" aria-label="hardware usage chart"></svg>
+          <svg class="line-chart" id="monitoringChart" viewBox="0 0 1120 320" role="img" aria-label="hardware usage chart"></svg>
           <div class="current-divider">현재 상태</div>
           <div class="gauge-grid">
             <div class="gauge-card" id="cpuGauge"></div>
@@ -421,10 +422,19 @@
 
       <section class="view logs-view" id="logs2View">
         <div class="logs-range">
-          <label><span>Start Date</span><input id="logsStart" type="date" /></label>
-          <label><span>End Date</span><input id="logsEnd" type="date" /></label>
-          <button type="button" class="logs-apply-button" id="logsRangeApply">적용</button>
-          <button type="button" class="logs-apply-button" id="logsRangeDownload">CSV</button>
+          <div class="logs-range-title">
+            <strong>Log Range</strong>
+            <span>상세 로그 조회 기간</span>
+          </div>
+          <label><span>Start</span><input id="logsStart" type="date" /></label>
+          <label><span>End</span><input id="logsEnd" type="date" /></label>
+          <div class="logs-range-actions">
+            <button type="button" class="logs-apply-button" id="logsRangeApply">적용</button>
+            <button type="button" class="logs-download-button" id="logsRangeDownload" title="Download CSV" aria-label="Download logs CSV">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><path d="M7 10l5 5 5-5"></path><path d="M5 21h14"></path></svg>
+              <span>CSV</span>
+            </button>
+          </div>
         </div>
 
         <section class="logs-panel">
@@ -615,21 +625,82 @@
         <div class="monitoring-header">
           <div>
             <h1>협업/승인 워크플로우</h1>
-            <p>승인 요청 등록, 부서 검토 대기, 내 검토함, 내 승인 대기, 협의 댓글, 검토 완료 상태, 보완 요청 상태, 최종 승인 가능 여부를 한 화면에서 확인합니다.</p>
+            <p>작업 요청에서 부서 검토, 승인, 실행, 감사 기록까지 운영 절차를 자동화된 흐름으로 확인합니다.</p>
           </div>
+          <button type="button" class="approval-create-toggle" id="approvalCreateToggle">+ 작업 요청</button>
         </div>
+        <section class="approval-workflow-pipeline" id="approvalWorkflowPipeline" aria-label="작업 요청 자동화 흐름"></section>
+        <section class="approval-create-panel hidden" id="approvalCreatePanel" aria-label="작업 요청 생성">
+          <form id="approvalCreateForm">
+            <div class="approval-create-head">
+              <div>
+                <h2>작업 요청 생성</h2>
+                <p>회의에서 정리된 업무를 등록하면 유형에 따라 부서 검토와 승인 단계로 자동 배정됩니다.</p>
+              </div>
+              <span id="approvalCreateStatus"></span>
+            </div>
+            <div class="approval-form-grid">
+              <label>
+                <span>요청 유형</span>
+                <select id="approvalRequestType">
+                  <option value="POLICY_CHANGE" data-category="DEVELOPMENT_TASK">개발 작업</option>
+                  <option value="POLICY_CHANGE" data-category="POLICY_CHANGE">정책 변경</option>
+                  <option value="DISK_OFFLINE" data-category="DISK_OFFLINE">Disk Offline</option>
+                  <option value="DISK_ONLINE" data-category="DISK_ONLINE">Disk Online</option>
+                  <option value="HARDWARE_POWER_OFF" data-category="HARDWARE_POWER_OFF">하드웨어 전원 OFF</option>
+                  <option value="HARDWARE_POWER_ON" data-category="HARDWARE_POWER_ON">하드웨어 전원 ON</option>
+                  <option value="EMERGENCY_UNLOCK" data-category="EMERGENCY_UNLOCK">긴급 해제</option>
+                </select>
+              </label>
+              <label>
+                <span>제목</span>
+                <input id="approvalRequestTitle" type="text" placeholder="예: Veeam 연동 상태 재검증 자동화" required />
+              </label>
+              <label>
+                <span>실행 대상</span>
+                <input id="approvalRequestTarget" type="text" placeholder="예: BAY-01, Veeam Copy Job, Web UI" />
+              </label>
+              <label>
+                <span>담당 부서</span>
+                <input id="approvalAssignedDepartments" type="text" readonly />
+              </label>
+              <label>
+                <span>우선순위</span>
+                <select id="approvalPriority">
+                  <option value="NORMAL">Normal</option>
+                  <option value="HIGH">High</option>
+                  <option value="URGENT">Urgent</option>
+                </select>
+              </label>
+              <label>
+                <span>목표 완료일</span>
+                <input id="approvalDueDate" type="date" />
+              </label>
+              <label class="approval-form-wide">
+                <span>요청 사유</span>
+                <textarea id="approvalReason" placeholder="업무 목적, 기대 결과, 검토가 필요한 내용을 입력하세요." required></textarea>
+              </label>
+              <label class="approval-form-wide">
+                <span>참고 링크 / 실행 메모</span>
+                <textarea id="approvalReference" placeholder="회의록, 장애 화면, GitHub 이슈, 실행 로그 등"></textarea>
+              </label>
+            </div>
+            <div class="approval-create-actions">
+              <button type="button" id="approvalCreateCancel">취소</button>
+              <button type="submit">요청 등록</button>
+            </div>
+          </form>
+        </section>
         <div class="rbac-tabs" id="approvalTabs">
-          <button type="button" class="active" data-approval-tab="approvalRequestBox">승인 요청함</button>
-          <button type="button" data-approval-tab="departmentReviewBox">부서 검토함</button>
-          <button type="button" data-approval-tab="myApprovalPending">내 승인 대기</button>
-          <button type="button" data-approval-tab="consultationOpinion">협의 의견</button>
-          <button type="button" data-approval-tab="reworkRequest">보완 요청</button>
-          <button type="button" data-approval-tab="completedHistory">완료 이력</button>
+          <button type="button" class="active" data-approval-tab="approvalRequestBox">작업 요청</button>
+          <button type="button" data-approval-tab="departmentReviewBox">부서 검토</button>
+          <button type="button" data-approval-tab="myApprovalPending">승인</button>
+          <button type="button" data-approval-tab="completedHistory">실행</button>
           <button type="button" data-approval-tab="auditRecord">감사 기록</button>
         </div>
         <section class="rbac-panel">
           <div class="rbac-panel-head">
-            <h2 id="approvalTabTitle">승인 요청함</h2>
+            <h2 id="approvalTabTitle">작업 요청</h2>
             <span id="approvalCount">0 requests</span>
           </div>
           <div class="rbac-table-wrap">
@@ -686,21 +757,37 @@
         </section>
       </section>
 
-      <section class="view rbac-page-view" id="auditLogsView">
-        <div class="monitoring-header">
+      <section class="view rbac-page-view audit-logs-page" id="auditLogsView">
+        <div class="monitoring-header audit-logs-hero">
           <div>
             <h1>Audit Logs</h1>
-            <p>Structured audit events are view-only and cannot be deleted through the API.</p>
+            <p>Immutable audit events for approvals, access control, system changes, and isolation operations.</p>
           </div>
-          <a class="rbac-export-link" href="/api/audit-logs/export">Export</a>
+          <a class="rbac-export-link audit-logs-export" href="/api/audit-logs/export">Export CSV</a>
         </div>
-        <section class="rbac-panel">
+        <section class="audit-logs-summary" id="auditLogsSummary" aria-live="polite"></section>
+        <section class="audit-logs-toolbar" aria-label="Audit log filters">
+          <label>
+            <span>Search</span>
+            <input type="search" id="auditLogsSearch" placeholder="Actor, action, resource, message" autocomplete="off">
+          </label>
+          <label>
+            <span>Result</span>
+            <select id="auditLogsResultFilter">
+              <option value="">All results</option>
+              <option value="SUCCESS">Success</option>
+              <option value="FAILED">Failed</option>
+              <option value="DENIED">Denied</option>
+            </select>
+          </label>
+        </section>
+        <section class="rbac-panel audit-logs-panel">
           <div class="rbac-panel-head">
             <h2>Audit Events</h2>
             <span id="auditLogsCount">0 events</span>
           </div>
           <div class="rbac-table-wrap">
-            <table class="rbac-table">
+            <table class="rbac-table audit-logs-table">
               <thead>
                 <tr>
                   <th>Created</th>
@@ -708,6 +795,7 @@
                   <th>Action</th>
                   <th>Resource</th>
                   <th>Result</th>
+                  <th>Message</th>
                 </tr>
               </thead>
               <tbody id="auditLogsTable"></tbody>

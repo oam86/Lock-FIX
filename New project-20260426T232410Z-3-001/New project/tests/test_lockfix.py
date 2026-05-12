@@ -16,6 +16,7 @@ from lockfix.command import CommandError, CommandRunner
 from lockfix.audit import AuditLogger
 from lockfix.hashcheck import manifest_digest
 from lockfix.identity import compute_uid, fingerprint_parts, slot_uid
+from lockfix.offline_reconnect_validation import run_offline_reconnect_validation
 from lockfix.approvals import ApprovalStore
 from lockfix.audit_log import AUDIT_LOG_FIELDS, audit_logs_to_csv, read_audit_logs
 from lockfix.rbac import AuthorizationError, Permission, Role, default_policy_document, has_permission, load_role_permissions
@@ -722,6 +723,22 @@ class LockFixTests(unittest.TestCase):
         controller.hardware_power_on("BAY-01")
         controller.hardware_power_off("BAY-01")
 
+    def test_offline_reconnect_validation_writes_report_and_checks_agent_portability(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+
+        summary = run_offline_reconnect_validation(config_path, report_dir=tmp_path / "reports", json_log_dir=tmp_path / "runtime")
+
+        self.assertIn(summary["overall_status"], {"OK", "ISSUE_DETECTED"})
+        self.assertTrue(Path(summary["html_report_path"]).exists())
+        self.assertTrue(Path(summary["json_log_path"]).exists())
+        finding_ids = {item["id"] for item in summary["findings"]}
+        self.assertIn("offline.proof", finding_ids)
+        self.assertIn("emergency.approval.gate", finding_ids)
+        self.assertIn("reconnect.blocked.until.approved", finding_ids)
+        self.assertIn("agent.os.backend", finding_ids)
+        self.assertIn("offline.reconnect.validation.completed", (tmp_path / "audit.jsonl").read_text(encoding="utf-8"))
+
     def test_webui_permission_errors_return_403_and_emergency_does_not_pregrant_online(self) -> None:
         source = Path("webui.py").read_text(encoding="utf-8")
         handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
@@ -984,7 +1001,9 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("디스크 식별 판정", app_source)
         self.assertIn("detect-action-row", app_source)
         self.assertIn('data-detect-action="logs"', app_source)
-        self.assertIn('if (action === "logs") showView("logs2");', app_source)
+        self.assertIn('logsRange.highlight = keyword;', app_source)
+        self.assertIn('showView("logs2");', app_source)
+        self.assertIn("logs-highlight-row", css_source)
         self.assertIn('statusClass = isNormal ? "normal" : "abnormal"', app_source)
         self.assertIn(".detect-judgement-normal", css_source)
         self.assertIn(".detect-judgement-abnormal", css_source)
@@ -1002,7 +1021,8 @@ class LockFixTests(unittest.TestCase):
         self.assertIn('class="nav-icon detect-nav-icon"', index_source)
         self.assertIn('class="nav-icon settings-nav-icon"', index_source)
         self.assertIn('class="nav-icon logout-nav-icon"', index_source)
-        self.assertNotIn('class="nav-icon logs-nav-icon"', index_source)
+        self.assertIn('class="nav-icon logs-nav-icon"', index_source)
+        self.assertIn('data-view="logs2"', index_source)
         self.assertIn(".detect-nav-icon svg", css_source)
         self.assertIn(".settings-nav-icon svg", css_source)
         self.assertIn(".logout-nav-icon svg", css_source)
@@ -1369,6 +1389,68 @@ class LockFixTests(unittest.TestCase):
         self.assertIn('"path_reachable": false', audit_text)
         self.assertIn('"is_offline": true', audit_text)
 
+    def test_removable_reblock_removes_current_drive_letter_when_set_disk_offline_is_unsupported(self) -> None:
+        tmp_path = self.make_workspace()
+        config = load_config(write_config(tmp_path))
+        base_slot = config.slot("BAY-01")
+        slot = type(base_slot)(
+            slot_id=base_slot.slot_id,
+            device="G:\\",
+            mount_point=Path("G:\\"),
+            expected_uid=base_slot.expected_uid,
+            identity=base_slot.identity,
+            manifest_path=base_slot.manifest_path,
+            power=base_slot.power,
+        )
+        audit_path = tmp_path / "removable-reblock-audit.jsonl"
+        (tmp_path / "storage-BAY-01.json").write_text(
+            json.dumps(
+                {
+                    "accessPath": "G:\\",
+                    "diskNumber": 1,
+                    "partitionNumber": 1,
+                    "diskUniqueId": "USB-DISK",
+                    "isOffline": False,
+                    "offlineEquivalent": True,
+                    "setDiskOfflineSupported": False,
+                    "pathReachable": False,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        class RemovableRunner(CommandRunner):
+            def __init__(self) -> None:
+                super().__init__(dry_run=False)
+
+            def run(self, args: list[str], timeout: int = 120) -> str:
+                command = " ".join(args)
+                if "Set-Disk -Number $disk.Number -IsOffline $true" in command:
+                    raise CommandError("Set-Disk : Not Supported. Removable media cannot be set to offline.")
+                if "Unauthorized removable-media online state was reblocked" in command:
+                    if "Remove-PartitionAccessPath" not in command:
+                        raise AssertionError(f"expected access path removal command: {command}")
+                    return (
+                        'LOCKFIX_STORAGE_STATE={"drive":"G","accessPath":"G:\\\\","diskNumber":1,'
+                        '"diskUniqueId":"USB-DISK","isOffline":false,"offlineEquivalent":true,'
+                        '"setDiskOfflineSupported":false,"pathReachable":false,'
+                        '"removedAccessPaths":["F:\\\\"],"currentDriveLetters":[],"remainingAccessPaths":[],'
+                        '"method":"Unauthorized removable-media drive letter/access path removed"}\n'
+                        "Unauthorized removable-media online state was reblocked by removing access paths"
+                    )
+                raise AssertionError(f"unexpected command: {command}")
+
+        disk = DiskOperator(RemovableRunner(), AuditLogger(audit_path))
+
+        self.assertTrue(disk.enforce_offline_unless_approved(slot, approved=False, reason="unit_test_guard"))
+
+        audit_text = audit_path.read_text(encoding="utf-8")
+        self.assertIn("disk.online.unauthorized.reblock.error", audit_text)
+        self.assertIn("disk.online.unauthorized.reblock.removable_fallback.start", audit_text)
+        self.assertIn("disk.online.unauthorized.reblock.removable_fallback", audit_text)
+        self.assertIn("disk.online.unauthorized.reblock", audit_text)
+        self.assertIn("F:\\\\", audit_text)
+
     def test_storage_permission_denied_uses_system_fallback(self) -> None:
         tmp_path = self.make_workspace()
         audit_path = tmp_path / "system-fallback-audit.jsonl"
@@ -1681,7 +1763,7 @@ class LockFixTests(unittest.TestCase):
         app = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
         css = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
 
-        for tab in ["승인 요청함", "부서 검토함", "내 승인 대기", "협의 의견", "보완 요청", "완료 이력", "감사 기록"]:
+        for tab in ["작업 요청", "부서 검토", "승인", "실행", "감사 기록"]:
             self.assertIn(tab, html)
 
         self.assertIn("approvalDecisionSummary", app)
@@ -1707,11 +1789,11 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("data-review-action", app)
         self.assertIn("/api/approval-requests/", app)
         self.assertIn("최종 승인 가능 여부", html + app)
-        self.assertIn("부서 검토 대기", html)
-        self.assertIn("내 검토함", html)
-        self.assertIn("협의 댓글", html)
-        self.assertIn("검토 완료 상태", html)
-        self.assertIn("보완 요청 상태", html)
+        self.assertIn("작업 요청에서 부서 검토, 승인, 실행, 감사 기록까지", html)
+        self.assertIn("approvalWorkflowPipeline", html + app)
+        self.assertIn("부서 검토", html)
+        self.assertIn("실행", html)
+        self.assertIn("감사 기록", html)
         self.assertIn("approval-review-state", css)
         self.assertIn("repository-online-request-card", css)
         self.assertIn("final-approval-wait-card", css)
@@ -1723,8 +1805,8 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("approvalRequestBox", app)
         self.assertIn("departmentReviewBox", app)
         self.assertIn("myApprovalPending", app)
-        self.assertIn("consultationOpinion", app)
-        self.assertIn("reworkRequest", app)
+        self.assertIn("approvalWorkflowStages", app)
+        self.assertIn("renderApprovalWorkflowPipeline", app)
         self.assertIn("completedHistory", app)
         self.assertIn("auditRecord", app)
         self.assertIn("workflow-history-list", css)

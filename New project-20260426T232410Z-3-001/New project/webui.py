@@ -2588,6 +2588,35 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             controller_state = str(self.context.controller.status().get(slot_id, "") or "").upper()
         except Exception:
             controller_state = ""
+        controller_step_map = {
+            "BACKUP_COMPLETED": 1,
+            "FLUSHING": 2,
+            "IO_CHECKING": 3,
+            "UNMOUNTING": 4,
+            "DISK_OFFLINING": 5,
+            "POWERING_OFF": 5,
+            "ISOLATED": 5,
+        }
+        controller_step = controller_step_map.get(controller_state)
+        if controller_step and not processed_backup_waiting:
+            current_step = max(current_step, controller_step)
+            if controller_state == "ISOLATED":
+                progress = 100
+            for item in step_logs:
+                step_number = int(item.get("step") or 0)
+                if step_number < current_step:
+                    item["state"] = "DONE"
+                    item["transition_allowed"] = True
+                    item["progress_percent"] = 100
+                elif step_number == current_step:
+                    item["state"] = "DONE" if controller_state == "ISOLATED" else "ACTIVE"
+                    item["transition_allowed"] = True
+                    item["progress_percent"] = 100 if controller_state == "ISOLATED" else item.get("progress_percent") or progress
+                    item["detail"] = f"LOCK-FIX controller state is {controller_state}. Audit log evidence is shown in the monitoring rows."
+                else:
+                    item["state"] = "PENDING"
+                    item["transition_allowed"] = False
+                    item["progress_percent"] = ""
         recent_offline_records = LockFixWebHandler.recent_power_off_audit_records(self, slot_id, 4)
         recent_offline_failed = any(
             str(record.get("event") or "") in {"disk.offline.error", "disk.offline.verify.error"}
@@ -3314,8 +3343,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
             disk_number = LockFixWebHandler.compact_log_value(self, record.get("disk_number") or "-")
             is_offline = LockFixWebHandler.compact_log_value(self, record.get("is_offline"))
+            offline_equivalent = LockFixWebHandler.compact_log_value(self, record.get("offline_equivalent"))
             path_reachable = LockFixWebHandler.compact_log_value(self, record.get("path_reachable"))
-            return f"{prefix}LOCK-FIX Offline VERIFY OK - slot {slot_id}, disk {disk_number}, drive {drive}, IsOffline={is_offline}, PathReachable={path_reachable}"
+            return f"{prefix}LOCK-FIX Offline VERIFY OK - slot {slot_id}, disk {disk_number}, drive {drive}, IsOffline={is_offline}, offlineEquivalent={offline_equivalent}, PathReachable={path_reachable}"
         if event.endswith(".off.error") or event == "disk.offline.error":
             error = LockFixWebHandler.compact_log_value(self, record.get("error") or "offline command failed")
             return f"{prefix}LOCK-FIX Offline ERROR - slot {slot_id}, {error}"
@@ -3636,6 +3666,24 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         processed_session_keys = set(previous.get("processed_session_keys") or [])
         if previous.get("session_key") and previous.get("state") == "ISOLATED":
             processed_session_keys.add(str(previous.get("session_key")))
+        controller_state = ""
+        try:
+            controller_state = str(self.context.controller.status().get(slot_id, "") or "").upper()
+        except Exception:
+            controller_state = ""
+        active_states = {"BACKUP_COMPLETED", "FLUSHING", "IO_CHECKING", "UNMOUNTING", "DISK_OFFLINING", "POWERING_OFF"}
+        if str(previous.get("session_key") or "") == session_key and previous.get("state") == "ISOLATING":
+            if controller_state in active_states:
+                return {
+                    "enabled": True,
+                    "triggered": True,
+                    "slot_id": slot_id,
+                    "session_key": session_key,
+                    "state": controller_state,
+                    "message": f"LOCK-FIX isolation is already running. Current state: {controller_state}.",
+                }
+            previous["state"] = "FAILED"
+            previous["error"] = previous.get("error") or "Previous isolation marker was left in progress, but controller is no longer running."
         if not has_unique_session_identity:
             self.context.controller.audit.write(
                 "veeam.auto_isolate.identity_missing",
@@ -3690,9 +3738,23 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     session_key,
                     {**payload, "repository_path": repository_path},
                 )
+            marker_path.parent.mkdir(parents=True, exist_ok=True)
+            marker_path.write_text(
+                json.dumps(
+                    {
+                        "session_key": session_key,
+                        "processed_session_keys": sorted(processed_session_keys),
+                        "slot_id": slot_id,
+                        "state": "ISOLATING",
+                        "checked_at": checked_at,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
             state = self.context.controller.isolate(slot_id, repository_path=repository_path)
             processed_session_keys.add(session_key)
-            marker_path.parent.mkdir(parents=True, exist_ok=True)
             marker_path.write_text(
                 json.dumps(
                     {
@@ -3716,11 +3778,31 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "message": "Veeam backup success detected. LOCK-FIX isolate was called automatically.",
             }
         except Exception as exc:
+            try:
+                marker_path.parent.mkdir(parents=True, exist_ok=True)
+                marker_path.write_text(
+                    json.dumps(
+                        {
+                            "session_key": session_key,
+                            "processed_session_keys": sorted(processed_session_keys),
+                            "slot_id": slot_id,
+                            "state": "FAILED",
+                            "checked_at": checked_at,
+                            "error": str(exc),
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
+            except OSError:
+                pass
             return {
                 "enabled": True,
                 "triggered": False,
                 "slot_id": slot_id,
                 "session_key": session_key,
+                "state": "FAILED",
                 "error": str(exc),
                 "message": "Veeam backup success detected, but automatic isolate failed.",
             }
@@ -4450,8 +4532,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
             disk_number = LockFixWebHandler.compact_log_value(self, record.get("disk_number") or "-")
             is_offline = LockFixWebHandler.compact_log_value(self, record.get("is_offline"))
+            offline_equivalent = LockFixWebHandler.compact_log_value(self, record.get("offline_equivalent"))
             path_reachable = LockFixWebHandler.compact_log_value(self, record.get("path_reachable"))
-            return f"LOCK-FIX Offline VERIFY CONFIRMED - slot {slot_id}, drive {drive}, disk {disk_number}, IsOffline={is_offline}, PathReachable={path_reachable}."
+            return f"LOCK-FIX Offline VERIFY CONFIRMED - slot {slot_id}, drive {drive}, disk {disk_number}, IsOffline={is_offline}, offlineEquivalent={offline_equivalent}, PathReachable={path_reachable}."
         if event == "disk.offline.verify.error":
             error = LockFixWebHandler.compact_log_value(self, record.get("error") or "offline verification failed")
             return f"LOCK-FIX Offline VERIFY ERROR - slot {slot_id}, {error}"

@@ -159,10 +159,27 @@ const approvalTabs = document.querySelector("#approvalTabs");
 const approvalTabTitle = document.querySelector("#approvalTabTitle");
 const approvalCount = document.querySelector("#approvalCount");
 const approvalRequestsTable = document.querySelector("#approvalRequestsTable");
+const approvalWorkflowPipeline = document.querySelector("#approvalWorkflowPipeline");
+const approvalCreateToggle = document.querySelector("#approvalCreateToggle");
+const approvalCreatePanel = document.querySelector("#approvalCreatePanel");
+const approvalCreateForm = document.querySelector("#approvalCreateForm");
+const approvalCreateCancel = document.querySelector("#approvalCreateCancel");
+const approvalCreateStatus = document.querySelector("#approvalCreateStatus");
+const approvalRequestType = document.querySelector("#approvalRequestType");
+const approvalRequestTitle = document.querySelector("#approvalRequestTitle");
+const approvalRequestTarget = document.querySelector("#approvalRequestTarget");
+const approvalAssignedDepartments = document.querySelector("#approvalAssignedDepartments");
+const approvalPriority = document.querySelector("#approvalPriority");
+const approvalDueDate = document.querySelector("#approvalDueDate");
+const approvalReason = document.querySelector("#approvalReason");
+const approvalReference = document.querySelector("#approvalReference");
 const userManagementDepartmentCount = document.querySelector("#userManagementDepartmentCount");
 const userManagementDepartments = document.querySelector("#userManagementDepartments");
 const userManagementCount = document.querySelector("#userManagementCount");
 const userManagementTable = document.querySelector("#userManagementTable");
+const auditLogsSummary = document.querySelector("#auditLogsSummary");
+const auditLogsSearch = document.querySelector("#auditLogsSearch");
+const auditLogsResultFilter = document.querySelector("#auditLogsResultFilter");
 const auditLogsCount = document.querySelector("#auditLogsCount");
 const auditLogsTable = document.querySelector("#auditLogsTable");
 const accessDeniedMessage = document.querySelector("#accessDeniedMessage");
@@ -180,6 +197,7 @@ let latestSourcesData = null;
 let latestDashboardData = null;
 let latestLogsData = null;
 let latestAuditData = [];
+let auditLogsFilterState = { q: "", result: "" };
 let securityAuditSelectedId = "";
 let securityAuditFilters = {
   start: "",
@@ -216,6 +234,7 @@ let logsRange = {
   severity: "",
   source: "",
   q: "",
+  highlight: "",
 };
 let uiSettings = {
   language: localStorage.getItem("lockfix.language") || "en",
@@ -235,6 +254,7 @@ const menuDefinitions = [
   { view: "monitoring", label: "Monitoring", permissions: ["DASHBOARD_VIEW"], section: "customer" },
   { view: "detect2", label: "Hardware Detect", permissions: ["DASHBOARD_VIEW"], section: "customer" },
   { view: "sources", label: "Air-Gap Status", permissions: ["AIRGAP_POLICY_VIEW"], section: "customer" },
+  { view: "logs2", label: "Logs", permissions: ["DASHBOARD_VIEW"], section: "customer" },
   { view: "report", label: "Reports", permissions: ["REPORT_EXPORT"], section: "customer" },
   { view: "license2", label: "License", permissions: ["DASHBOARD_VIEW"], section: "customer" },
   { view: "hardware", label: "Hardware Control", permissions: ["HARDWARE_CONTROL"], section: "operator" },
@@ -250,14 +270,29 @@ const menuDefinitions = [
 ];
 
 const approvalTabDefinitions = [
-  { id: "approvalRequestBox", label: "승인 요청함" },
-  { id: "departmentReviewBox", label: "부서 검토함" },
-  { id: "myApprovalPending", label: "내 승인 대기" },
-  { id: "consultationOpinion", label: "협의 의견" },
-  { id: "reworkRequest", label: "보완 요청" },
-  { id: "completedHistory", label: "완료 이력" },
+  { id: "approvalRequestBox", label: "작업 요청" },
+  { id: "departmentReviewBox", label: "부서 검토" },
+  { id: "myApprovalPending", label: "승인" },
+  { id: "completedHistory", label: "실행" },
   { id: "auditRecord", label: "감사 기록" },
 ];
+
+const approvalWorkflowStages = [
+  { id: "request", tab: "approvalRequestBox", label: "작업 요청", description: "요청 등록 및 정책 대상 확인" },
+  { id: "review", tab: "departmentReviewBox", label: "부서 검토", description: "보안, 백업, 하드웨어, 감사 검토" },
+  { id: "approval", tab: "myApprovalPending", label: "승인", description: "권한자 승인 및 2인 승인 확인" },
+  { id: "execution", tab: "completedHistory", label: "실행", description: "승인 후 실행 결과 확인" },
+  { id: "audit", tab: "auditRecord", label: "감사 기록", description: "모든 결정과 실행 이력 보존" },
+];
+
+const approvalRequestTypeConfig = {
+  DISK_ONLINE: { departments: ["Security", "Hardware Control"], target: "BAY-01" },
+  DISK_OFFLINE: { departments: ["Backup Operation", "Security"], target: "BAY-01" },
+  POLICY_CHANGE: { departments: ["Security", "Audit"], target: "LOCK-FIX Policy" },
+  EMERGENCY_UNLOCK: { departments: ["Security", "Hardware Control", "Audit"], target: "Emergency Access" },
+  HARDWARE_POWER_ON: { departments: ["Hardware Control", "Security"], target: "BAY-01" },
+  HARDWARE_POWER_OFF: { departments: ["Hardware Control", "Security"], target: "BAY-01" },
+};
 
 const translations = {
   en: {
@@ -1321,6 +1356,11 @@ function showView(name) {
       reportAnalysis.textContent = error.message;
     });
   }
+  if (targetView === "logs2") {
+    reloadLogs().catch((error) => {
+      console.warn("Unable to reload logs view", error);
+    });
+  }
   if (targetView === "securityAudit") {
     renderSecurityAudit(latestAuditData);
   }
@@ -1850,6 +1890,7 @@ function renderDetect(data) {
     const latency = fingerprint.detection_latency_seconds ?? data.detection_latency_seconds ?? "0.5";
     const fingerprintValue = String(fingerprint.value || "-");
     const shortFingerprint = fingerprintValue.length > 12 ? `${fingerprintValue.slice(0, 12)}...` : fingerprintValue;
+    const logKeyword = fingerprint.slot_id || shortFingerprint || judgementLabel;
     detectFingerprintRoot.innerHTML = `
       <div class="detect-judgement-page">
         <header class="detect-judgement-head">
@@ -1889,7 +1930,7 @@ function renderDetect(data) {
             </article>
           </div>
           <div class="detect-action-row">
-            <button type="button" class="detect-action-primary" data-detect-action="logs">상세 로그 보기</button>
+            <button type="button" class="detect-action-primary" data-detect-action="logs" data-log-keyword="${escapeHtml(logKeyword)}">상세 로그 보기</button>
             <button type="button" class="detect-action-secondary" data-detect-action="airgap">격리 유지</button>
             <button type="button" class="detect-action-secondary" data-detect-action="settings">등록 요청</button>
           </div>
@@ -1958,9 +1999,15 @@ function renderLogs(data) {
   renderLogsSummaryCards(data);
   logsTotal.textContent = `Total ${data.total_logs} logs · ${data.retention_days}일 보관`;
   logsHistoryTable.replaceChildren();
+  const highlightNeedle = String(logsRange.highlight || logsRange.q || "").trim().toLowerCase();
   data.items.forEach((item) => {
     const row = document.createElement("tr");
     const severity = String(item.severity || "INFO").toUpperCase();
+    const haystack = `${item.type || ""} ${item.date || ""} ${item.source || ""} ${item.severity || ""} ${item.message || ""}`.toLowerCase();
+    if (highlightNeedle && haystack.includes(highlightNeedle)) {
+      row.classList.add("logs-highlight-row");
+      row.setAttribute("aria-label", uiSettings.language === "ko" ? "관련 상세 로그 강조" : "Highlighted related detail log");
+    }
     row.innerHTML = `
       <td><span class="history-type history-${String(item.type || "").toLowerCase()}">${escapeHtml(item.type || "-")}</span></td>
       <td>${escapeHtml(formatLogDate(item.date))}</td>
@@ -2650,14 +2697,65 @@ function canShowApprovalButton(request, session = currentSession, decisions = la
 
 function filterApprovalRequests(requests) {
   const items = Array.isArray(requests) ? requests : [];
-  if (activeApprovalTab === "approvalRequestBox") return items.filter((request) => String(request.requesterUserId || "") === String(currentSession.user || ""));
-  if (activeApprovalTab === "departmentReviewBox") return items.filter((request) => isDepartmentReviewPending(request));
-  if (activeApprovalTab === "myApprovalPending") return items.filter((request) => canShowApprovalButton(request));
-  if (activeApprovalTab === "consultationOpinion") return items.filter((request) => workflowHistoryItems(request).length > 1 || departmentReviewsFor(request).length > 0);
-  if (activeApprovalTab === "reworkRequest") return items.filter((request) => ["REJECTED", "EXPIRED"].includes(String(request.status || "")) || departmentReviewStatus(request) === "NEEDS_CHANGES");
-  if (activeApprovalTab === "completedHistory") return items.filter((request) => request.status === "APPROVED");
+  if (activeApprovalTab === "approvalRequestBox") return items.filter((request) => !["APPROVED", "REJECTED", "EXPIRED"].includes(String(request.status || "")));
+  if (activeApprovalTab === "departmentReviewBox") return items.filter((request) => isDepartmentReviewPending(request) || ["NEEDS_CHANGES", "BLOCKED"].includes(departmentReviewStatus(request)));
+  if (activeApprovalTab === "myApprovalPending") return items.filter((request) => isApprovalPendingRequest(request) || canShowApprovalButton(request));
+  if (activeApprovalTab === "completedHistory") return items.filter((request) => ["APPROVED", "REJECTED", "EXPIRED"].includes(String(request.status || "")) || ["NEEDS_CHANGES", "BLOCKED"].includes(departmentReviewStatus(request)));
   if (activeApprovalTab === "auditRecord") return items;
   return items;
+}
+
+function approvalRequestStage(request) {
+  const status = String(request?.status || "").toUpperCase();
+  const reviewStatus = departmentReviewStatus(request);
+  if (["APPROVED", "REJECTED", "EXPIRED"].includes(status)) return "execution";
+  if (["PENDING", "IN_REVIEW", "NEEDS_CHANGES", "BLOCKED"].includes(reviewStatus)) return "review";
+  if (isApprovalPendingRequest(request) || canShowApprovalButton(request)) return "approval";
+  return "request";
+}
+
+function approvalStageCounts(requests) {
+  const counts = { request: 0, review: 0, approval: 0, execution: 0, audit: Array.isArray(requests) ? requests.length : 0 };
+  (Array.isArray(requests) ? requests : []).forEach((request) => {
+    const stage = approvalRequestStage(request);
+    counts[stage] = (counts[stage] || 0) + 1;
+  });
+  return counts;
+}
+
+function renderApprovalWorkflowPipeline(requests) {
+  if (!approvalWorkflowPipeline) return;
+  const counts = approvalStageCounts(requests);
+  approvalWorkflowPipeline.innerHTML = approvalWorkflowStages.map((stage, index) => {
+    const active = stage.tab === activeApprovalTab;
+    const count = counts[stage.id] || 0;
+    return `
+      <button type="button" class="approval-flow-step${active ? " active" : ""}" data-approval-tab="${escapeHtml(stage.tab)}">
+        <span>${index + 1}</span>
+        <strong>${escapeHtml(stage.label)}</strong>
+        <em>${count}건</em>
+        <small>${escapeHtml(stage.description)}</small>
+      </button>
+    `;
+  }).join("");
+}
+
+function renderRequestFlowStrip(request) {
+  const currentStage = approvalRequestStage(request);
+  const currentIndex = approvalWorkflowStages.findIndex((stage) => stage.id === currentStage);
+  return `
+    <div class="approval-request-flow">
+      ${approvalWorkflowStages.map((stage, index) => {
+        const completed = index < currentIndex;
+        const active = stage.id === currentStage;
+        return `
+          <span class="${completed ? "done" : ""}${active ? " active" : ""}">
+            <i>${index + 1}</i>${escapeHtml(stage.label)}
+          </span>
+        `;
+      }).join("")}
+    </div>
+  `;
 }
 
 function workflowHistoryItems(request, decisions = latestApprovalsData.decisions) {
@@ -2714,6 +2812,103 @@ function renderWorkflowHistory(request, decisions = latestApprovalsData.decision
   `).join("")}</ol>`;
 }
 
+function renderDepartmentReviewList(request) {
+  const reviews = departmentReviewsFor(request);
+  if (!reviews.length) {
+    return `<div class="approval-detail-empty">부서 검토 항목이 없습니다.</div>`;
+  }
+  return `<div class="approval-detail-list">${reviews.map((review) => `
+    <div class="approval-detail-line">
+      <strong>${escapeHtml(review.departmentId || "-")}</strong>
+      <span>${escapeHtml(review.status || "PENDING")}</span>
+      <em>${escapeHtml(review.reviewerUserId || "-")}</em>
+    </div>
+  `).join("")}</div>`;
+}
+
+function renderApprovalProgressBlock(request) {
+  const approved = approvalDecisionsFor(request).filter((decision) => decision.decision === "APPROVED").length;
+  const rejected = approvalDecisionsFor(request).filter((decision) => decision.decision === "REJECTED").length;
+  const required = Number(request?.requiredApprovals || 1);
+  return `
+    <div class="approval-progress-box">
+      <strong>${approved} / ${required} approved</strong>
+      <span>Rejected ${rejected}</span>
+      <em>최종 승인 가능 여부: ${canShowApprovalButton(request) ? "가능" : "불가"}</em>
+    </div>
+  `;
+}
+
+function approvalMetadataValue(request, key, fallback = "-") {
+  const metadata = request?.metadata && typeof request.metadata === "object" ? request.metadata : {};
+  const value = metadata[key];
+  return value === undefined || value === null || value === "" ? fallback : value;
+}
+
+function renderConsultationBlock(request) {
+  const items = workflowHistoryItems(request).filter((item) => {
+    const text = `${item.type || ""} ${item.text || ""}`;
+    return /comment|review|NEEDS_CHANGES|BLOCKED|보완|협의|반려|blocked/i.test(text);
+  });
+  if (!items.length) {
+    return `<div class="approval-detail-empty">협의 댓글 또는 보완 요청이 없습니다.</div>`;
+  }
+  return `<ol class="workflow-history-list compact-history">${items.map((item) => `
+    <li>
+      <strong>${escapeHtml(item.type)}</strong>
+      <span>${escapeHtml(item.actor)}</span>
+      <em>${escapeHtml(formatLogDate(item.createdAt))}</em>
+      <p>${escapeHtml(item.text || "-")}</p>
+    </li>
+  `).join("")}</ol>`;
+}
+
+function renderApprovalDetailPanel(request) {
+  const history = renderWorkflowHistory(request) || `<div class="approval-detail-empty">실행 로그가 없습니다.</div>`;
+  return `
+    <tr class="approval-detail-row">
+      <td colspan="7">
+        <section class="approval-detail-panel">
+          <div class="approval-detail-card approval-detail-wide">
+            <h3>자동화 흐름</h3>
+            ${renderRequestFlowStrip(request)}
+          </div>
+          <div class="approval-detail-card">
+            <h3>요청 정보</h3>
+            <dl>
+              <div><dt>Type</dt><dd>${escapeHtml(request.requestType || "-")}</dd></div>
+              <div><dt>Title</dt><dd>${escapeHtml(approvalMetadataValue(request, "title"))}</dd></div>
+              <div><dt>Requester</dt><dd>${escapeHtml(request.requesterUserId || "-")}</dd></div>
+              <div><dt>Target</dt><dd>${escapeHtml(request.targetId || "-")}</dd></div>
+              <div><dt>Priority</dt><dd>${escapeHtml(approvalMetadataValue(request, "priority"))}</dd></div>
+              <div><dt>Due Date</dt><dd>${escapeHtml(approvalMetadataValue(request, "dueDate"))}</dd></div>
+              <div><dt>Status</dt><dd>${escapeHtml(request.status || "-")}</dd></div>
+              <div class="wide"><dt>Reason</dt><dd>${escapeHtml(approvalMetadataValue(request, "reason"))}</dd></div>
+              <div class="wide"><dt>Reference</dt><dd>${escapeHtml(approvalMetadataValue(request, "reference"))}</dd></div>
+            </dl>
+          </div>
+          <div class="approval-detail-card">
+            <h3>부서 검토</h3>
+            ${renderDepartmentReviewList(request)}
+          </div>
+          <div class="approval-detail-card">
+            <h3>승인 진행률</h3>
+            ${renderApprovalProgressBlock(request)}
+          </div>
+          <div class="approval-detail-card">
+            <h3>의견/보완 요청</h3>
+            ${renderConsultationBlock(request)}
+          </div>
+          <div class="approval-detail-card approval-detail-wide">
+            <h3>실행 로그</h3>
+            ${history}
+          </div>
+        </section>
+      </td>
+    </tr>
+  `;
+}
+
 function renderApprovals(data, errorMessage = "") {
   latestApprovalsData = {
     policies: Array.isArray(data?.policies) ? data.policies : [],
@@ -2725,6 +2920,7 @@ function renderApprovals(data, errorMessage = "") {
   };
   const tab = approvalTabDefinitions.find((item) => item.id === activeApprovalTab) || approvalTabDefinitions[0];
   if (approvalTabTitle) approvalTabTitle.textContent = tab.label;
+  renderApprovalWorkflowPipeline(latestApprovalsData.requests);
   approvalTabs?.querySelectorAll("[data-approval-tab]").forEach((button) => {
     button.classList.toggle("active", button.dataset.approvalTab === activeApprovalTab);
   });
@@ -2734,7 +2930,7 @@ function renderApprovals(data, errorMessage = "") {
   approvalRequestsTable.replaceChildren();
   if (errorMessage || !rows.length) {
     const row = document.createElement("tr");
-    row.innerHTML = `<td colspan="7">${escapeHtml(errorMessage || "No approval requests in this tab.")}</td>`;
+    row.innerHTML = `<td colspan="7">${escapeHtml(errorMessage ? "승인 데이터를 불러오지 못했습니다. 시스템 관리자에게 문의하세요." : "현재 표시할 승인 요청이 없습니다.")}</td>`;
     approvalRequestsTable.appendChild(row);
     return;
   }
@@ -2742,37 +2938,112 @@ function renderApprovals(data, errorMessage = "") {
     const row = document.createElement("tr");
     const reviewType = reviewTypeForRole(currentSession.role);
     const reviewButton = canShowReviewButton(request)
-      ? `<button type="button" class="rbac-action-button" data-review-id="${escapeHtml(request.id)}" data-review-type="${escapeHtml(reviewType)}">Review</button>`
+      ? `<button type="button" class="rbac-action-button" data-review-id="${escapeHtml(request.id)}" data-review-type="${escapeHtml(reviewType)}">검토</button>`
       : "";
     const departmentButtons = pendingDepartmentReviewsForSession(request).map((review) => `
-      <button type="button" class="rbac-action-button" data-department-review-id="${escapeHtml(review.id)}" data-approval-request-id="${escapeHtml(request.id)}" data-review-action="comment">Comment</button>
-      <button type="button" class="rbac-action-button" data-department-review-id="${escapeHtml(review.id)}" data-approval-request-id="${escapeHtml(request.id)}" data-review-action="mark-reviewed">Reviewed</button>
-      <button type="button" class="rbac-action-button" data-department-review-id="${escapeHtml(review.id)}" data-approval-request-id="${escapeHtml(request.id)}" data-review-action="needs-changes">Needs changes</button>
-      <button type="button" class="rbac-action-button" data-department-review-id="${escapeHtml(review.id)}" data-approval-request-id="${escapeHtml(request.id)}" data-review-action="block">Block</button>
+      <button type="button" class="rbac-action-button" data-department-review-id="${escapeHtml(review.id)}" data-approval-request-id="${escapeHtml(request.id)}" data-review-action="comment">의견</button>
+      <button type="button" class="rbac-action-button" data-department-review-id="${escapeHtml(review.id)}" data-approval-request-id="${escapeHtml(request.id)}" data-review-action="mark-reviewed">검토 완료</button>
+      <button type="button" class="rbac-action-button" data-department-review-id="${escapeHtml(review.id)}" data-approval-request-id="${escapeHtml(request.id)}" data-review-action="needs-changes">보완 요청</button>
+      <button type="button" class="rbac-action-button" data-department-review-id="${escapeHtml(review.id)}" data-approval-request-id="${escapeHtml(request.id)}" data-review-action="block">차단</button>
     `).join("");
     const approveButton = canShowApprovalButton(request)
-      ? `<button type="button" class="rbac-action-button" data-approval-id="${escapeHtml(request.id)}">Approve</button>`
+      ? `<button type="button" class="rbac-action-button" data-approval-id="${escapeHtml(request.id)}">승인</button>`
       : "";
     const rejectButton = canShowApprovalButton(request)
-      ? `<button type="button" class="rbac-action-button rbac-danger-action" data-reject-id="${escapeHtml(request.id)}">Reject</button>`
+      ? `<button type="button" class="rbac-action-button rbac-danger-action" data-reject-id="${escapeHtml(request.id)}">반려</button>`
       : "";
-    const history = ["consultationOpinion", "completedHistory", "auditRecord"].includes(activeApprovalTab) ? renderWorkflowHistory(request) : "";
     row.innerHTML = `
       <td>${escapeHtml(request.requestType)}</td>
       <td>${escapeHtml(request.requesterUserId)}</td>
       <td>${escapeHtml(request.targetId || "-")}</td>
       <td><span class="rbac-status rbac-status-${escapeHtml(String(request.status || "").toLowerCase())}">${escapeHtml(request.status)}</span></td>
-      <td>${renderRepositoryOnlineRequestPanel(request)}${renderFinalApprovalPanel(request)}${escapeHtml(repositoryOnlineWorkflowSummary(request))}<br><span class="approval-review-state">최종 승인 가능 여부: ${canShowApprovalButton(request) ? "가능" : "불가"} · 검토 완료 상태: ${escapeHtml(departmentReviewStatus(request))}</span>${history}</td>
+      <td>${renderRepositoryOnlineRequestPanel(request)}${renderFinalApprovalPanel(request)}${escapeHtml(repositoryOnlineWorkflowSummary(request))}<br><span class="approval-review-state">검토 상태: ${escapeHtml(departmentReviewStatus(request))}</span></td>
       <td>${escapeHtml(formatLogDate(request.expiresAt))}</td>
       <td>${departmentButtons}${reviewButton}${approveButton}${rejectButton}</td>
     `;
     approvalRequestsTable.appendChild(row);
+    approvalRequestsTable.insertAdjacentHTML("beforeend", renderApprovalDetailPanel(request));
   });
 }
 
 async function reloadApprovals() {
   const data = await requestJson("/api/approvals");
   renderApprovals(data);
+}
+
+function selectedApprovalRequestCategory() {
+  const option = approvalRequestType?.selectedOptions?.[0];
+  return option?.dataset?.category || approvalRequestType?.value || "POLICY_CHANGE";
+}
+
+function approvalDepartmentPreview(type = approvalRequestType?.value || "POLICY_CHANGE") {
+  const config = approvalRequestTypeConfig[type] || approvalRequestTypeConfig.POLICY_CHANGE;
+  return config.departments || [];
+}
+
+function updateApprovalCreatePreview() {
+  if (!approvalRequestType) return;
+  const type = approvalRequestType.value || "POLICY_CHANGE";
+  const config = approvalRequestTypeConfig[type] || approvalRequestTypeConfig.POLICY_CHANGE;
+  if (approvalAssignedDepartments) approvalAssignedDepartments.value = approvalDepartmentPreview(type).join(" / ");
+  if (approvalRequestTarget && !approvalRequestTarget.value.trim()) approvalRequestTarget.value = config.target || "";
+}
+
+function setApprovalCreatePanel(open) {
+  approvalCreatePanel?.classList.toggle("hidden", !open);
+  approvalCreateToggle?.classList.toggle("active", open);
+  if (open) {
+    updateApprovalCreatePreview();
+    setTimeout(() => approvalRequestTitle?.focus(), 0);
+  }
+}
+
+function resetApprovalCreateForm() {
+  approvalCreateForm?.reset();
+  if (approvalCreateStatus) approvalCreateStatus.textContent = "";
+  updateApprovalCreatePreview();
+}
+
+async function submitApprovalCreateForm(event) {
+  event.preventDefault();
+  if (!approvalRequestType || !approvalRequestTitle || !approvalReason) return;
+  const requestType = approvalRequestType.value || "POLICY_CHANGE";
+  const title = approvalRequestTitle.value.trim();
+  const reason = approvalReason.value.trim();
+  if (!title || !reason) {
+    if (approvalCreateStatus) approvalCreateStatus.textContent = "제목과 요청 사유는 필수입니다.";
+    return;
+  }
+  const targetId = approvalRequestTarget?.value.trim() || (approvalRequestTypeConfig[requestType]?.target || "LOCK-FIX");
+  const metadata = {
+    title,
+    reason,
+    priority: approvalPriority?.value || "NORMAL",
+    dueDate: approvalDueDate?.value || "",
+    reference: approvalReference?.value.trim() || "",
+    workCategory: selectedApprovalRequestCategory(),
+    assignedDepartments: approvalDepartmentPreview(requestType),
+    workflowType: "TEAM_COLLABORATION_TASK",
+  };
+  if (approvalCreateStatus) approvalCreateStatus.textContent = "요청 등록 중...";
+  const submitButton = approvalCreateForm.querySelector("button[type='submit']");
+  if (submitButton) submitButton.disabled = true;
+  try {
+    await requestJson("/api/approvals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestType, targetId, metadata }),
+    });
+    if (approvalCreateStatus) approvalCreateStatus.textContent = "요청이 등록되었습니다.";
+    activeApprovalTab = "approvalRequestBox";
+    resetApprovalCreateForm();
+    setApprovalCreatePanel(false);
+    await reloadApprovals();
+  } catch (error) {
+    if (approvalCreateStatus) approvalCreateStatus.textContent = error.message || "요청 등록 실패";
+  } finally {
+    if (submitButton) submitButton.disabled = false;
+  }
 }
 
 function renderVeeamIntegration(data, errorMessage = "") {
@@ -2837,25 +3108,88 @@ async function reloadUserManagement() {
   renderUserManagement({ users: users.items || [], departments: departments.items || [] });
 }
 
+function auditLogResultValue(item) {
+  const raw = String(item?.result || item?.status || "").trim();
+  const text = `${raw} ${item?.event || ""} ${item?.action || ""} ${item?.message || ""}`.toLowerCase();
+  if (text.includes("denied") || text.includes("forbidden") || text.includes("permission")) return "DENIED";
+  if (text.includes("fail") || text.includes("error")) return "FAILED";
+  if (text.includes("success") || text.includes("complete") || text.includes("ok")) return "SUCCESS";
+  return raw.toUpperCase() || "-";
+}
+
+function auditLogSearchText(item) {
+  return [
+    item?.createdAt,
+    item?.ts,
+    item?.time,
+    item?.actorUserId,
+    item?.user,
+    item?.action,
+    item?.event,
+    item?.resourceType,
+    item?.resourceId,
+    item?.result,
+    item?.status,
+    item?.message,
+    item?.error,
+    item?.reason,
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function renderAuditLogSummary(items) {
+  if (!auditLogsSummary) return;
+  const total = items.length;
+  const success = items.filter((item) => auditLogResultValue(item) === "SUCCESS").length;
+  const failed = items.filter((item) => auditLogResultValue(item) === "FAILED").length;
+  const denied = items.filter((item) => auditLogResultValue(item) === "DENIED").length;
+  const latest = items
+    .map((item) => auditDateValue(item.createdAt || item.ts || item.time))
+    .filter(Boolean)
+    .sort((a, b) => b - a)[0];
+  const cards = [
+    { label: "Total Events", value: total, tone: "info", detail: "Append-only records" },
+    { label: "Success", value: success, tone: "success", detail: "Completed actions" },
+    { label: "Failed / Denied", value: failed + denied, tone: failed + denied ? "danger" : "neutral", detail: "Needs review" },
+    { label: "Latest Event", value: latest ? formatLogDate(latest.toISOString()) : "-", tone: "neutral", detail: "Most recent record" },
+  ];
+  auditLogsSummary.innerHTML = cards.map((card) => `
+    <article class="audit-logs-card audit-logs-card-${card.tone}">
+      <span>${escapeHtml(card.label)}</span>
+      <strong>${escapeHtml(String(card.value))}</strong>
+      <em>${escapeHtml(card.detail)}</em>
+    </article>
+  `).join("");
+}
+
 function renderAuditLogs(data, errorMessage = "") {
   const items = Array.isArray(data?.items) ? data.items : [];
-  if (auditLogsCount) auditLogsCount.textContent = `${items.length} events`;
+  renderAuditLogSummary(items);
+  const q = String(auditLogsFilterState.q || "").trim().toLowerCase();
+  const resultFilter = String(auditLogsFilterState.result || "").trim().toUpperCase();
+  const visibleItems = items.filter((item) => {
+    const matchesSearch = !q || auditLogSearchText(item).includes(q);
+    const matchesResult = !resultFilter || auditLogResultValue(item) === resultFilter;
+    return matchesSearch && matchesResult;
+  });
+  if (auditLogsCount) auditLogsCount.textContent = `${visibleItems.length} / ${items.length} events`;
   if (!auditLogsTable) return;
   auditLogsTable.replaceChildren();
-  if (errorMessage || !items.length) {
+  if (errorMessage || !visibleItems.length) {
     const row = document.createElement("tr");
-    row.innerHTML = `<td colspan="5">${escapeHtml(errorMessage || "No audit events loaded.")}</td>`;
+    row.innerHTML = `<td colspan="6" class="audit-logs-empty">${escapeHtml(errorMessage || (items.length ? "No audit events match the current filter." : "No audit events loaded yet."))}</td>`;
     auditLogsTable.appendChild(row);
     return;
   }
-  items.slice(-200).reverse().forEach((item) => {
+  visibleItems.slice(-200).reverse().forEach((item) => {
+    const result = auditLogResultValue(item);
     const row = document.createElement("tr");
     row.innerHTML = `
       <td>${escapeHtml(formatLogDate(item.createdAt || item.ts || item.time))}</td>
       <td>${escapeHtml(item.actorUserId || item.user || "-")}</td>
       <td>${escapeHtml(item.action || item.event || "-")}</td>
       <td>${escapeHtml([item.resourceType, item.resourceId].filter(Boolean).join(" / ") || "-")}</td>
-      <td>${escapeHtml(item.result || "-")}</td>
+      <td><span class="audit-logs-result audit-logs-result-${escapeHtml(result.toLowerCase())}">${escapeHtml(result)}</span></td>
+      <td>${escapeHtml(item.message || item.error || item.reason || "-")}</td>
     `;
     auditLogsTable.appendChild(row);
   });
@@ -2863,6 +3197,7 @@ function renderAuditLogs(data, errorMessage = "") {
 
 async function reloadAuditLogs() {
   const data = await requestJson("/api/audit-logs");
+  latestAuditData = Array.isArray(data?.items) ? data.items : [];
   renderAuditLogs(data);
 }
 
@@ -3394,31 +3729,59 @@ function renderSources(data) {
     .flatMap((log) => Array.isArray(log.actions) ? log.actions : [log.action || log.message || ""])
     .map((item) => String(item || ""))
     .join("\n");
+  const stepEvidenceText = [
+    veeamActionText,
+    stepLogs.map((log) => [
+      log.step,
+      log.label,
+      log.code,
+      log.state,
+      log.time,
+      log.source,
+      log.detail,
+      log.result,
+      log.output,
+    ].filter(Boolean).join(" ")).join("\n"),
+  ].join("\n");
   const stepEvidencePatterns = {
     2: {
       start: [/LOCK-FIX Flush START/i, /LOCK-FIX Flush TICK/i, /LOCK-FIX Flush OK/i, /LOCK-FIX STEP 2 COMPLETE/i],
-      complete: [/LOCK-FIX Flush OK/i, /LOCK-FIX STEP 2 COMPLETE/i],
+      complete: [/LOCK-FIX Flush OK/i, /LOCK-FIX STEP 2 COMPLETE/i, /FLUSH_COMPLETE/i, /FlushFileBuffers completed/i],
     },
     3: {
       start: [/LOCK-FIX I\/O Check START/i, /LOCK-FIX I\/O Check TICK/i, /LOCK-FIX I\/O Check OK/i, /LOCK-FIX STEP 3 COMPLETE/i],
-      complete: [/LOCK-FIX I\/O Check OK/i, /LOCK-FIX STEP 3 COMPLETE/i],
+      complete: [/LOCK-FIX I\/O Check OK/i, /LOCK-FIX STEP 3 COMPLETE/i, /IO_CLOSE_COMPLETE/i, /I\/O Closed verification complete/i],
     },
     4: {
-      start: [/LOCK-FIX Unmount START/i, /LOCK-FIX Unmount TICK/i, /LOCK-FIX Unmount OK/i, /LOCK-FIX STEP 4 COMPLETE/i],
-      complete: [/LOCK-FIX Unmount OK/i, /LOCK-FIX STEP 4 COMPLETE/i],
+      start: [/LOCK-FIX Unmount START/i, /LOCK-FIX Unmount TICK/i, /LOCK-FIX Unmount OK/i, /LOCK-FIX STEP 4 COMPLETE/i, /disk\.dismount/i, /drive_letter\.remove/i],
+      complete: [/LOCK-FIX Unmount OK/i, /LOCK-FIX STEP 4 COMPLETE/i, /UNMOUNT_SUCCESS/i, /Unmount Complete/i, /access path removed/i, /drive_letter\.remove/i],
     },
     5: {
-      start: [/LOCK-FIX Offline START/i, /LOCK-FIX Offline TICK/i, /LOCK-FIX Offline OK/i, /LOCK-FIX STEP 5 COMPLETE/i],
-      complete: [/LOCK-FIX Offline OK/i, /LOCK-FIX STEP 5 COMPLETE/i],
+      start: [/LOCK-FIX Offline START/i, /LOCK-FIX Offline TICK/i, /LOCK-FIX Offline OK/i, /LOCK-FIX STEP 5 COMPLETE/i, /disk\.offline/i],
+      complete: [
+        /LOCK-FIX Offline VERIFY OK[^\n]*(IsOffline=true|offlineEquivalent=true)[^\n]*PathReachable=false/i,
+        /LOCK-FIX Offline VERIFY CONFIRMED[^\n]*(IsOffline=true|offlineEquivalent=true)[^\n]*PathReachable=false/i,
+        /LOCK-FIX STEP 5 COMPLETE/i,
+        /OFFLINE_COMPLETE/i,
+        /is_offline["']?\s*:\s*true/i,
+        /offlineEquivalent["']?\s*[:=]\s*true[^\n]*pathReachable["']?\s*[:=]\s*false/i,
+      ],
     },
   };
   const hasStepEvidence = (step, type) => {
     const patterns = stepEvidencePatterns[step]?.[type] || [];
-    return patterns.some((pattern) => pattern.test(veeamActionText));
+    return patterns.some((pattern) => pattern.test(stepEvidenceText));
   };
+  const displayCurrentStep = (() => {
+    if (!apiSynced || backupProgress < 100) return 1;
+    for (let step = 2; step <= 5; step += 1) {
+      if (!hasStepEvidence(step, "complete")) return step;
+    }
+    return 5;
+  })();
   const stepHasAdvanced = (item) => (
     apiSynced &&
-    Number(item.step) < Number(veeam.current_step || 1) &&
+    Number(item.step) < displayCurrentStep &&
     isStepLive(item) &&
     hasStepEvidence(Number(item.step) + 1, "start")
   );
@@ -3426,20 +3789,18 @@ function renderSources(data) {
     const step = Number(item.step);
     if (step >= 5) return "";
     const nextStep = step + 1;
-    const currentStep = Number(veeam.current_step || 1);
-    const canTransfer = apiSynced && currentStep > step;
-    const complete = canTransfer && hasStepEvidence(nextStep, "complete");
-    const running = canTransfer && !complete && hasStepEvidence(nextStep, "start");
+    if (!apiSynced || backupProgress < 100) return "veeam-step-transfer-arrow";
+    const complete = step < displayCurrentStep - 1 || hasStepEvidence(nextStep, "complete");
+    const running = step === displayCurrentStep - 1 && !complete;
     if (complete) return "veeam-step-transfer-arrow veeam-step-transfer-complete";
     if (running) return "veeam-step-transfer-arrow veeam-step-transfer-running";
     return "veeam-step-transfer-arrow";
   };
   const stepVisualClass = (item) => {
     const step = Number(item.step);
-    const currentStep = Number(veeam.current_step || 1);
     if (!apiSynced) return "veeam-step-visual-pending";
-    if (step < currentStep) return "veeam-step-visual-complete";
-    if (step === currentStep) return "veeam-step-visual-current";
+    if (step < displayCurrentStep) return "veeam-step-visual-complete";
+    if (step === displayCurrentStep) return "veeam-step-visual-current";
     return "veeam-step-visual-pending";
   };
   const progressCell = (log) => {
@@ -3837,9 +4198,9 @@ function renderSources(data) {
 }
 
 function drawLineChart(series) {
-  const width = 920;
-  const height = 320;
-  const pad = { left: 96, right: 22, top: 12, bottom: 46 };
+  const width = 1120;
+  const height = 300;
+  const pad = { left: 62, right: 10, top: 14, bottom: 42 };
   const chartWidth = width - pad.left - pad.right;
   const chartHeight = height - pad.top - pad.bottom;
   const visibleCount = Math.max(8, Math.round(series.length / monitoringZoom));
@@ -3869,7 +4230,7 @@ function drawLineChart(series) {
   const grid = [0, 20, 40, 60, 80, 100]
     .map((tick) => {
       const yy = y(tick).toFixed(1);
-      return `<line x1="${pad.left}" y1="${yy}" x2="${width - pad.right}" y2="${yy}" class="grid-line"></line><text x="${pad.left - 16}" y="${Number(yy) + 4}" class="axis-label" text-anchor="end">${tick}.00%</text>`;
+      return `<line x1="${pad.left}" y1="${yy}" x2="${width - pad.right}" y2="${yy}" class="grid-line"></line><text x="${pad.left - 12}" y="${Number(yy) + 4}" class="axis-label" text-anchor="end">${tick}.00%</text>`;
     })
     .join("");
 
@@ -3877,7 +4238,7 @@ function drawLineChart(series) {
     .filter((_, index) => index % Math.max(1, Math.ceil(visibleSeries.length / 6)) === 0 || index === visibleSeries.length - 1)
     .map((item) => {
       const realIndex = visibleSeries.indexOf(item);
-      return `<text x="${x(realIndex)}" y="${height - 22}" class="axis-label" text-anchor="middle">${item.label.slice(0, 5)}</text>`;
+      return `<text x="${x(realIndex)}" y="${height - 18}" class="axis-label" text-anchor="middle">${item.label.slice(0, 5)}</text>`;
     })
     .join("");
 
@@ -3902,7 +4263,7 @@ function drawLineChart(series) {
     </defs>
     <rect x="${pad.left}" y="${pad.top}" width="${chartWidth}" height="${chartHeight}" fill="#ffffff"></rect>
     ${grid}
-    <text x="24" y="${height / 2}" class="axis-title" transform="rotate(-90 24 ${height / 2})">하드웨어 사용량</text>
+    <text x="20" y="${height / 2}" class="axis-title" transform="rotate(-90 20 ${height / 2})">하드웨어 사용량</text>
     ${fillPath}
     <path d="${activePath.path}" class="line ${activePath.className}"></path>
     ${labels}
@@ -4410,6 +4771,24 @@ approvalTabs?.addEventListener("click", (event) => {
   activeApprovalTab = button.dataset.approvalTab || "approvalRequestBox";
   renderApprovals(latestApprovalsData);
 });
+approvalWorkflowPipeline?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-approval-tab]");
+  if (!button) return;
+  activeApprovalTab = button.dataset.approvalTab || "approvalRequestBox";
+  renderApprovals(latestApprovalsData);
+});
+approvalCreateToggle?.addEventListener("click", () => {
+  setApprovalCreatePanel(approvalCreatePanel?.classList.contains("hidden"));
+});
+approvalCreateCancel?.addEventListener("click", () => {
+  resetApprovalCreateForm();
+  setApprovalCreatePanel(false);
+});
+approvalRequestType?.addEventListener("change", () => {
+  if (approvalRequestTarget) approvalRequestTarget.value = "";
+  updateApprovalCreatePreview();
+});
+approvalCreateForm?.addEventListener("submit", submitApprovalCreateForm);
 approvalRequestsTable?.addEventListener("click", async (event) => {
   const departmentReviewButton = event.target.closest("[data-department-review-id]");
   if (departmentReviewButton) {
@@ -4483,6 +4862,14 @@ approvalRequestsTable?.addEventListener("click", async (event) => {
     button.disabled = false;
   }
 });
+auditLogsSearch?.addEventListener("input", () => {
+  auditLogsFilterState.q = auditLogsSearch.value.trim();
+  renderAuditLogs({ items: latestAuditData });
+});
+auditLogsResultFilter?.addEventListener("change", () => {
+  auditLogsFilterState.result = auditLogsResultFilter.value;
+  renderAuditLogs({ items: latestAuditData });
+});
 window.addEventListener("hashchange", () => {
   if (currentSession.authenticated) showView(initialRouteView());
 });
@@ -4490,7 +4877,15 @@ detectFingerprintRoot?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-detect-action]");
   if (!button) return;
   const action = button.dataset.detectAction;
-  if (action === "logs") showView("logs2");
+  if (action === "logs") {
+    const keyword = String(button.dataset.logKeyword || "BAY-01").trim();
+    logsRange.q = keyword;
+    logsRange.highlight = keyword;
+    logsRange.page = 1;
+    if (logsSearch) logsSearch.value = keyword;
+    showView("logs2");
+    reloadLogs().catch((error) => console.warn("Unable to open related detail logs", error));
+  }
   if (action === "airgap") showView("sources");
   if (action === "settings") showView("settings");
 });

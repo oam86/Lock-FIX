@@ -56,7 +56,7 @@ class LockFixController:
                 slot_id=slot_id,
                 ok=None,
                 requirement="Use Windows disk offline proof for current LOCK-FIX storage isolation.",
-                compatibility_note="Legacy power proof compatibility event; actual isolation uses Set-Disk -IsOffline true.",
+                compatibility_note="Legacy power proof compatibility event; actual isolation uses Windows disk offline proof or removable-media access-path removal proof.",
             )
             self.audit.write(
                 "power.off.proof.required",
@@ -74,8 +74,10 @@ class LockFixController:
                 disk_unique_id=offline_proof.get("diskUniqueId", ""),
                 drive_letter=offline_proof.get("drive", ""),
                 is_offline=offline_proof.get("isOffline", True),
+                offline_equivalent=offline_proof.get("offlineEquivalent", False),
+                path_reachable=offline_proof.get("pathReachable", False),
                 method=offline_proof.get("method", "Set-Disk -IsOffline true"),
-                message="Windows cannot cut disk power directly; LOCK-FIX completed Set-Disk offline isolation.",
+                message="LOCK-FIX completed Windows storage isolation using the recorded disk offline proof or removable-media access-path removal proof.",
             )
             self.set_state(slot_id, LockFixState.ISOLATED)
             return LockFixState.ISOLATED
