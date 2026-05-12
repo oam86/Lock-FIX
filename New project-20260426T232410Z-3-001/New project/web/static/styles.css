@@ -896,38 +896,6 @@ button {
   line-height: 1.45;
 }
 
-.settings-console-panel {
-  display: grid;
-  gap: 12px;
-  border: 1px solid #d8e0e6;
-  border-radius: 8px;
-  padding: 18px;
-  background: #ffffff;
-}
-
-.settings-console-panel h2 {
-  margin: 0 0 6px;
-  color: #0b2e79;
-  font-size: 18px;
-}
-
-.settings-console-panel p {
-  margin: 0;
-  color: #405866;
-  font-weight: 700;
-}
-
-.settings-console-panel pre {
-  margin: 0;
-  border-radius: 8px;
-  padding: 14px;
-  overflow: auto;
-  background: #0f172a;
-  color: #e2e8f0;
-  font-family: Consolas, "Courier New", monospace;
-  font-size: 13px;
-}
-
 .view {
   display: none;
 }

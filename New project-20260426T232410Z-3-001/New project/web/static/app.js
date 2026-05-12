@@ -1303,10 +1303,6 @@ function showView(name) {
     renderSecurityAudit(latestAuditData);
   }
   if (targetView === "settings") {
-    reloadConsoleStatus().catch((error) => {
-      console.warn("Unable to reload console status", error);
-      if (consoleStatusText) consoleStatusText.textContent = error.message;
-    });
     reloadServiceControlStatus().catch((error) => {
       console.warn("Unable to reload service status", error);
       if (serviceControlStatus) serviceControlStatus.textContent = error.message;
@@ -1474,16 +1470,16 @@ function renderMount(node, slot) {
 }
 
 function renderSlots(summary) {
-  modeBadge.textContent = summary.dry_run ? "DRY-RUN MOCK" : "LIVE CONTROL";
-  configPath.textContent = summary.config_path;
-  auditPath.textContent = summary.audit_log_path;
+  modeBadge.textContent = summary.dry_run ? "Protected Preview" : "Protected";
+  configPath.textContent = "Repository isolation targets";
+  auditPath.textContent = "Recent security and operation records";
   slotList.replaceChildren();
 
   summary.slots.forEach((slot) => {
     const node = slotTemplate.content.cloneNode(true);
     node.querySelector(".slot-title").textContent = slot.slot_id;
     node.querySelector(".slot-device").textContent = slot.device;
-    node.querySelector(".slot-power").textContent = `${slot.power_type} / ${slot.dry_run ? "dry-run" : "live"}`;
+    node.querySelector(".slot-power").textContent = `${slot.power_type} / ${slot.dry_run ? "preview" : "active"}`;
     node.querySelector(".slot-mount").textContent = slot.mount_point;
     node.querySelector(".slot-uid").textContent = slot.uid;
     renderMount(node, slot);
