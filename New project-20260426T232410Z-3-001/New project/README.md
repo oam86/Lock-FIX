@@ -1,3 +1,139 @@
+## RBAC, Approval, and Audit Automation
+
+LOCK-FIX includes a permission and approval automation module for department-based administration.
+
+Implemented scope:
+
+- RBAC roles and permissions: `SUPER_ADMIN`, `SECURITY_ADMIN`, `BACKUP_OPERATOR`, `HARDWARE_ADMIN`, `AUDITOR`, `UI_DESIGNER`, `DEVELOPER`
+- Department and user management with disable-instead-of-delete behavior
+- Backend permission guards for protected Web UI APIs
+- Dynamic Web UI menu visibility based on session role and permissions
+- Approval request workflow for `DISK_ONLINE`, `DISK_OFFLINE`, `POLICY_CHANGE`, `EMERGENCY_UNLOCK`, `HARDWARE_POWER_ON`, `HARDWARE_POWER_OFF`
+- Dual approval policy for `DISK_ONLINE`, `POLICY_CHANGE`, `EMERGENCY_UNLOCK`, `HARDWARE_POWER_ON`, `HARDWARE_POWER_OFF`
+- Structured audit log model and CSV export
+- Approval Requests UI with My Requests, Pending Approval, Approved, Rejected, and Expired tabs
+- Regression tests for RBAC, approvals, user management, audit logs, schema contract, and Web UI guards
+
+Security rules enforced by code:
+
+- The request creator cannot approve their own request.
+- The same user cannot approve the same request twice.
+- Execution APIs are blocked until the required approval count is met.
+- Audit logs have no delete API, and `AUDIT_LOG_DELETE` is not defined.
+- Unauthorized access is returned as `403 Forbidden` and written to Audit Log.
+- Emergency unlock requires a reason, dual approval, and audit logging.
+- Super Admin still counts as only one approver and cannot complete dual approval alone.
+
+Repository Online workflow:
+
+```text
+Backup Operator creates a Repository Online request.
+LOCK-FIX creates the DISK_ONLINE approval request and records notification events for Security, Hardware, and Super Admin roles.
+Security team records SECURITY_LOG_REVIEW after checking isolation-period logs.
+Hardware team records HARDWARE_STATE_REVIEW after checking disk, JBOD, and lock state.
+Super Admin records MANAGER_REVIEW after confirming both team opinions.
+Security Admin performs the first approval.
+Super Admin performs the second approval.
+LOCK-FIX Agent is allowed to execute Disk Online only after the required reviews and approvals are complete.
+All request, review, approval, execution-blocked, execution, and failure events are written to Audit Log.
+```
+
+Collaboration workflow menu:
+
+```text
+협업/승인 워크플로우
+├─ 승인 요청함 - Online, Offline, 정책 변경 요청 등록
+├─ 부서 검토함 - 보안팀, 하드웨어팀, 백업팀 검토
+├─ 내 승인 대기 - 내가 승인해야 할 요청 표시
+├─ 협의 의견 - 부서별 댓글, 검토 결과 기록
+├─ 보완 요청 - 반려 전 수정 요청
+├─ 완료 이력 - 승인 완료, 실행 완료 이력
+└─ 감사 기록 - 전체 협의·승인·실행 로그
+```
+
+Department collaboration workflow:
+
+```text
+ApprovalRequest.reviewDepartments
+├─ DISK_ONLINE: Security, Hardware Control
+├─ DISK_OFFLINE: Backup Operation, Security
+├─ POLICY_CHANGE: Security, Audit
+├─ EMERGENCY_UNLOCK: Security, Hardware Control, Audit
+├─ HARDWARE_POWER_ON: Hardware Control, Security
+└─ HARDWARE_POWER_OFF: Hardware Control, Security
+
+DepartmentReview statuses:
+PENDING -> IN_REVIEW -> REVIEWED
+PENDING -> NEEDS_CHANGES
+PENDING -> BLOCKED
+```
+
+Required department reviews must be REVIEWED before the final approval button is enabled. NEEDS_CHANGES sends the request back for rework, and BLOCKED can only be handled through Super Admin exception review. Every review comment, status change, and department notification is written to Audit Log.
+
+Collaboration tables:
+
+```text
+department_reviews(id, approval_request_id, department_id, reviewer_user_id, status, comment, created_at, updated_at)
+review_comments(id, approval_request_id, department_review_id, author_user_id, comment, created_at)
+notifications(id, user_id, title, message, target_type, target_id, read_at, created_at)
+```
+
+Department review APIs:
+
+```text
+GET /api/approval-requests/:id/reviews
+POST /api/approval-requests/:id/reviews/:reviewId/comment
+POST /api/approval-requests/:id/reviews/:reviewId/mark-reviewed
+POST /api/approval-requests/:id/reviews/:reviewId/needs-changes
+POST /api/approval-requests/:id/reviews/:reviewId/block
+```
+
+Database migration:
+
+```text
+migrations/001_lockfix_rbac_approval_audit.sql
+config/lockfix_schema.sql
+```
+
+Core backend files:
+
+```text
+lockfix/rbac.py
+lockfix/users.py
+lockfix/approvals.py
+lockfix/audit_log.py
+lockfix/schema.py
+lockfix/controller.py
+webui.py
+```
+
+Core frontend files:
+
+```text
+web/static/index.html
+web/static/app.js
+web/static/styles.css
+```
+
+Run Web UI:
+
+```powershell
+python .\webui.py --host 127.0.0.1 --port 8088 --config .\config\lockfix.example.json
+```
+
+Run tests:
+
+```powershell
+python -m unittest tests.test_lockfix
+```
+
+Remaining hardening items:
+
+- Replace the current JSON runtime stores with a selected production DB engine using the provided migration.
+- Add password hashing and login integration for managed users beyond the bootstrap/admin login flow.
+- Add operator-facing create/edit forms for all approval request types where the Web UI currently exposes read/approve flow first.
+- Add retention, archival, and integrity sealing for long-term audit log operation.
+
 # LOCK-FIX Windows Server Package
 
 Windows Server 전용 LOCK-FIX 설치 패키지 소스입니다.
@@ -140,7 +276,7 @@ python .\webui.py --host 127.0.0.1 --port 8088 --config .\config\lockfix.example
 Veeam REST API 연동 확인:
 
 ```powershell
-$env:LOCKFIX_VEEAM_BASE_URL = "https://127.0.0.1:9419"
+$env:LOCKFIX_VEEAM_BASE_URL = "https://<TARGET_SERVER_IP>:9419"
 $env:LOCKFIX_VEEAM_EM_BASE_URL = "https://127.0.0.1:9398"
 $env:LOCKFIX_VEEAM_USER = "Veeam계정"
 $env:LOCKFIX_VEEAM_PASSWORD = "Veeam비밀번호"
@@ -176,12 +312,12 @@ Veeam Backup Server IP는 Agent 대상 서버 IP와 별개입니다. Agent IP가
 
 ```json
 "veeam": {
-  "base_url": "https://127.0.0.1:9419",
-  "auto_discover": true,
+  "base_url": "https://<TARGET_SERVER_IP>:9419",
+  "auto_discover": false,
   "discovery_candidates": [
-    "https://192.168.219.230:9419"
+    "https://<TARGET_SERVER_IP>:9419"
   ],
-  "discovery_scan_local_subnet": true
+  "discovery_scan_local_subnet": false
 }
 ```
 

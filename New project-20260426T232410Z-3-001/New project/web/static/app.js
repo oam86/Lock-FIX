@@ -63,6 +63,8 @@ const reportTable = document.querySelector("#reportTable");
 const reportCustomerTable = document.querySelector("#reportCustomerTable");
 const reportServerTable = document.querySelector("#reportServerTable");
 const reportInspectionTable = document.querySelector("#reportInspectionTable");
+const reportInspectionSummary = document.querySelector("#reportInspectionSummary");
+const reportAttentionList = document.querySelector("#reportAttentionList");
 const reportRefreshButton = document.querySelector("#reportRefreshButton");
 const notificationTable = document.querySelector("#notificationTable");
 const notificationUnauthorizedCount = document.querySelector("#notificationUnauthorizedCount");
@@ -116,13 +118,25 @@ const licenseSupportCode = document.querySelector("#licenseSupportCode");
 const licenseKeyInput = document.querySelector("#licenseKeyInput");
 const licenseError = document.querySelector("#licenseError");
 const networkStatusTitle = document.querySelector("#networkStatusTitle");
-const networkStatusChart = document.querySelector("#networkStatusChart");
 const networkTxRate = document.querySelector("#networkTxRate");
 const networkRxRate = document.querySelector("#networkRxRate");
 const networkTxTotal = document.querySelector("#networkTxTotal");
 const networkRxTotal = document.querySelector("#networkRxTotal");
 const networkTxFlow = document.querySelector("#networkTxFlow");
 const networkRxFlow = document.querySelector("#networkRxFlow");
+const networkTxIps = document.querySelector("#networkTxIps");
+const networkRxIps = document.querySelector("#networkRxIps");
+const networkLossScore = document.querySelector("#networkLossScore");
+const networkLossState = document.querySelector("#networkLossState");
+const networkLatency = document.querySelector("#networkLatency");
+const networkJitter = document.querySelector("#networkJitter");
+const networkAllowedPorts = document.querySelector("#networkAllowedPorts");
+const networkBlockedPorts = document.querySelector("#networkBlockedPorts");
+const networkPortTable = document.querySelector("#networkPortTable");
+const networkInsights = document.querySelector("#networkInsights");
+const networkOpsSummary = document.querySelector("#networkOpsSummary");
+const networkPathStatus = document.querySelector("#networkPathStatus");
+const networkEventList = document.querySelector("#networkEventList");
 const auditTable = document.querySelector("#auditTable");
 const slotTemplate = document.querySelector("#slotTemplate");
 const refreshButton = document.querySelector("#refreshButton");
@@ -146,11 +160,30 @@ const themeSelect = document.querySelector("#themeSelect");
 const logRetentionSelect = document.querySelector("#logRetentionSelect");
 const settingsApplyButton = document.querySelector("#settingsApplyButton");
 const settingsApplyStatus = document.querySelector("#settingsApplyStatus");
+const settingsShortcutItems = document.querySelectorAll("[data-settings-view]");
+const settingsHardwareStatus = document.querySelector("#settingsHardwareStatus");
+const settingsApprovalStatus = document.querySelector("#settingsApprovalStatus");
+const settingsServiceStatus = document.querySelector("#settingsServiceStatus");
+const settingsAuditStatus = document.querySelector("#settingsAuditStatus");
 const consoleStatusText = document.querySelector("#consoleStatusText");
 const consoleStatusDetail = document.querySelector("#consoleStatusDetail");
 const serviceControlStatus = document.querySelector("#serviceControlStatus");
 const serviceStartButton = document.querySelector("#serviceStartButton");
 const serviceStopButton = document.querySelector("#serviceStopButton");
+const veeamIntegrationStatus = document.querySelector("#veeamIntegrationStatus");
+const veeamIntegrationSummary = document.querySelector("#veeamIntegrationSummary");
+const approvalTabs = document.querySelector("#approvalTabs");
+const approvalTabTitle = document.querySelector("#approvalTabTitle");
+const approvalCount = document.querySelector("#approvalCount");
+const approvalRequestsTable = document.querySelector("#approvalRequestsTable");
+const userManagementDepartmentCount = document.querySelector("#userManagementDepartmentCount");
+const userManagementDepartments = document.querySelector("#userManagementDepartments");
+const userManagementCount = document.querySelector("#userManagementCount");
+const userManagementTable = document.querySelector("#userManagementTable");
+const auditLogsCount = document.querySelector("#auditLogsCount");
+const auditLogsTable = document.querySelector("#auditLogsTable");
+const auditLogsSummary = document.querySelector("#auditLogsSummary");
+const accessDeniedMessage = document.querySelector("#accessDeniedMessage");
 
 const LOGIN_SPLASH_DURATION_MS = 2000;
 let qrToken = "";
@@ -177,6 +210,9 @@ let securityAuditFilters = {
 };
 let airgapPollTimer = null;
 let veeamPollTimer = null;
+let dashboardPollTimer = null;
+let opsOverviewPollTimer = null;
+let globalRefreshTimer = null;
 let emergencyReconnectPollTimer = null;
 let emergencyReconnectDetailTimer = null;
 let emergencyReconnectStatusTimer = null;
@@ -188,6 +224,9 @@ let emergencyReconnectInitialState = "";
 let emergencyReconnectJobId = "";
 let reconnectHistoryExpanded = false;
 // Compatibility labels retained for older package checks: Reconnect History, 긴급 볼륨 접속, 인증 해시값 전체를 입력하세요, RECONNECT_REQUESTED, ONLINE_VERIFIED_RW.
+const REALTIME_POLL_INTERVAL_MS = 1000;
+const GLOBAL_REFRESH_INTERVAL_MS = 60000;
+const REALTIME_VIEW_IDS = new Set(["sourcesView", "dashboardView", "monitoringView"]);
 let activeMonitoringMetric = "cpu";
 let monitoringRange = {
   start: "",
@@ -201,6 +240,7 @@ let logsRange = {
   severity: "",
   source: "",
   q: "",
+  highlight: "",
 };
 let uiSettings = {
   language: localStorage.getItem("lockfix.language") || "en",
@@ -209,7 +249,52 @@ let uiSettings = {
 let pendingUiSettings = { ...uiSettings };
 let memoryThresholdAlertActive = false;
 let sidebarCollapsed = false;
+let currentSession = { authenticated: false, user: "", role: "", permissions: [] };
+let latestApprovalsData = { policies: [], requests: [], decisions: [], departmentReviews: [], reviewComments: [], notifications: [] };
+let activeApprovalTab = "approvalRequestBox";
 localStorage.setItem("lockfix.sidebarCollapsed", "false");
+
+const menuDefinitions = [
+  { view: "dashboard", label: "Dashboard", permissions: ["DASHBOARD_VIEW"], section: "customer" },
+  { view: "monitoring", label: "Monitoring", permissions: ["DASHBOARD_VIEW"], section: "customer" },
+  { view: "detect2", label: "Hardware Detect", permissions: ["DASHBOARD_VIEW"], section: "customer" },
+  { view: "network2", label: "Network Status", permissions: ["DASHBOARD_VIEW"], section: "customer" },
+  { view: "sources", label: "Air-Gap Status", permissions: ["AIRGAP_POLICY_VIEW"], section: "customer" },
+  { view: "report", label: "Reports", permissions: ["REPORT_EXPORT"], section: "customer" },
+  { view: "license2", label: "License", permissions: ["DASHBOARD_VIEW"], section: "customer" },
+  { view: "logs2", label: "Logs", permissions: ["AUDIT_LOG_VIEW"], section: "customer" },
+  { view: "securityAudit", label: "Security Audit", permissions: ["AUDIT_LOG_VIEW"], section: "customer" },
+  { view: "hardware", label: "Hardware Control", permissions: ["HARDWARE_CONTROL"], section: "operator" },
+  {
+    view: "approvals",
+    label: "협업/승인 워크플로우",
+    anyPermissions: ["DISK_ONLINE_APPROVE", "AIRGAP_POLICY_MANAGE", "DISK_OFFLINE_REQUEST", "DISK_ONLINE_REQUEST", "HARDWARE_CONTROL"],
+    section: "operator",
+  },
+  { view: "userManagement", label: "User & Role Management", roles: ["SUPER_ADMIN"], anyPermissions: ["USER_MANAGE", "ROLE_MANAGE"], section: "admin" },
+  { view: "auditLogs", label: "Audit Logs", permissions: ["AUDIT_LOG_VIEW"], section: "admin" },
+  { view: "settings", label: "System Settings", permissions: ["SYSTEM_SETTING_MANAGE"], section: "admin" },
+];
+
+const approvalTabDefinitions = [
+  { id: "approvalRequestBox", label: "승인 요청함" },
+  { id: "departmentReviewBox", label: "부서 검토함" },
+  { id: "myApprovalPending", label: "내 승인 대기" },
+  { id: "consultationOpinion", label: "협의 의견" },
+  { id: "reworkRequest", label: "보완 요청" },
+  { id: "completedHistory", label: "완료 이력" },
+  { id: "auditRecord", label: "감사 기록" },
+];
+
+const approvalWorkflowStages = ["작업 요청", "부서 검토", "승인", "실행", "감사 기록"];
+
+function renderApprovalWorkflowPipeline() {
+  return approvalWorkflowStages.map((stage, index) => `${index + 1}. ${stage}`).join(" > ");
+}
+
+// Approval workflow compatibility text for source-level validation:
+// [최종 승인 대기], 승인 상태:, 승인 완료, [Repository Online 요청],
+// 백업 검증을 위해 Repository Online 필요, 보안팀, 하드웨어팀, 부서 검토 진행 중.
 
 const translations = {
   en: {
@@ -228,6 +313,33 @@ const translations = {
     "nav.veeam": "Veeam Backup",
     "nav.settings": "Settings",
     "nav.logout": "Logout",
+    "nav.customerWorkspace": "Customer View",
+    "nav.operatorWorkspace": "Operation",
+    "nav.adminWorkspace": "Admin / Developer",
+    "network.subtitle": "View transmit/receive rates, port policy, and loss analysis in one screen.",
+    "network.badge": "Live Traffic",
+    "network.opsSummaryTitle": "Network Operations Summary",
+    "network.opsSummaryBadge": "Live",
+    "network.title": "Real-time Network Status",
+    "network.pathTitle": "Network Path Status",
+    "network.pathBadge": "Path Check",
+    "network.eventsTitle": "Recent Network Events",
+    "network.eventsBadge": "Live",
+    "network.chartTitle": "Cumulative Traffic by IP",
+    "network.chartDesc": "Compare the top traffic flow by transmit and receive volume.",
+    "network.tx": "Transmit",
+    "network.rx": "Receive",
+    "network.cumulativeTx": "Cumulative transmit",
+    "network.cumulativeRx": "Cumulative receive",
+    "network.lossTitle": "Network Loss",
+    "network.latency": "Latency",
+    "network.jitter": "Jitter",
+    "network.allowedPorts": "Allowed Ports",
+    "network.blockedPorts": "Blocked Ports",
+    "network.portTitle": "Port Block/Allow Analysis",
+    "network.portBadge": "Policy View",
+    "network.insightTitle": "Network Analysis",
+    "network.insightBadge": "QoE",
     "settings.title": "Settings",
     "settings.subtitle": "Configure display language and screen theme.",
     "settings.languageTitle": "Language",
@@ -236,6 +348,20 @@ const translations = {
     "settings.themeDesc": "Switch between white and black backgrounds.",
     "settings.logRetentionTitle": "Log Retention",
     "settings.logRetentionDesc": "Choose how many days logs are retained.",
+    "settings.managementTitle": "Operation & Administration",
+    "settings.managementDesc": "Open operational, approval, user, and audit management screens from Settings.",
+    "settings.hardwareControl": "Hardware Control",
+    "settings.approvalWorkflow": "Approval Workflow",
+    "settings.userRoleManagement": "User & Role Management",
+    "settings.auditLogs": "Audit Logs",
+    "settings.statusChecking": "Checking",
+    "settings.statusUnavailable": "Unavailable",
+    "settings.hardwareConnected": "Hardware connected",
+    "settings.hardwareCheckNeeded": "Check required",
+    "settings.pendingApprovals": "{count} pending",
+    "settings.auditEvents": "{count} events",
+    "settings.serviceNormal": "Service running",
+    "settings.serviceStopped": "Service stopped",
     "settings.serviceTitle": "LOCK-FIX Service",
     "settings.serviceDesc": "Start or stop the installed LOCK-FIX Windows service.",
     "settings.serviceStart": "Start",
@@ -258,6 +384,9 @@ const translations = {
     "monitoring.startDate": "Start Date",
     "monitoring.endDate": "End Date",
     "monitoring.applyRange": "Apply",
+    "logs.startDate": "Start Date",
+    "logs.endDate": "End Date",
+    "logs.apply": "Apply",
     "dashboard.notification": "Notification",
     "dashboard.logs": "Logs",
     "dashboard.type": "Type",
@@ -343,6 +472,33 @@ const translations = {
     "nav.veeam": "Veeam 백업",
     "nav.settings": "설정",
     "nav.logout": "로그아웃",
+    "nav.customerWorkspace": "고객 확인",
+    "nav.operatorWorkspace": "운영 작업",
+    "nav.adminWorkspace": "관리 / 개발",
+    "network.subtitle": "송신/수신 속도와 포트 정책, 손실 분석을 한 화면에서 확인합니다.",
+    "network.badge": "실시간 트래픽",
+    "network.opsSummaryTitle": "네트워크 운영 요약",
+    "network.opsSummaryBadge": "Live",
+    "network.title": "실시간 네트워크 상태",
+    "network.pathTitle": "네트워크 경로 상태",
+    "network.pathBadge": "경로 검증",
+    "network.eventsTitle": "최근 네트워크 이벤트",
+    "network.eventsBadge": "실시간",
+    "network.chartTitle": "IP별 누적 트래픽",
+    "network.chartDesc": "상위 트래픽 흐름을 송신/수신 기준으로 비교합니다.",
+    "network.tx": "송신",
+    "network.rx": "수신",
+    "network.cumulativeTx": "누적 송신",
+    "network.cumulativeRx": "누적 수신",
+    "network.lossTitle": "네트워크 손실",
+    "network.latency": "지연",
+    "network.jitter": "지터",
+    "network.allowedPorts": "허용 포트",
+    "network.blockedPorts": "차단 포트",
+    "network.portTitle": "포트 차단/허용 분석",
+    "network.portBadge": "정책 보기",
+    "network.insightTitle": "네트워크 분석",
+    "network.insightBadge": "QoE",
     "settings.title": "설정",
     "settings.subtitle": "표시 언어와 화면 테마를 설정합니다.",
     "settings.languageTitle": "언어",
@@ -351,6 +507,20 @@ const translations = {
     "settings.themeDesc": "흰색 배경 또는 검은색 배경으로 전환합니다.",
     "settings.logRetentionTitle": "로그 보관 기간",
     "settings.logRetentionDesc": "로그를 보관할 기간을 선택합니다.",
+    "settings.managementTitle": "운영/관리",
+    "settings.managementDesc": "운영, 승인, 사용자, 감사 관리 화면은 설정에서만 이동합니다.",
+    "settings.hardwareControl": "하드웨어 제어",
+    "settings.approvalWorkflow": "협업/승인 워크플로우",
+    "settings.userRoleManagement": "사용자/권한 관리",
+    "settings.auditLogs": "감사 기록",
+    "settings.statusChecking": "확인 중",
+    "settings.statusUnavailable": "확인 불가",
+    "settings.hardwareConnected": "하드웨어 연결됨",
+    "settings.hardwareCheckNeeded": "확인 필요",
+    "settings.pendingApprovals": "승인 대기 {count}건",
+    "settings.auditEvents": "감사 이벤트 {count}건",
+    "settings.serviceNormal": "서비스 정상",
+    "settings.serviceStopped": "서비스 중지",
     "settings.serviceTitle": "LOCK-FIX 서비스",
     "settings.serviceDesc": "설치된 LOCK-FIX Windows 서비스를 시작하거나 중지합니다.",
     "settings.serviceStart": "시작",
@@ -370,9 +540,12 @@ const translations = {
     "veeam.logs": "상세 로그 및 모니터링",
     "monitoring.title": "모니터링",
     "monitoring.subtitle": "하드웨어 사용 상태가 5초마다 업데이트됩니다.",
-    "monitoring.startDate": "Start Date",
-    "monitoring.endDate": "End Date",
+    "monitoring.startDate": "시작일",
+    "monitoring.endDate": "종료일",
     "monitoring.applyRange": "적용",
+    "logs.startDate": "시작일",
+    "logs.endDate": "종료일",
+    "logs.apply": "적용",
     "dashboard.notification": "알림",
     "dashboard.logs": "로그",
     "dashboard.type": "유형",
@@ -508,6 +681,10 @@ const airgapKo = {
   "Unified Security Score": "통합 보안 점수",
   "SAFE AIR-GAP": "안전 에어갭",
   "Power cut-off, solenoid lock, and integrity verification are all operating normally.": "디스크 오프라인, 솔레노이드 잠금, 무결성 검증이 모두 정상 동작 중입니다.",
+  "Disk offline, solenoid lock, and integrity verification are all operating normally.": "디스크 오프라인, 솔레노이드 잠금, 무결성 검증이 모두 정상 동작 중입니다.",
+  "Disk Offline": "Disk Offline",
+  "Disk Offline Complete": "Disk Offline 완료",
+  "Windows disk offline isolation after unmount.": "언마운트 이후 Windows 디스크 오프라인 격리 상태입니다.",
   "Power Cut-off": "디스크 오프라인",
   "Physical Cut-off Complete": "디스크 오프라인 완료",
   "Hard power isolation, not a software-only unmount.": "소프트웨어 언마운트 이후 Windows 디스크 오프라인 격리 상태입니다.",
@@ -636,8 +813,8 @@ function dashboardCopy() {
       normal: "Normal",
       airgap: "Air-Gap Status",
       active: "Active",
-      storagePower: "Storage Power",
-      off: "OFF",
+      storagePower: "Disk Offline",
+      off: "Offline",
       lastBackup: "Last Backup",
       success: "Success",
       access: "Unauthorized Access",
@@ -652,9 +829,9 @@ function dashboardCopy() {
       alert: "Warnings / Alerts",
       audit: "Audit Log Summary",
       policy: "Policy Summary",
-    protectedMessage: "Current backup storage is offline and external access is unavailable.",
+      protectedMessage: "Current backup storage is offline and external access is unavailable.",
       backupStart: "Backup completed detected",
-    powerOn: "Storage online approved",
+      powerOn: "Storage online approved",
       backupRunning: "Backup running",
       backupEnd: "Backup completed",
       flush: "Flush verified",
@@ -675,8 +852,8 @@ function dashboardCopy() {
     normal: "정상",
     airgap: "Air-Gap 상태",
     active: "활성",
-    storagePower: "저장장치 상태",
-    off: "OFF",
+    storagePower: "Disk Offline",
+    off: "Offline",
     lastBackup: "마지막 백업",
     success: "성공",
     access: "비인가 접근 시도",
@@ -691,7 +868,7 @@ function dashboardCopy() {
     alert: "경고 / 알림",
     audit: "감사 로그 요약",
     policy: "정책 설정 요약",
-    protectedMessage: "현재 백업 저장소는 전원이 차단되어 외부 접근이 불가능한 상태입니다.",
+    protectedMessage: "현재 백업 저장소는 Offline 상태로 외부 접근이 불가능합니다.",
     backupStart: "백업 완료 감지",
     powerOn: "승인 기반 온라인",
     backupRunning: "백업 진행",
@@ -947,13 +1124,93 @@ function applyUiSettings() {
 }
 
 function applySidebarTooltips() {
-  sideItems.forEach((item) => {
+  document.querySelectorAll(".side-item[data-view]").forEach((item) => {
     const label = item.querySelector("span:not(.nav-icon)")?.textContent?.trim() || "";
     if (label) {
       item.dataset.tooltip = label;
       item.setAttribute("aria-label", label);
     }
   });
+}
+
+function permissionSet(session = currentSession) {
+  return new Set(Array.isArray(session?.permissions) ? session.permissions : []);
+}
+
+function hasPermission(permission, session = currentSession) {
+  if (!permission) return true;
+  return permissionSet(session).has(permission);
+}
+
+function hasAnyPermission(permissions, session = currentSession) {
+  const required = Array.isArray(permissions) ? permissions : [];
+  return required.length === 0 || required.some((permission) => hasPermission(permission, session));
+}
+
+function menuDefinitionFor(view) {
+  return menuDefinitions.find((item) => item.view === view);
+}
+
+function canAccessView(view, session = currentSession) {
+  const definition = menuDefinitionFor(view);
+  if (!definition) return false;
+  if (definition.roles?.length && !definition.roles.includes(session?.role)) {
+    return false;
+  }
+  if (definition.permissions?.length && !definition.permissions.every((permission) => hasPermission(permission, session))) {
+    return false;
+  }
+  return hasAnyPermission(definition.anyPermissions || [], session);
+}
+
+function visibleMenuDefinitions(session = currentSession) {
+  return menuDefinitions.filter((definition) => canAccessView(definition.view, session));
+}
+
+function firstAllowedView(session = currentSession) {
+  return visibleMenuDefinitions(session)[0]?.view || "accessDenied";
+}
+
+function applyMenuVisibility() {
+  const allowedViews = new Set(visibleMenuDefinitions().map((item) => item.view));
+  const visibleSections = new Set();
+  document.querySelectorAll(".side-item[data-view]").forEach((item) => {
+    const view = item.dataset.view || "";
+    if (view === "logout") {
+      item.hidden = false;
+      return;
+    }
+    const isRbacMenu = item.classList.contains("rbac-menu");
+    const isVisible = isRbacMenu && allowedViews.has(view);
+    item.hidden = !isVisible;
+    if (isVisible && item.dataset.menuSection) {
+      visibleSections.add(item.dataset.menuSection);
+    }
+  });
+  document.querySelectorAll(".side-section-label[data-menu-section]").forEach((label) => {
+    label.hidden = !visibleSections.has(label.dataset.menuSection);
+  });
+  settingsShortcutItems.forEach((item) => {
+    item.hidden = !allowedViews.has(item.dataset.settingsView || "");
+  });
+  applySidebarTooltips();
+}
+
+function showAccessDenied(view) {
+  sideItems.forEach((item) => item.classList.remove("active"));
+  views.forEach((item) => item.classList.remove("view-active"));
+  const denied = document.querySelector("#accessDeniedView");
+  if (accessDeniedMessage) {
+    accessDeniedMessage.textContent = `Access denied for ${menuDefinitionFor(view)?.label || view}. Required permission is missing.`;
+  }
+  denied?.classList.add("view-active");
+  contentArea?.scrollTo({ top: 0, left: 0 });
+}
+
+function initialRouteView() {
+  const candidate = decodeURIComponent(String(window.location.hash || "").replace(/^#/, "")).trim();
+  if (candidate && menuDefinitionFor(candidate)) return candidate;
+  return firstAllowedView();
 }
 
 function applySidebarState() {
@@ -998,6 +1255,9 @@ async function requestJson(url, options = {}) {
   const payload = await response.json();
   if (!response.ok) {
     const message = payload.error || (response.status === 401 ? "login session expired" : "request failed");
+    if (response.status === 401 && url !== "/api/session") {
+      setAuthenticated(false);
+    }
     const error = new Error(message);
     error.status = response.status;
     throw error;
@@ -1005,13 +1265,30 @@ async function requestJson(url, options = {}) {
   return payload;
 }
 
+function activeViewId() {
+  return document.querySelector(".view.view-active")?.id || "";
+}
+
+function shouldRunGlobalRefresh() {
+  if (!currentSession.authenticated || appRoot.classList.contains("app-locked")) return false;
+  return !REALTIME_VIEW_IDS.has(activeViewId());
+}
+
 async function checkSession() {
   const session = await requestJson("/api/session");
+  currentSession = {
+    authenticated: Boolean(session.authenticated),
+    user: session.user || "",
+    role: session.role || "",
+    permissions: Array.isArray(session.permissions) ? session.permissions : [],
+  };
+  applyMenuVisibility();
   setAuthenticated(session.authenticated);
   if (session.authenticated) {
     renderLicenseStatus(session.license);
     updateLicenseGate(session.license);
     await loadAll();
+    showView(initialRouteView());
   }
 }
 
@@ -1020,7 +1297,13 @@ function setAuthenticated(authenticated) {
   appRoot.classList.toggle("app-locked", !authenticated);
   loginSplash.classList.add("hidden");
   if (!authenticated) {
+    resetQrLoginState();
+    setAirGapLivePolling(false);
+    setEmergencyReconnectLivePolling(false);
+    setVeeamLivePolling(false);
     licenseModal.classList.add("hidden");
+    currentSession = { authenticated: false, user: "", role: "", permissions: [] };
+    applyMenuVisibility();
   }
   if (authenticated) {
     stopQrTimers();
@@ -1035,11 +1318,20 @@ async function showLoginSplashThenEnter() {
   appRoot.classList.add("app-locked");
   loginSplash.classList.remove("hidden");
   stopQrTimers();
+  const session = await requestJson("/api/session");
+  currentSession = {
+    authenticated: Boolean(session.authenticated),
+    user: session.user || "",
+    role: session.role || "",
+    permissions: Array.isArray(session.permissions) ? session.permissions : [],
+  };
+  applyMenuVisibility();
   await Promise.all([
     loadAll(),
     new Promise((resolve) => setTimeout(resolve, LOGIN_SPLASH_DURATION_MS)),
   ]);
   setAuthenticated(true);
+  showView(initialRouteView());
 }
 
 async function login(event) {
@@ -1065,8 +1357,15 @@ async function login(event) {
 }
 
 async function logout() {
-  await requestJson("/api/logout", { method: "POST" });
-  setAuthenticated(false);
+  resetQrLoginState();
+  try {
+    await requestJson("/api/logout", { method: "POST" });
+  } catch (error) {
+    console.warn("Logout request failed; clearing local session state.", error);
+  } finally {
+    setAuthenticated(false);
+    if (window.location.hash) history.replaceState(null, "", window.location.pathname || "/");
+  }
 }
 
 function showView(name) {
@@ -1074,33 +1373,65 @@ function showView(name) {
     logout();
     return;
   }
-  sideItems.forEach((item) => item.classList.toggle("active", item.dataset.view === name));
+  const targetView = menuDefinitionFor(name) ? name : firstAllowedView();
+  if (!canAccessView(targetView)) {
+    showAccessDenied(targetView);
+    if (window.location.hash !== `#${targetView}`) history.replaceState(null, "", `#${targetView}`);
+    return;
+  }
+  sideItems.forEach((item) => item.classList.toggle("active", item.dataset.view === targetView));
   views.forEach((view) => view.classList.remove("view-active"));
-  const target = document.querySelector(`#${name}View`);
+  const target = document.querySelector(`#${targetView}View`);
   if (target) {
     target.classList.add("view-active");
     contentArea?.scrollTo({ top: 0, left: 0 });
   }
-  setAirGapLivePolling(name === "sources");
-  if (name === "sources") {
+  if (window.location.hash !== `#${targetView}`) history.replaceState(null, "", `#${targetView}`);
+  setAirGapLivePolling(targetView === "sources");
+  setDashboardLivePolling(targetView === "dashboard");
+  setOpsOverviewLivePolling(targetView === "monitoring");
+  if (targetView === "sources") {
     reloadSources().catch((error) => {
       console.warn("Unable to reload Air-Gap view", error);
       renderSources({ air_gap: fallbackAirGapSummary() });
     });
   }
-  if (name === "report") {
+  if (targetView === "veeam") {
+    reloadVeeamIntegration().catch((error) => {
+      console.warn("Unable to reload Veeam Integration view", error);
+      if (veeamIntegrationStatus) veeamIntegrationStatus.textContent = error.message;
+    });
+  }
+  if (targetView === "approvals") {
+    reloadApprovals().catch((error) => {
+      console.warn("Unable to reload approvals", error);
+      renderApprovals({ requests: [], decisions: [], policies: [] }, error.message);
+    });
+  }
+  if (targetView === "userManagement") {
+    reloadUserManagement().catch((error) => {
+      console.warn("Unable to reload user management", error);
+      renderUserManagement({ users: [], departments: [] }, error.message);
+    });
+  }
+  if (targetView === "auditLogs") {
+    reloadAuditLogs().catch((error) => {
+      console.warn("Unable to reload audit logs", error);
+      renderAuditLogs({ items: [] }, error.message);
+    });
+  }
+  if (targetView === "report") {
     reloadReport().catch((error) => {
       console.warn("Unable to reload report view", error);
       reportAnalysis.textContent = error.message;
     });
   }
-  if (name === "securityAudit") {
+  if (targetView === "securityAudit") {
     renderSecurityAudit(latestAuditData);
   }
-  if (name === "settings") {
-    reloadConsoleStatus().catch((error) => {
-      console.warn("Unable to reload console status", error);
-      if (consoleStatusText) consoleStatusText.textContent = error.message;
+  if (targetView === "settings") {
+    reloadSettingsShortcutStatus().catch((error) => {
+      console.warn("Unable to reload settings shortcut status", error);
     });
     reloadServiceControlStatus().catch((error) => {
       console.warn("Unable to reload service status", error);
@@ -1169,6 +1500,17 @@ function stopQrTimers() {
   clearInterval(qrClockTimer);
   qrPollTimer = null;
   qrClockTimer = null;
+}
+
+function resetQrLoginState() {
+  stopQrTimers();
+  qrToken = "";
+  qrExpiresAt = 0;
+  passwordLogin?.classList.remove("qr-hidden");
+  qrLoginView?.classList.add("qr-hidden");
+  if (qrLoginButton) qrLoginButton.textContent = "QR CODE LOGIN";
+  if (qrTimer) qrTimer.textContent = "04:59";
+  qrCodeBox?.replaceChildren();
 }
 
 function updateQrTimer() {
@@ -1366,18 +1708,33 @@ function renderIntegrated(data) {
 function renderDashboard(data) {
   latestDashboardData = data;
   const copy = dashboardCopy();
+  const securityKpis = Array.isArray(data.security_kpis) && data.security_kpis.length
+    ? data.security_kpis
+    : [
+      { icon: "data-protection-logo", label: copy.protection, value: copy.normal, tone: "green", meta: "" },
+      { icon: "airgap-logo", label: copy.airgap, value: copy.active, tone: "blue", meta: "" },
+      { icon: "storage-power", label: copy.storagePower, value: copy.off, tone: "dark", meta: "" },
+      { icon: "veeam-backup-completed", label: copy.lastBackup, value: copy.success, tone: "green", meta: "2026-04-25 18:25" },
+      { icon: "integrity-logo", label: copy.integrity, value: copy.normal, tone: "green", meta: `${copy.latest} 2026-04-25 17:40` },
+    ];
+  const flowItems = Array.isArray(data.flow) && data.flow.length
+    ? data.flow
+    : [
+      { icon: "backup-complete", lines: ["백업", "완료"], state: "done" },
+      { icon: "flush-run", lines: ["Flush", "실행"], state: "done" },
+      { icon: "io-check", lines: ["I/O 종료", "확인"], state: "done" },
+      { icon: "power-off", lines: ["디스크", "오프라인"], state: "done" },
+      { icon: "airgap-logo", lines: ["Air-Gap", "활성"], state: "done" },
+    ];
+  const backup = data.backup || {};
+  const events = Array.isArray(data.logs) ? data.logs.slice(0, 5) : [];
+  const alerts = Array.isArray(data.alerts) ? data.alerts : [];
   dashboardView.innerHTML = `
     <div class="security-kpi-grid">
-      ${[
-        ["data-protection-logo", copy.protection, copy.normal, "green", ""],
-        ["airgap-logo", copy.airgap, copy.active, "blue", ""],
-        ["storage-power", copy.storagePower, copy.off, "dark", ""],
-        ["veeam-backup-completed", copy.lastBackup, copy.success, "green", "2026-04-25 18:25"],
-        ["integrity-logo", copy.integrity, copy.normal, "green", `${copy.latest} 2026-04-25 17:40`],
-      ].map(([icon, label, value, tone, meta]) => `
+      ${securityKpis.map(({ icon, label, value, tone, meta }) => `
         <article class="security-kpi security-kpi-${icon}">
-          <i class="security-icon security-icon-${icon} security-tone-${tone}" ${meta ? `title="${meta}" aria-label="${meta}"` : 'aria-hidden="true"'}></i>
-          <div><span>${label}</span><strong class="security-value-${tone}">${value}</strong></div>
+          <i class="security-icon security-icon-${icon} security-tone-${tone}" ${meta ? `title="${escapeHtml(meta)}" aria-label="${escapeHtml(meta)}"` : 'aria-hidden="true"'}></i>
+          <div><span>${escapeHtml(label || "-")}</span><strong class="security-value-${tone}">${escapeHtml(value || "-")}</strong></div>
         </article>
       `).join("")}
     </div>
@@ -1386,18 +1743,12 @@ function renderDashboard(data) {
       <section class="security-panel security-flow-panel">
         <header><h2><i class="panel-title-icon protection-title-icon" aria-hidden="true"></i>${copy.liveProtection}</h2><span>ⓘ</span></header>
         <div class="panel-body">
-          <p>${copy.protectedMessage.replace("전원이 차단", "<b>전원이 차단</b>").replace("Power is cut off", "<b>power is cut off</b>")}</p>
+          <p>${copy.protectedMessage.replace("Offline", "<b>Offline</b>").replace("offline", "<b>offline</b>")}</p>
           <div class="security-flow">
-            ${[
-              ["backup-complete", ["백업", "완료"]],
-              ["flush-run", ["Flush", "실행"]],
-              ["io-check", ["I/O 종료", "확인"]],
-              ["power-off", ["디스크", "오프라인"]],
-              ["airgap-logo", ["Air-Gap", "활성"]],
-            ].map(([icon, lines], index, arr) => `
-              <div class="flow-step ${index === arr.length - 1 ? "flow-step-active" : ""}">
+            ${flowItems.map(({ icon, lines, state }) => `
+              <div class="flow-step ${state === "done" ? "flow-step-active" : ""}">
                 <i class="security-icon security-icon-${icon}" aria-hidden="true"></i>
-                <span>${lines.map((line) => `<b>${line}</b>`).join("")}</span>
+                <span>${(lines || []).map((line) => `<b>${escapeHtml(line)}</b>`).join("")}</span>
               </div>
             `).join("")}
           </div>
@@ -1408,12 +1759,12 @@ function renderDashboard(data) {
         <header><h2><i class="panel-title-icon backup-title-icon" aria-hidden="true"></i>${copy.backupLink}</h2></header>
         <div class="panel-body">
           <dl>
-            <div><dt>연동 백업 솔루션</dt><dd>Veeam Backup & Replication</dd></div>
-            <div><dt>마지막 작업명</dt><dd>Daily_Backup_VM_01</dd></div>
-            <div><dt>백업 시작</dt><dd>2026-04-25 17:00</dd></div>
-            <div><dt>백업 종료</dt><dd>2026-04-25 18:25</dd></div>
-            <div><dt>LOCK-FIX 차단 수행</dt><dd>2026-04-25 18:32</dd></div>
-            <div><dt>차단 결과</dt><dd class="backup-result backup-result-success">${copy.success}</dd></div>
+            <div><dt>연동 백업 솔루션</dt><dd>${escapeHtml(backup.solution || "Veeam Backup & Replication")}</dd></div>
+            <div><dt>마지막 작업명</dt><dd>${escapeHtml(backup.job || "-")}</dd></div>
+            <div><dt>백업 시작</dt><dd>${escapeHtml(backup.started_at || "-")}</dd></div>
+            <div><dt>백업 종료</dt><dd>${escapeHtml(backup.ended_at || "-")}</dd></div>
+            <div><dt>LOCK-FIX 상태</dt><dd>${escapeHtml(backup.isolation_state || "-")}</dd></div>
+            <div><dt>차단 결과</dt><dd class="backup-result ${String(backup.result || "").includes("Failed") ? "backup-result-failed" : "backup-result-success"}">${escapeHtml(backup.result || "-")}</dd></div>
           </dl>
         </div>
       </section>
@@ -1421,13 +1772,7 @@ function renderDashboard(data) {
       <section class="security-panel event-panel">
         <header><h2><i class="panel-title-icon event-title-icon" aria-hidden="true"></i>${copy.event}</h2></header>
         <div class="panel-body">
-        ${[
-          ["18:32", "백업 종료 후 디스크 오프라인 성공"],
-          ["18:30", "백업 작업 완료"],
-          ["17:58", "백업 시작 전 전원 ON"],
-          ["17:55", "정책 검증 완료"],
-          ["17:40", "무결성 검사 정상"],
-        ].map((event) => `<div class="event-row"><span><i class="event-clock" aria-hidden="true"></i>${event[0]}</span><strong>${event[1]}</strong></div>`).join("")}
+        ${events.map((event) => `<div class="event-row"><span><i class="event-clock" aria-hidden="true"></i>${escapeHtml(event.date || "-")}</span><strong>${escapeHtml(event.content || "-")}</strong></div>`).join("")}
         <a>${copy.detail} ›</a>
         </div>
       </section>
@@ -1435,13 +1780,8 @@ function renderDashboard(data) {
       <section class="security-panel alert-panel">
         <header><h2><i class="panel-title-icon alert-title-icon" aria-hidden="true"></i>${copy.alert}</h2></header>
         <div class="panel-body">
-          <div class="alert-ok"><span>${copy.noCritical}</span></div>
-          ${[
-            "디스크 오프라인 실패",
-            "통신 끊김",
-            "비인가 전원 ON 시도",
-            "디스크 탈거 감지",
-          ].map((item) => `<div class="health-row"><span>${item}</span><b>${copy.normal}</b></div>`).join("")}
+          <div class="alert-ok"><span>${alerts.some((item) => String(item.value || "").match(/Failed|Detected|Error/i)) ? "확인 필요" : copy.noCritical}</span></div>
+          ${alerts.map((item) => `<div class="health-row"><span>${escapeHtml(item.label || "-")}</span><b>${escapeHtml(item.value || "-")}</b></div>`).join("")}
           <a>${copy.detail} ›</a>
         </div>
       </section>
@@ -1541,15 +1881,59 @@ function renderReport(data) {
   });
 
   reportInspectionTable.replaceChildren();
-  data.inspection_items.forEach((item) => {
+  const inspectionItems = data.inspection_items || [];
+  const warningItems = inspectionItems.filter((item) => String(item.result || "").toLowerCase() === "warning");
+  const normalItems = inspectionItems.filter((item) => String(item.result || "").toLowerCase() !== "warning");
+  if (reportInspectionSummary) {
+    const summaryLabels = uiSettings.language === "ko"
+      ? { total: "전체 점검", normal: "정상", warning: "주의", status: "종합 상태", stable: "운영 가능", review: "주의 항목 검토" }
+      : { total: "Total Checks", normal: "Normal", warning: "Warning", status: "Overall", stable: "Operational", review: "Review Required" };
+    reportInspectionSummary.innerHTML = `
+      <article>
+        <span>${summaryLabels.total}</span>
+        <strong>${inspectionItems.length}</strong>
+      </article>
+      <article>
+        <span>${summaryLabels.normal}</span>
+        <strong class="report-summary-ok">${normalItems.length}</strong>
+      </article>
+      <article>
+        <span>${summaryLabels.warning}</span>
+        <strong class="${warningItems.length ? "report-summary-warn" : "report-summary-ok"}">${warningItems.length}</strong>
+      </article>
+      <article>
+        <span>${summaryLabels.status}</span>
+        <strong class="${warningItems.length ? "report-summary-warn" : "report-summary-ok"}">${warningItems.length ? summaryLabels.review : summaryLabels.stable}</strong>
+      </article>
+    `;
+  }
+  if (reportAttentionList) {
+    const attentionTitle = uiSettings.language === "ko" ? "주의 항목" : "Attention Items";
+    const emptyText = uiSettings.language === "ko" ? "현재 주의 항목이 없습니다." : "No attention items.";
+    reportAttentionList.innerHTML = warningItems.length
+      ? `
+        <h3>${attentionTitle}</h3>
+        <div>
+          ${warningItems.map((item) => `
+            <article>
+              <strong>${reportInspectionText(item.item)}</strong>
+              <span>${reportInspectionText(item.metric)} · ${reportInspectionText(item.criteria)}</span>
+            </article>
+          `).join("")}
+        </div>
+      `
+      : `<p>${emptyText}</p>`;
+  }
+  inspectionItems.forEach((item) => {
     const row = document.createElement("tr");
+    const isWarning = String(item.result || "").toLowerCase() === "warning";
     row.innerHTML = `
       <td>${reportInspectionText(item.category)}</td>
       <td>${reportInspectionText(item.item)}</td>
       <td>${reportInspectionText(item.detail)}</td>
       <td>${reportInspectionText(item.criteria)}</td>
       <td>${reportInspectionText(item.metric)}</td>
-      <td><span class="${item.result === "Warning" ? "status-bad" : "status-good"}">${reportStatusLabel(item.result)}</span></td>
+      <td><span class="report-result-badge ${isWarning ? "report-result-warning" : "report-result-normal"}">${reportStatusLabel(item.result)}</span></td>
     `;
     reportInspectionTable.appendChild(row);
   });
@@ -1923,14 +2307,219 @@ async function registerLicense(event) {
 }
 
 function renderNetworkStatus(data) {
-  networkStatusTitle.textContent = data.title;
+  networkStatusTitle.textContent = uiSettings.language === "ko" ? (data.title || t("network.title")) : t("network.title");
   networkTxRate.textContent = `${data.realtime.tx.current_mbps.toFixed(1)} Mbps`;
   networkRxRate.textContent = `${data.realtime.rx.current_mbps.toFixed(1)} Mbps`;
   networkTxTotal.textContent = `${data.realtime.tx.total_gb.toFixed(2)} GB`;
   networkRxTotal.textContent = `${data.realtime.rx.total_gb.toFixed(2)} GB`;
   drawFlowChart(networkTxFlow, data.realtime.tx.history, "tx");
   drawFlowChart(networkRxFlow, data.realtime.rx.history, "rx");
-  drawNetworkChart(data.items, data.unit);
+  renderNetworkIpSummary(networkTxIps, data.items, "tx");
+  renderNetworkIpSummary(networkRxIps, data.items, "rx");
+  renderNetworkAnalysis(data.analysis || {});
+}
+
+function renderNetworkIpSummary(target, items, type) {
+  if (!target) return;
+  const key = type === "tx" ? "tx_gb" : "rx_gb";
+  const label = type === "tx"
+    ? (uiSettings.language === "ko" ? "Top 송신 IP" : "Top TX IP")
+    : (uiSettings.language === "ko" ? "Top 수신 IP" : "Top RX IP");
+  const rows = (Array.isArray(items) ? items : [])
+    .filter((item) => item && item.target)
+    .sort((left, right) => Number(right[key] || 0) - Number(left[key] || 0))
+    .slice(0, 3);
+  if (!rows.length) {
+    target.innerHTML = `<span>${escapeHtml(label)}</span><em>-</em>`;
+    return;
+  }
+  const top = rows[0];
+  target.innerHTML = `
+    <div class="network-ip-main">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(top.target)}</strong>
+      <em>${Number(top[key] || 0).toFixed(2)} GB</em>
+    </div>
+    <div class="network-ip-list">
+      ${rows.map((item) => `
+        <span><code>${escapeHtml(item.target)}</code><b>${Number(item[key] || 0).toFixed(2)} GB</b></span>
+      `).join("")}
+    </div>
+  `;
+}
+
+function networkDisplayState(value) {
+  const state = String(value || "-").toUpperCase();
+  if (uiSettings.language !== "ko") return value || "-";
+  return {
+    ALLOW: "허용",
+    BLOCK: "정책 차단",
+    BLOCKED: "정책 차단",
+    PROTECTED: "보호",
+    REACHABLE: "정상",
+    MANAGED: "관리",
+    CHECK: "확인 필요",
+  }[state] || value || "-";
+}
+
+function networkDisplayRisk(value) {
+  const risk = String(value || "-");
+  if (uiSettings.language !== "ko") return risk;
+  return {
+    Required: "필수",
+    Managed: "관리 대상",
+    "Not configured": "미구성",
+    "Recovery only": "복구 시 승인",
+    "Admin approval": "관리자 승인",
+  }[risk] || risk;
+}
+
+function networkDisplayInsightTitle(value) {
+  const title = String(value || "-");
+  if (uiSettings.language !== "ko") return title;
+  return {
+    "Packet Loss": "패킷 손실",
+    Latency: "지연 시간",
+    "Port Exposure": "포트 노출 정책",
+  }[title] || title;
+}
+
+function networkDisplayInsightDetail(value) {
+  const text = String(value || "-");
+  if (uiSettings.language !== "ko") return text;
+  return text
+    .replace(/Current loss is ([0-9.]+)%\. Keep under 1\.00% for backup traffic quality\./, "현재 손실률은 $1%입니다. 백업 트래픽 품질 기준 1.00% 이하로 유지됩니다.")
+    .replace(/Average response time is ([0-9.]+) ms\. No path bottleneck is detected\./, "평균 응답 시간은 $1 ms이며 경로 병목은 감지되지 않았습니다.")
+    .replace("Only Veeam REST and managed WinRM are allowed. Recovery ports remain blocked until approval.", "Veeam REST와 관리형 WinRM만 허용됩니다. 복구 포트는 승인 전까지 보호 상태로 유지됩니다.");
+}
+
+function networkDisplayEvent(value) {
+  const text = String(value || "-");
+  if (uiSettings.language !== "ko") {
+    return text
+      .replace("Veeam REST API 9419 path is reachable.", "Veeam REST OK")
+      .replace("WinRM 5985 is allowed only for managed operation.", "WinRM Managed")
+      .replace("SMB and RDP recovery ports remain protected until approval.", "Recovery Ports Protected")
+      .replace(/Packet loss is ([0-9.]+)% and remains under the 1\.00% operating threshold\./, "Packet loss $1%, normal");
+  }
+  return text
+    .replace("Veeam REST API 9419 path is reachable.", "Veeam REST 정상")
+    .replace("WinRM 5985 is allowed only for managed operation.", "WinRM 관리")
+    .replace("SMB and RDP recovery ports remain protected until approval.", "복구 포트 보호")
+    .replace(/Packet loss is ([0-9.]+)% and remains under the 1\.00% operating threshold\./, "패킷 손실 $1%, 정상");
+}
+
+function networkPathTone(value) {
+  const state = String(value || "").toLowerCase().replace(/\s+/g, "-");
+  if (state === "blocked") return "protected";
+  return state || "ready";
+}
+
+function networkLossLabel(loss) {
+  if (loss >= 1) return uiSettings.language === "ko" ? "위험" : "Critical";
+  if (loss >= 0.3) return uiSettings.language === "ko" ? "주의" : "Warning";
+  return uiSettings.language === "ko" ? "정상" : "Normal";
+}
+
+function networkPathDisplay(item) {
+  const rawName = String(item?.name || "-");
+  const target = String(item?.target || "-");
+  const service = rawName
+    .replace(/^LOCK-FIX\s*->\s*/i, "")
+    .replace("Recovery Ports", uiSettings.language === "ko" ? "복구 포트" : "Recovery Ports")
+    .replace("Gateway", uiSettings.language === "ko" ? "스토리지 게이트웨이" : "Storage Gateway");
+  const arrow = "→";
+  return {
+    title: service || rawName,
+    target: `LOCK-FIX ${arrow} ${target}`,
+  };
+}
+
+function renderNetworkAnalysis(analysis) {
+  const quality = analysis.quality || {};
+  const ports = Array.isArray(analysis.ports) ? analysis.ports : [];
+  const insights = Array.isArray(analysis.insights) ? analysis.insights : [];
+  const pathStatus = Array.isArray(analysis.path_status) ? analysis.path_status : [];
+  const events = Array.isArray(analysis.events) ? analysis.events : [];
+  const loss = Number(quality.packet_loss_percent || 0);
+  if (networkLossScore) {
+    networkLossScore.textContent = `${loss.toFixed(2)}%`;
+    networkLossScore.className = loss >= 1 ? "network-loss-critical" : (loss >= 0.3 ? "network-loss-warning" : "network-loss-good");
+  }
+  if (networkLossState) {
+    networkLossState.textContent = networkLossLabel(loss);
+    networkLossState.className = loss >= 1 ? "loss-state-critical" : (loss >= 0.3 ? "loss-state-warning" : "loss-state-good");
+  }
+  if (networkLatency) networkLatency.textContent = `${Number(quality.latency_ms || 0).toFixed(0)} ms`;
+  if (networkJitter) networkJitter.textContent = `${Number(quality.jitter_ms || 0).toFixed(0)} ms`;
+  if (networkAllowedPorts) networkAllowedPorts.textContent = String(ports.filter((item) => String(item.state || "").toUpperCase() === "ALLOW").length);
+  if (networkBlockedPorts) networkBlockedPorts.textContent = String(ports.filter((item) => ["BLOCK", "PROTECTED"].includes(String(item.state || "").toUpperCase())).length);
+  if (networkOpsSummary) {
+    const protectedCount = ports.filter((item) => ["BLOCK", "PROTECTED"].includes(String(item.state || "").toUpperCase())).length;
+    const summaryItems = [
+      { label: "Veeam REST", value: ports.some((item) => Number(item.port) === 9419 && String(item.state).toUpperCase() === "ALLOW") ? (uiSettings.language === "ko" ? "정상" : "Available") : (uiSettings.language === "ko" ? "확인 필요" : "Check"), tone: "ok" },
+      { label: "WinRM", value: ports.some((item) => Number(item.port) === 5985 && String(item.state).toUpperCase() === "ALLOW") ? (uiSettings.language === "ko" ? "관리" : "Managed") : (uiSettings.language === "ko" ? "차단" : "Blocked"), tone: "info" },
+      { label: uiSettings.language === "ko" ? "복구 포트" : "Recovery Ports", value: uiSettings.language === "ko" ? `${protectedCount}개 보호` : `${protectedCount} Protected`, tone: "protected" },
+      { label: uiSettings.language === "ko" ? "패킷 손실" : "Packet Loss", value: `${loss.toFixed(2)}%`, tone: loss >= 1 ? "risk" : (loss >= 0.3 ? "warn" : "ok") },
+    ];
+    networkOpsSummary.innerHTML = summaryItems.map((item) => `
+      <article class="network-ops-summary-item summary-${escapeHtml(item.tone)}">
+        <span>${escapeHtml(item.label)}</span>
+        <strong>${escapeHtml(item.value)}</strong>
+      </article>
+    `).join("");
+  }
+  if (networkPortTable) {
+    networkPortTable.innerHTML = ports.map((item) => {
+      const state = String(item.state || "").toLowerCase();
+      const stateClass = state === "block" || state === "blocked" ? "protected" : state;
+      return `
+        <article class="network-port-row port-${escapeHtml(stateClass)}">
+          <div>
+            <strong>${escapeHtml(item.port || "-")}</strong>
+            <span>${escapeHtml(item.service || "-")} · ${escapeHtml(item.protocol || "TCP")}</span>
+          </div>
+          <b>${escapeHtml(networkDisplayState(item.state))}</b>
+          <em>${escapeHtml(networkDisplayRisk(item.risk))}</em>
+        </article>
+      `;
+    }).join("") || `<article class="network-empty-row">No port policy data</article>`;
+  }
+  if (networkInsights) {
+    networkInsights.innerHTML = insights.map((item) => `
+      <article class="network-insight-row insight-${escapeHtml(String(item.level || "info").toLowerCase())}">
+        <b>${escapeHtml(networkDisplayInsightTitle(item.title))}</b>
+        <span>${escapeHtml(networkDisplayInsightDetail(item.detail))}</span>
+      </article>
+    `).join("") || `<article class="network-empty-row">No analysis data</article>`;
+  }
+  if (networkPathStatus) {
+    networkPathStatus.innerHTML = pathStatus.map((item) => {
+      const state = networkPathTone(item.state || "Ready");
+      const latency = item.latency_ms === null || item.latency_ms === undefined ? "-" : `${Number(item.latency_ms || 0).toFixed(0)} ms`;
+      const display = networkPathDisplay(item);
+      return `
+        <article class="network-path-row path-${escapeHtml(state)}">
+          <div>
+            <strong>${escapeHtml(display.title)}</strong>
+            <span>${escapeHtml(display.target)}</span>
+          </div>
+          <div class="network-path-metrics">
+            <b>${escapeHtml(networkDisplayState(item.state))}</b>
+            <em>${escapeHtml(latency)}</em>
+          </div>
+        </article>
+      `;
+    }).join("") || `<article class="network-empty-row">No path status data</article>`;
+  }
+  if (networkEventList) {
+    networkEventList.innerHTML = events.map((item) => `
+      <article class="network-event-row event-${escapeHtml(String(item.level || "info").toLowerCase())}">
+        <time>${escapeHtml(item.time || "-")}</time>
+        <span>${escapeHtml(networkDisplayEvent(item.message))}</span>
+      </article>
+    `).join("") || `<article class="network-empty-row">No recent network events</article>`;
+  }
 }
 
 function drawFlowChart(target, values, type) {
@@ -1955,51 +2544,6 @@ function drawFlowChart(target, values, type) {
     <path d="${area}" fill="url(#flowFill-${type})"></path>
     <path d="${path}" fill="none" stroke="${color}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></path>
     <circle cx="${x(values.length - 1).toFixed(1)}" cy="${y(values[values.length - 1]).toFixed(1)}" r="5" fill="${color}"></circle>
-  `;
-}
-
-function drawNetworkChart(items, unit) {
-  const width = 980;
-  const height = 360;
-  const pad = { left: 64, right: 24, top: 26, bottom: 100 };
-  const chartWidth = width - pad.left - pad.right;
-  const chartHeight = height - pad.top - pad.bottom;
-  const maxValue = Math.max(...items.flatMap((item) => [item.tx_gb, item.rx_gb]), 1);
-  const y = (value) => pad.top + chartHeight - (chartHeight * value) / maxValue;
-  const groupWidth = chartWidth / items.length;
-  const barWidth = Math.max(6, Math.min(13, groupWidth * 0.28));
-
-  const grid = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-    const value = maxValue * ratio;
-    const yy = y(value);
-    return `
-      <line x1="${pad.left}" y1="${yy.toFixed(1)}" x2="${width - pad.right}" y2="${yy.toFixed(1)}" class="network-grid-line"></line>
-      <text x="${pad.left - 10}" y="${(yy + 4).toFixed(1)}" class="network-axis-label" text-anchor="end">${value.toFixed(1)}</text>
-    `;
-  }).join("");
-
-  const bars = items.map((item, index) => {
-    const baseX = pad.left + index * groupWidth + groupWidth / 2;
-    const txX = baseX - barWidth - 1;
-    const rxX = baseX + 1;
-    const txY = y(item.tx_gb);
-    const rxY = y(item.rx_gb);
-    const txH = pad.top + chartHeight - txY;
-    const rxH = pad.top + chartHeight - rxY;
-    return `
-      <rect x="${txX.toFixed(1)}" y="${txY.toFixed(1)}" width="${barWidth}" height="${txH.toFixed(1)}" class="network-bar-tx"></rect>
-      <rect x="${rxX.toFixed(1)}" y="${rxY.toFixed(1)}" width="${barWidth}" height="${rxH.toFixed(1)}" class="network-bar-rx"></rect>
-      <text x="${baseX.toFixed(1)}" y="${height - 42}" class="network-x-label" text-anchor="end" transform="rotate(-48 ${baseX.toFixed(1)} ${height - 42})">${item.target}</text>
-    `;
-  }).join("");
-
-  networkStatusChart.innerHTML = `
-    <rect x="${pad.left}" y="${pad.top}" width="${chartWidth}" height="${chartHeight}" fill="#ffffff"></rect>
-    ${grid}
-    <line x1="${pad.left}" y1="${pad.top + chartHeight}" x2="${width - pad.right}" y2="${pad.top + chartHeight}" class="network-axis-line"></line>
-    <text x="22" y="${height / 2}" class="network-axis-title" transform="rotate(-90 22 ${height / 2})">${uiSettings.language === "ko" ? "누적 트래픽" : "Cumulative Traffic"} (${unit})</text>
-    ${bars}
-    <text x="${pad.left + chartWidth / 2}" y="${height - 6}" class="network-axis-title" text-anchor="middle">${uiSettings.language === "ko" ? "IP 주소" : "IP Address"}</text>
   `;
 }
 
@@ -2086,23 +2630,69 @@ function opsToneFromText(value, fallback = "neutral") {
   return fallback;
 }
 
+function formatOpsLatency(veeam) {
+  const value = veeam?.rest_latency_ms ?? veeam?.latency_ms;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= 0 ? `${numeric}ms` : "latency checking";
+}
+
+function formatOpsStatus(value) {
+  const text = String(value || "-");
+  if (/^ERROR$/i.test(text)) return "Check Required";
+  if (/^UNKNOWN$/i.test(text)) return "Checking";
+  return text;
+}
+
+function normalizeOpsEventText(text) {
+  const value = String(text || "").trim();
+  const lower = value.toLowerCase();
+  if (lower.includes("disk.io_quiet.tick")) return "I/O quiet verification sample collected.";
+  if (lower.includes("disk.io_quiet.start")) return "I/O quiet verification started.";
+  if (lower.includes("disk.io_quiet.error")) return "I/O quiet verification requires attention.";
+  if (lower.includes("disk.io_quiet")) return "I/O quiet verification completed.";
+  if (lower.includes("disk.offline")) return "Disk Offline isolation event recorded.";
+  if (lower.includes("veeam")) return value;
+  return value || "LOCK-FIX event updated.";
+}
+
+function uniqueOpsEvents(items) {
+  const seen = new Set();
+  return items.filter((item) => {
+    const key = `${item.tone}:${item.text}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 3);
+}
+
 function latestOpsEvents(airGap, veeam) {
-  const logItems = Array.isArray(latestLogsData?.items) ? latestLogsData.items.slice(0, 3) : [];
-  if (logItems.length) {
-    return logItems.map((item) => ({
+  const dashboardLogs = Array.isArray(latestDashboardData?.logs) ? latestDashboardData.logs : [];
+  if (dashboardLogs.length) {
+    const events = dashboardLogs.map((item) => ({
       time: formatLogDate(item.date),
-      tone: opsToneFromText(item.severity),
-      text: item.message || `${item.source || "system"} event`,
+      tone: opsToneFromText(item.type || item.content),
+      text: normalizeOpsEventText(item.content || item.type),
     }));
+    return uniqueOpsEvents(events);
   }
   const session = Array.isArray(airGap?.session_logs) ? airGap.session_logs[0] : null;
-  const actions = Array.isArray(session?.actions) ? session.actions.slice(0, 3) : [];
+  const actions = Array.isArray(session?.actions) ? session.actions : [];
   if (actions.length) {
-    return actions.map((text) => ({
+    const events = actions.map((text) => ({
       time: veeam?.last_checked || "-",
       tone: opsToneFromText(text),
-      text,
+      text: normalizeOpsEventText(text),
     }));
+    return uniqueOpsEvents(events);
+  }
+  const logItems = Array.isArray(latestLogsData?.items) ? latestLogsData.items : [];
+  if (logItems.length) {
+    const events = logItems.map((item) => ({
+      time: formatLogDate(item.date),
+      tone: opsToneFromText(item.severity),
+      text: normalizeOpsEventText(item.message || `${item.source || "system"} event`),
+    }));
+    return uniqueOpsEvents(events);
   }
   return [{
     time: "-",
@@ -2118,7 +2708,9 @@ function renderOperationsOverview() {
   const emergencySlot = airGap.emergency_access?.slot || {};
   const apiSynced = isVeeamSynced(veeam);
   const progress = Math.max(0, Math.min(100, Number(veeam.progress_percent || 0)));
-  const diskState = emergencySlot.state || airGap.disk_state || airGap.offline_state || "-";
+  const dashboardDiskKpi = (Array.isArray(latestDashboardData?.security_kpis) ? latestDashboardData.security_kpis : [])
+    .find((item) => /disk offline/i.test(String(item.label || "")));
+  const diskState = emergencySlot.state || airGap.disk_state || airGap.offline_state || dashboardDiskKpi?.value || "-";
   const timeline = Array.isArray(airGap.timeline) ? airGap.timeline : [];
   const activeStep = timeline.find((item) => /ACTIVE|RUNNING|WORKING/i.test(String(item.state || "")));
   const lastStep = timeline.filter((item) => /DONE|COMPLETED|SUCCESS/i.test(String(item.state || ""))).pop();
@@ -2126,7 +2718,7 @@ function renderOperationsOverview() {
     {
       label: "Veeam REST",
       value: apiSynced ? "Connected" : "Waiting",
-      meta: `${veeam.server || "127.0.0.1"}:${veeam.port || 9419} · ${veeam.rest_latency_ms ?? veeam.latency_ms ?? "-"}ms`,
+      meta: `${veeam.server || "127.0.0.1"}:${veeam.port || 9419} · ${formatOpsLatency(veeam)}`,
       tone: apiSynced ? "ok" : "warn",
     },
     {
@@ -2143,8 +2735,8 @@ function renderOperationsOverview() {
     },
     {
       label: "Disk",
-      value: diskState,
-      meta: `${emergencySlot.volume || airGap.volume || "D:\\"} · ${emergencySlot.slot_id || "BAY-01"}`,
+      value: formatOpsStatus(diskState),
+      meta: `${emergencySlot.volume || airGap.volume || "D:\\"} · ${emergencySlot.slot_id || "BAY-01"}${opsToneFromText(diskState) === "danger" ? " · 상세 로그 확인" : ""}`,
       tone: opsToneFromText(diskState, "neutral"),
     },
   ];
@@ -2249,6 +2841,468 @@ function renderLoadedData(key, value) {
   }
 }
 
+function approvalDecisionsFor(request, decisions = latestApprovalsData.decisions) {
+  return (Array.isArray(decisions) ? decisions : []).filter((decision) => decision.approvalRequestId === request.id);
+}
+
+function departmentReviewsFor(request, reviews = latestApprovalsData.departmentReviews) {
+  const comments = Array.isArray(latestApprovalsData.reviewComments) ? latestApprovalsData.reviewComments : [];
+  return (Array.isArray(reviews) ? reviews : [])
+    .filter((review) => review.approvalRequestId === request.id)
+    .map((review) => ({
+      ...review,
+      comments: comments.filter((comment) => comment.departmentReviewId === review.id),
+    }));
+}
+
+function approvalDecisionSummary(request, decisions = latestApprovalsData.decisions) {
+  const approved = approvalDecisionsFor(request, decisions).filter((decision) => decision.decision === "APPROVED").length;
+  const required = Number(request?.requiredApprovals || 1);
+  return `${approved} / ${required} approved`;
+}
+
+function repositoryOnlineWorkflowSummary(request, decisions = latestApprovalsData.decisions) {
+  const metadata = request?.metadata || {};
+  const reviews = metadata.reviews || {};
+  const reviewCount = ["SECURITY_LOG_REVIEW", "HARDWARE_STATE_REVIEW", "MANAGER_REVIEW"].filter((key) => reviews[key]).length;
+  const status = metadata.workflowStatus || (request?.requestType === "DISK_ONLINE" ? "AWAITING_SECURITY_HARDWARE_REVIEW" : "");
+  const approvals = approvalDecisionSummary(request, decisions);
+  const department = departmentReviewSummary(request);
+  return request?.requestType === "DISK_ONLINE" ? `${status} · ${department} · reviews ${reviewCount} / 3 · ${approvals}` : `${department} · ${approvals}`;
+}
+
+function reviewTypeForRole(role) {
+  return {
+    SECURITY_ADMIN: "SECURITY_LOG_REVIEW",
+    HARDWARE_ADMIN: "HARDWARE_STATE_REVIEW",
+    SUPER_ADMIN: "MANAGER_REVIEW",
+  }[role] || "";
+}
+
+function canShowReviewButton(request, session = currentSession) {
+  if (!request || request.status !== "PENDING" || request.requestType !== "DISK_ONLINE") return false;
+  if (String(request.requesterUserId || "") === String(session.user || "")) return false;
+  const reviewType = reviewTypeForRole(session.role);
+  if (!reviewType) return false;
+  const reviews = request.metadata?.reviews || {};
+  return !reviews[reviewType];
+}
+
+function workflowReviews(request) {
+  const reviews = request?.metadata?.reviews || {};
+  return typeof reviews === "object" && !Array.isArray(reviews) ? reviews : {};
+}
+
+function departmentReviewStatus(request) {
+  const reviews = departmentReviewsFor(request);
+  if (!reviews.length) return "NOT_REQUIRED";
+  const statuses = new Set(reviews.map((review) => String(review.status || "PENDING").toUpperCase()));
+  if (statuses.has("BLOCKED")) return "BLOCKED";
+  if (statuses.has("NEEDS_CHANGES")) return "NEEDS_CHANGES";
+  if (statuses.size === 1 && statuses.has("REVIEWED")) return "REVIEWED";
+  if (statuses.has("IN_REVIEW")) return "IN_REVIEW";
+  return "PENDING";
+}
+
+function departmentReviewSummary(request) {
+  const reviews = departmentReviewsFor(request);
+  if (!reviews.length) return "department reviews not required";
+  const reviewed = reviews.filter((review) => String(review.status || "").toUpperCase() === "REVIEWED").length;
+  return `department review ${reviewed} / ${reviews.length} ${departmentReviewStatus(request)}`;
+}
+
+function departmentDisplayName(departmentId) {
+  return {
+    security: "보안팀",
+    "backup-operation": "백업팀",
+    "hardware-control": "하드웨어팀",
+    audit: "감사팀",
+    management: "관리자",
+  }[departmentId] || departmentId || "-";
+}
+
+function departmentReviewDisplayStatus(status) {
+  return {
+    PENDING: "검토 대기",
+    IN_REVIEW: "검토 중",
+    REVIEWED: "검토 완료",
+    NEEDS_CHANGES: "보완 요청",
+    BLOCKED: "차단",
+  }[String(status || "PENDING").toUpperCase()] || "검토 대기";
+}
+
+function departmentWorkflowDisplayStatus(request) {
+  return {
+    NOT_REQUIRED: "부서 검토 불필요",
+    PENDING: "부서 검토 진행 중",
+    IN_REVIEW: "부서 검토 진행 중",
+    REVIEWED: "부서 검토 완료",
+    NEEDS_CHANGES: "보완 요청 상태",
+    BLOCKED: "차단 상태",
+  }[departmentReviewStatus(request)] || "부서 검토 진행 중";
+}
+
+function renderRepositoryOnlineRequestPanel(request) {
+  if (request?.requestType !== "DISK_ONLINE") return "";
+  const reason = request.metadata?.reason || "백업 검증을 위해 Repository Online 필요";
+  const reviews = departmentReviewsFor(request);
+  const requiredReviews = reviews.length ? reviews : [
+    { departmentId: "security", status: "PENDING" },
+    { departmentId: "hardware-control", status: "PENDING" },
+  ];
+  return `
+    <div class="repository-online-request-card">
+      <strong>[Repository Online 요청]</strong>
+      <dl>
+        <dt>요청 사유:</dt>
+        <dd>${escapeHtml(reason)}</dd>
+        <dt>관련 부서:</dt>
+        <dd>
+          ${requiredReviews.map((review) => {
+            const checked = String(review.status || "").toUpperCase() === "REVIEWED" ? "☑" : "□";
+            return `<span>${checked} ${escapeHtml(departmentDisplayName(review.departmentId))} ${escapeHtml(departmentReviewDisplayStatus(review.status))}</span>`;
+          }).join("")}
+        </dd>
+        <dt>상태:</dt>
+        <dd>${escapeHtml(departmentWorkflowDisplayStatus(request))}</dd>
+      </dl>
+    </div>
+  `;
+}
+
+function renderFinalApprovalPanel(request, decisions = latestApprovalsData.decisions) {
+  if (!request || departmentReviewStatus(request) !== "REVIEWED" || request.status !== "PENDING") return "";
+  const reviews = departmentReviewsFor(request);
+  const approved = approvalDecisionsFor(request, decisions).filter((decision) => decision.decision === "APPROVED").length;
+  const required = Number(request.requiredApprovals || 1);
+  const reviewLines = reviews.length
+    ? reviews.map((review) => `<span>${escapeHtml(departmentDisplayName(review.departmentId))}: ${escapeHtml(departmentReviewDisplayStatus(review.status))}</span>`).join("")
+    : `<span>부서 검토: 검토 완료</span>`;
+  return `
+    <div class="final-approval-wait-card">
+      <strong>[최종 승인 대기]</strong>
+      <div class="final-approval-review-lines">${reviewLines}</div>
+      <dl>
+        <dt>승인 상태:</dt>
+        <dd>${approved} / ${required} 승인 완료</dd>
+      </dl>
+    </div>
+  `;
+}
+
+function roleDepartmentIds(role) {
+  return {
+    SECURITY_ADMIN: ["security"],
+    BACKUP_OPERATOR: ["backup-operation"],
+    HARDWARE_ADMIN: ["hardware-control"],
+    AUDITOR: ["audit"],
+    SUPER_ADMIN: ["management", "security", "backup-operation", "hardware-control", "audit"],
+  }[role] || [];
+}
+
+function canReviewDepartment(review, session = currentSession) {
+  if (!review) return false;
+  if (String(review.status || "").toUpperCase() === "REVIEWED") return false;
+  if (String(review.status || "").toUpperCase() === "BLOCKED" && session.role !== "SUPER_ADMIN") return false;
+  return roleDepartmentIds(session.role).includes(String(review.departmentId || ""));
+}
+
+function pendingDepartmentReviewsForSession(request, session = currentSession) {
+  return departmentReviewsFor(request).filter((review) => canReviewDepartment(review, session));
+}
+
+function isDepartmentReviewPending(request) {
+  if (!request || request.status !== "PENDING") return false;
+  return ["PENDING", "IN_REVIEW", "NEEDS_CHANGES", "BLOCKED"].includes(departmentReviewStatus(request));
+}
+
+function isApprovalPendingRequest(request, decisions = latestApprovalsData.decisions) {
+  if (!request || request.status !== "PENDING") return false;
+  if (request.requestType !== "DISK_ONLINE") return true;
+  if (isDepartmentReviewPending(request)) return false;
+  return approvalDecisionsFor(request, decisions).filter((decision) => decision.decision === "APPROVED").length < Number(request.requiredApprovals || 1);
+}
+
+function canShowApprovalButton(request, session = currentSession, decisions = latestApprovalsData.decisions) {
+  if (!request || request.status !== "PENDING") return false;
+  if (!hasPermission("DISK_ONLINE_APPROVE", session)) return false;
+  if (Array.isArray(request.allowedApproverRoles) && request.allowedApproverRoles.length && !request.allowedApproverRoles.includes(session.role)) return false;
+  if (String(request.requesterUserId || "") === String(session.user || "")) return false;
+  if (!["NOT_REQUIRED", "REVIEWED"].includes(departmentReviewStatus(request))) return false;
+  if (request.requestType === "DISK_ONLINE") {
+    const reviews = request.metadata?.reviews || {};
+    if (!["SECURITY_LOG_REVIEW", "HARDWARE_STATE_REVIEW", "MANAGER_REVIEW"].every((key) => reviews[key])) return false;
+    const approved = approvalDecisionsFor(request, decisions).filter((decision) => decision.decision === "APPROVED").length;
+    if (approved === 0 && session.role !== "SECURITY_ADMIN") return false;
+    if (approved === 1 && session.role !== "SUPER_ADMIN") return false;
+  }
+  return !approvalDecisionsFor(request, decisions).some((decision) => String(decision.approverUserId || "") === String(session.user || ""));
+}
+
+function filterApprovalRequests(requests) {
+  const items = Array.isArray(requests) ? requests : [];
+  if (activeApprovalTab === "approvalRequestBox") return items.filter((request) => String(request.requesterUserId || "") === String(currentSession.user || ""));
+  if (activeApprovalTab === "departmentReviewBox") return items.filter((request) => isDepartmentReviewPending(request));
+  if (activeApprovalTab === "myApprovalPending") return items.filter((request) => canShowApprovalButton(request));
+  if (activeApprovalTab === "consultationOpinion") return items.filter((request) => workflowHistoryItems(request).length > 1 || departmentReviewsFor(request).length > 0);
+  if (activeApprovalTab === "reworkRequest") return items.filter((request) => ["REJECTED", "EXPIRED"].includes(String(request.status || "")) || departmentReviewStatus(request) === "NEEDS_CHANGES");
+  if (activeApprovalTab === "completedHistory") return items.filter((request) => request.status === "APPROVED");
+  if (activeApprovalTab === "auditRecord") return items;
+  return items;
+}
+
+function workflowHistoryItems(request, decisions = latestApprovalsData.decisions) {
+  const items = [];
+  if (!request) return items;
+  items.push({ type: "request", actor: request.requesterUserId || "-", text: request.metadata?.reason || "request created", createdAt: request.createdAt || "" });
+  Object.values(workflowReviews(request)).forEach((review) => {
+    items.push({
+      type: review.reviewType || "review",
+      actor: review.reviewerUserId || "-",
+      text: review.comment || "",
+      createdAt: review.createdAt || "",
+    });
+  });
+  departmentReviewsFor(request).forEach((review) => {
+    (Array.isArray(review.comments) ? review.comments : []).forEach((comment) => {
+      items.push({
+        type: `${review.departmentId || "department"} ${comment.status || review.status || "review"}`,
+        actor: comment.reviewerUserId || review.reviewerUserId || "-",
+        text: comment.comment || review.comment || "",
+        createdAt: comment.createdAt || review.updatedAt || "",
+      });
+    });
+    if (review.comment && !(Array.isArray(review.comments) && review.comments.length)) {
+      items.push({
+        type: `${review.departmentId || "department"} ${review.status || "review"}`,
+        actor: review.reviewerUserId || "-",
+        text: review.comment || "",
+        createdAt: review.updatedAt || review.createdAt || "",
+      });
+    }
+  });
+  approvalDecisionsFor(request, decisions).forEach((decision) => {
+    items.push({
+      type: decision.decision || "decision",
+      actor: decision.approverUserId || "-",
+      text: decision.comment || "",
+      createdAt: decision.createdAt || "",
+    });
+  });
+  return items.sort((left, right) => String(left.createdAt || "").localeCompare(String(right.createdAt || "")));
+}
+
+function renderWorkflowHistory(request, decisions = latestApprovalsData.decisions) {
+  const items = workflowHistoryItems(request, decisions);
+  if (!items.length) return "";
+  return `<ol class="workflow-history-list">${items.map((item) => `
+    <li>
+      <strong>${escapeHtml(item.type)}</strong>
+      <span>${escapeHtml(item.actor)}</span>
+      <em>${escapeHtml(formatLogDate(item.createdAt))}</em>
+      <p>${escapeHtml(item.text || "-")}</p>
+    </li>
+  `).join("")}</ol>`;
+}
+
+function renderApprovals(data, errorMessage = "") {
+  latestApprovalsData = {
+    policies: Array.isArray(data?.policies) ? data.policies : [],
+    requests: Array.isArray(data?.requests) ? data.requests : [],
+    decisions: Array.isArray(data?.decisions) ? data.decisions : [],
+    departmentReviews: Array.isArray(data?.departmentReviews) ? data.departmentReviews : [],
+    reviewComments: Array.isArray(data?.reviewComments) ? data.reviewComments : [],
+    notifications: Array.isArray(data?.notifications) ? data.notifications : [],
+  };
+  const tab = approvalTabDefinitions.find((item) => item.id === activeApprovalTab) || approvalTabDefinitions[0];
+  if (approvalTabTitle) approvalTabTitle.textContent = tab.label;
+  approvalTabs?.querySelectorAll("[data-approval-tab]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.approvalTab === activeApprovalTab);
+  });
+  const rows = filterApprovalRequests(latestApprovalsData.requests);
+  if (approvalCount) approvalCount.textContent = `${rows.length} requests`;
+  if (!approvalRequestsTable) return;
+  approvalRequestsTable.replaceChildren();
+  if (errorMessage || !rows.length) {
+    const row = document.createElement("tr");
+    row.innerHTML = `<td colspan="7">${escapeHtml(errorMessage || "No approval requests in this tab.")}</td>`;
+    approvalRequestsTable.appendChild(row);
+    return;
+  }
+  rows.forEach((request) => {
+    const row = document.createElement("tr");
+    const reviewType = reviewTypeForRole(currentSession.role);
+    const reviewButton = canShowReviewButton(request)
+      ? `<button type="button" class="rbac-action-button" data-review-id="${escapeHtml(request.id)}" data-review-type="${escapeHtml(reviewType)}">Review</button>`
+      : "";
+    const departmentButtons = pendingDepartmentReviewsForSession(request).map((review) => `
+      <button type="button" class="rbac-action-button" data-department-review-id="${escapeHtml(review.id)}" data-approval-request-id="${escapeHtml(request.id)}" data-review-action="comment">Comment</button>
+      <button type="button" class="rbac-action-button" data-department-review-id="${escapeHtml(review.id)}" data-approval-request-id="${escapeHtml(request.id)}" data-review-action="mark-reviewed">Reviewed</button>
+      <button type="button" class="rbac-action-button" data-department-review-id="${escapeHtml(review.id)}" data-approval-request-id="${escapeHtml(request.id)}" data-review-action="needs-changes">Needs changes</button>
+      <button type="button" class="rbac-action-button" data-department-review-id="${escapeHtml(review.id)}" data-approval-request-id="${escapeHtml(request.id)}" data-review-action="block">Block</button>
+    `).join("");
+    const approveButton = canShowApprovalButton(request)
+      ? `<button type="button" class="rbac-action-button" data-approval-id="${escapeHtml(request.id)}">Approve</button>`
+      : "";
+    const rejectButton = canShowApprovalButton(request)
+      ? `<button type="button" class="rbac-action-button rbac-danger-action" data-reject-id="${escapeHtml(request.id)}">Reject</button>`
+      : "";
+    const history = ["consultationOpinion", "completedHistory", "auditRecord"].includes(activeApprovalTab) ? renderWorkflowHistory(request) : "";
+    row.innerHTML = `
+      <td>${escapeHtml(request.requestType)}</td>
+      <td>${escapeHtml(request.requesterUserId)}</td>
+      <td>${escapeHtml(request.targetId || "-")}</td>
+      <td><span class="rbac-status rbac-status-${escapeHtml(String(request.status || "").toLowerCase())}">${escapeHtml(request.status)}</span></td>
+      <td>${renderRepositoryOnlineRequestPanel(request)}${renderFinalApprovalPanel(request)}${escapeHtml(repositoryOnlineWorkflowSummary(request))}<br><span class="approval-review-state">최종 승인 가능 여부: ${canShowApprovalButton(request) ? "가능" : "불가"} · 검토 완료 상태: ${escapeHtml(departmentReviewStatus(request))}</span>${history}</td>
+      <td>${escapeHtml(formatLogDate(request.expiresAt))}</td>
+      <td>${departmentButtons}${reviewButton}${approveButton}${rejectButton}</td>
+    `;
+    approvalRequestsTable.appendChild(row);
+  });
+}
+
+async function reloadApprovals() {
+  const data = await requestJson("/api/approvals");
+  renderApprovals(data);
+}
+
+function renderVeeamIntegration(data, errorMessage = "") {
+  const monitor = data?.air_gap?.copy_job_monitor || {};
+  if (veeamIntegrationStatus) veeamIntegrationStatus.textContent = errorMessage || monitor.detail_status || monitor.status || "-";
+  if (!veeamIntegrationSummary) return;
+  const rows = [
+    ["Server", monitor.server || monitor.server_ip || "-"],
+    ["Job", monitor.detail_name || monitor.name || "-"],
+    ["Progress", monitor.progress || "-"],
+    ["Last Checked", monitor.last_checked || monitor.generated_at || "-"],
+  ];
+  veeamIntegrationSummary.innerHTML = rows.map(([label, value]) => `
+    <article class="rbac-summary-card">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </article>
+  `).join("");
+}
+
+async function reloadVeeamIntegration() {
+  const data = await requestJson("/api/sources");
+  renderVeeamIntegration(data);
+}
+
+function renderUserManagement(data, errorMessage = "") {
+  const departments = Array.isArray(data?.departments) ? data.departments : [];
+  const users = Array.isArray(data?.users) ? data.users : [];
+  if (userManagementDepartmentCount) userManagementDepartmentCount.textContent = `${departments.length} departments`;
+  if (userManagementDepartments) {
+    userManagementDepartments.innerHTML = departments.length
+      ? departments.map((department) => `<span>${escapeHtml(department.name || department.id)}</span>`).join("")
+      : `<em>${escapeHtml(errorMessage || "No departments loaded.")}</em>`;
+  }
+  if (userManagementCount) userManagementCount.textContent = `${users.length} users`;
+  if (!userManagementTable) return;
+  userManagementTable.replaceChildren();
+  if (errorMessage || !users.length) {
+    const row = document.createElement("tr");
+    row.innerHTML = `<td colspan="4">${escapeHtml(errorMessage || "No users loaded.")}</td>`;
+    userManagementTable.appendChild(row);
+    return;
+  }
+  users.forEach((user) => {
+    const department = departments.find((item) => item.id === user.departmentId);
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${escapeHtml(user.username || user.id)}</td>
+      <td>${escapeHtml(department?.name || user.departmentId || "-")}</td>
+      <td>${escapeHtml(user.role || "-")}</td>
+      <td>${escapeHtml(user.disabled ? "Disabled" : "Active")}</td>
+    `;
+    userManagementTable.appendChild(row);
+  });
+}
+
+async function reloadUserManagement() {
+  const [users, departments] = await Promise.all([
+    requestJson("/api/admin/users"),
+    requestJson("/api/admin/departments"),
+  ]);
+  renderUserManagement({ users: users.items || [], departments: departments.items || [] });
+}
+
+function renderAuditLogs(data, errorMessage = "") {
+  const items = Array.isArray(data?.items) ? data.items : [];
+  if (auditLogsCount) auditLogsCount.textContent = `${items.length} events`;
+  if (auditLogsSummary) {
+    const recentItems = items.slice(-200);
+    const failed = recentItems.filter((item) => String(item.result || "").toUpperCase().includes("FAIL")).length;
+    const blocked = recentItems.filter((item) => /403|forbidden|blocked|unauthorized/i.test(`${item.action || item.event || ""} ${item.message || ""}`)).length;
+    const policy = recentItems.filter((item) => String(item.action || item.event || "").startsWith("policy.guard")).length;
+    const latest = recentItems.length ? formatLogDate(recentItems[recentItems.length - 1].createdAt || recentItems[recentItems.length - 1].ts || recentItems[recentItems.length - 1].time) : "-";
+    const cards = [
+      ["Total Events", items.length, "Append-only audit records", "audit-summary-total"],
+      ["Failures", failed, "Execution or permission failures", failed ? "audit-summary-risk" : "audit-summary-ok"],
+      ["Blocked", blocked, "Unauthorized or guarded attempts", blocked ? "audit-summary-risk" : "audit-summary-ok"],
+      ["Policy Guard", policy, "Automatic protection responses", policy ? "audit-summary-info" : "audit-summary-total"],
+      ["Latest", latest, "Most recent audit event", "audit-summary-total"],
+    ];
+    auditLogsSummary.innerHTML = cards.map(([label, value, detail, className]) => `
+      <article class="audit-summary-card ${className}">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(String(value))}</strong>
+        <em>${escapeHtml(detail)}</em>
+      </article>
+    `).join("");
+  }
+  if (!auditLogsTable) return;
+  auditLogsTable.replaceChildren();
+  if (errorMessage || !items.length) {
+    const row = document.createElement("tr");
+    row.innerHTML = `<td colspan="5"><div class="audit-empty-state"><strong>${escapeHtml(errorMessage || "No audit events loaded.")}</strong><span>로그가 생성되면 시간, 사용자, 작업, 대상, 결과가 이 영역에 표시됩니다.</span></div></td>`;
+    auditLogsTable.appendChild(row);
+    return;
+  }
+  items.slice(-200).reverse().forEach((item) => {
+    const row = document.createElement("tr");
+    const result = String(item.result || "-");
+    const resultClass = result.toLowerCase().includes("fail") || result.toLowerCase().includes("error")
+      ? "audit-result-failed"
+      : (result.toLowerCase().includes("success") ? "audit-result-success" : "audit-result-info");
+    row.innerHTML = `
+      <td>${escapeHtml(formatLogDate(item.createdAt || item.ts || item.time))}</td>
+      <td>${escapeHtml(item.actorUserId || item.user || "-")}</td>
+      <td>${escapeHtml(item.action || item.event || "-")}</td>
+      <td>${escapeHtml([item.resourceType, item.resourceId].filter(Boolean).join(" / ") || "-")}</td>
+      <td><span class="audit-result-pill ${resultClass}">${escapeHtml(result)}</span></td>
+    `;
+    auditLogsTable.appendChild(row);
+  });
+}
+
+async function reloadAuditLogs() {
+  const data = await requestJson("/api/audit-logs");
+  renderAuditLogs(data);
+}
+
+window.lockfixUiAuth = {
+  menuDefinitions,
+  approvalTabDefinitions,
+  visibleMenuDefinitions,
+  canAccessView,
+  approvalDecisionSummary,
+  repositoryOnlineWorkflowSummary,
+  departmentReviewsFor,
+  departmentReviewStatus,
+  departmentReviewSummary,
+  approvalWorkflowStages,
+  renderApprovalWorkflowPipeline,
+  renderRepositoryOnlineRequestPanel,
+  renderFinalApprovalPanel,
+  workflowHistoryItems,
+  renderWorkflowHistory,
+  canShowReviewButton,
+  canReviewDepartment,
+  canShowApprovalButton,
+};
+
 async function reloadReport() {
   reportAnalysis.textContent = t("report.loading");
   const report = await requestJson("/api/report");
@@ -2277,6 +3331,57 @@ function renderServiceControlStatus(status) {
   serviceControlStatus.textContent = `${name} : ${state}`;
   if (serviceStartButton) serviceStartButton.disabled = !status.can_start;
   if (serviceStopButton) serviceStopButton.disabled = !status.can_stop;
+}
+
+function setSettingsShortcutStatus(target, key, replacements = {}) {
+  if (!target) return;
+  let text = t(key);
+  Object.entries(replacements).forEach(([name, value]) => {
+    text = text.replaceAll(`{${name}}`, String(value));
+  });
+  target.textContent = text;
+}
+
+function activeApprovalRequestCount(data) {
+  const closed = new Set(["APPROVED", "REJECTED", "EXPIRED", "EXECUTED", "COMPLETED", "CANCELLED"]);
+  return (Array.isArray(data?.requests) ? data.requests : []).filter((request) => !closed.has(String(request.status || "").toUpperCase())).length;
+}
+
+function sourcesHardwareConnected(data) {
+  const airGap = data?.air_gap || {};
+  const slot = airGap?.emergency_access?.slot || {};
+  const bays = Array.isArray(airGap?.bays) ? airGap.bays : [];
+  const state = String(slot.state || "").toUpperCase();
+  if (["ERROR", "FAILED", "UNREGISTERED"].includes(state)) return false;
+  return Boolean(slot.slot_id || slot.device || slot.mount_point || bays.length);
+}
+
+async function reloadSettingsShortcutStatus() {
+  setSettingsShortcutStatus(settingsHardwareStatus, "settings.statusChecking");
+  setSettingsShortcutStatus(settingsApprovalStatus, "settings.statusChecking");
+  setSettingsShortcutStatus(settingsServiceStatus, "settings.statusChecking");
+  setSettingsShortcutStatus(settingsAuditStatus, "settings.statusChecking");
+
+  const update = (promise, onSuccess, target) => promise.then(onSuccess).catch(() => {
+    setSettingsShortcutStatus(target, "settings.statusUnavailable");
+  });
+
+  await Promise.allSettled([
+    update(requestJson("/api/sources"), (data) => {
+      setSettingsShortcutStatus(settingsHardwareStatus, sourcesHardwareConnected(data) ? "settings.hardwareConnected" : "settings.hardwareCheckNeeded");
+    }, settingsHardwareStatus),
+    update(requestJson("/api/approvals"), (data) => {
+      setSettingsShortcutStatus(settingsApprovalStatus, "settings.pendingApprovals", { count: activeApprovalRequestCount(data) });
+    }, settingsApprovalStatus),
+    update(requestJson("/api/service/status"), (status) => {
+      const state = String(status?.state || "").toUpperCase();
+      setSettingsShortcutStatus(settingsServiceStatus, state === "RUNNING" ? "settings.serviceNormal" : "settings.serviceStopped");
+    }, settingsServiceStatus),
+    update(requestJson("/api/audit-logs"), (data) => {
+      const count = Array.isArray(data?.items) ? data.items.length : 0;
+      setSettingsShortcutStatus(settingsAuditStatus, "settings.auditEvents", { count });
+    }, settingsAuditStatus),
+  ]);
 }
 
 async function reloadServiceControlStatus() {
@@ -2323,9 +3428,8 @@ async function reloadSources() {
 }
 
 async function pollSourcesLive() {
-  if (appRoot.classList.contains("app-locked")) return;
-  const activeView = document.querySelector(".view.view-active");
-  if (!activeView || activeView.id !== "sourcesView") return;
+  if (!currentSession.authenticated || appRoot.classList.contains("app-locked")) return;
+  if (activeViewId() !== "sourcesView") return;
   try {
     const sources = await requestJson("/api/sources");
     renderSources(sources);
@@ -2337,7 +3441,7 @@ async function pollSourcesLive() {
 
 function setAirGapLivePolling(enabled) {
   if (enabled && !airgapPollTimer) {
-    airgapPollTimer = setInterval(pollSourcesLive, 1000);
+    airgapPollTimer = setInterval(pollSourcesLive, REALTIME_POLL_INTERVAL_MS);
     pollSourcesLive();
   }
   if (!enabled && airgapPollTimer) {
@@ -2346,9 +3450,58 @@ function setAirGapLivePolling(enabled) {
   }
 }
 
+async function pollDashboardLive() {
+  if (!currentSession.authenticated || appRoot.classList.contains("app-locked")) return;
+  if (activeViewId() !== "dashboardView") return;
+  try {
+    const dashboard = await requestJson("/api/dashboard");
+    renderDashboard(dashboard);
+  } catch (error) {
+    console.warn("Unable to poll Dashboard live status", error);
+  }
+}
+
+function setDashboardLivePolling(enabled) {
+  if (enabled && !dashboardPollTimer) {
+    dashboardPollTimer = setInterval(pollDashboardLive, REALTIME_POLL_INTERVAL_MS);
+    pollDashboardLive();
+  }
+  if (!enabled && dashboardPollTimer) {
+    clearInterval(dashboardPollTimer);
+    dashboardPollTimer = null;
+  }
+}
+
+async function pollOpsOverviewLive() {
+  if (!currentSession.authenticated || appRoot.classList.contains("app-locked")) return;
+  if (activeViewId() !== "monitoringView") return;
+  try {
+    const [sourcesResult, dashboardResult] = await Promise.allSettled([
+      requestJson("/api/sources"),
+      requestJson("/api/dashboard"),
+    ]);
+    if (sourcesResult.status === "fulfilled") latestSourcesData = sourcesResult.value;
+    if (dashboardResult.status === "fulfilled") latestDashboardData = dashboardResult.value;
+    renderOperationsOverview();
+  } catch (error) {
+    console.warn("Unable to poll operations overview", error);
+  }
+}
+
+function setOpsOverviewLivePolling(enabled) {
+  if (enabled && !opsOverviewPollTimer) {
+    opsOverviewPollTimer = setInterval(pollOpsOverviewLive, REALTIME_POLL_INTERVAL_MS);
+    pollOpsOverviewLive();
+  }
+  if (!enabled && opsOverviewPollTimer) {
+    clearInterval(opsOverviewPollTimer);
+    opsOverviewPollTimer = null;
+  }
+}
+
 function setEmergencyReconnectLivePolling(enabled) {
   if (enabled && !emergencyReconnectPollTimer) {
-    emergencyReconnectPollTimer = setInterval(pollSourcesLive, 1000);
+    emergencyReconnectPollTimer = setInterval(pollSourcesLive, REALTIME_POLL_INTERVAL_MS);
     pollSourcesLive();
   }
   if (!enabled && emergencyReconnectPollTimer) {
@@ -2524,7 +3677,7 @@ async function reloadVeeamBackup() {
 }
 
 async function pollVeeamBackupLive() {
-  if (appRoot.classList.contains("app-locked")) return;
+  if (!currentSession.authenticated || appRoot.classList.contains("app-locked")) return;
   const activeView = document.querySelector(".view.view-active");
   if (!activeView || activeView.id !== "veeamView") return;
   try {
@@ -2664,6 +3817,7 @@ function fallbackAirGapSummary(loading = false) {
       { step: 4, label: "Unmount", code: "UNMOUNTING", state: "PENDING", time: "-", source: "Veeam API 대기", detail: "아직 이전 단계 완료 신호가 확인되지 않았습니다.", transition_allowed: false },
       { step: 5, label: "오프라인", code: "DISK_OFFLINING", state: "PENDING", time: "-", source: "Veeam API 대기", detail: "아직 이전 단계 완료 신호가 확인되지 않았습니다.", transition_allowed: false },
     ],
+    policy_events: [],
     bays: [
       {
         slot: "LOCK-FIX BAY 01",
@@ -2720,6 +3874,7 @@ function renderSources(data) {
   const timelineItems = Array.isArray(airGap.timeline) && airGap.timeline.length ? airGap.timeline : fallbackAirGapSummary().timeline;
   const veeam = airGap.veeam || fallbackAirGapSummary().veeam;
   const stepLogs = Array.isArray(airGap.step_logs) && airGap.step_logs.length ? airGap.step_logs : fallbackAirGapSummary().step_logs;
+  const policyEvents = Array.isArray(airGap.policy_events) ? airGap.policy_events : [];
   const apiSynced = isVeeamSynced(veeam);
   const backupProgress = apiSynced ? Math.max(0, Math.min(100, Number(veeam.progress_percent || 0))) : 0;
   const apiPercent = backupProgress;
@@ -2772,8 +3927,14 @@ function renderSources(data) {
       complete: [/LOCK-FIX Unmount OK/i, /LOCK-FIX STEP 4 COMPLETE/i],
     },
     5: {
-      start: [/LOCK-FIX Offline START/i, /LOCK-FIX Offline TICK/i, /LOCK-FIX Offline OK/i, /LOCK-FIX STEP 5 COMPLETE/i],
-      complete: [/LOCK-FIX Offline OK/i, /LOCK-FIX STEP 5 COMPLETE/i],
+      start: [/LOCK-FIX Offline START/i, /LOCK-FIX Offline TICK/i, /LOCK-FIX Offline VERIFY START/i],
+      complete: [
+        /LOCK-FIX Offline VERIFY CONFIRMED[^\n]*IsOffline=true[^\n]*PathReachable=false/i,
+        /LOCK-FIX Offline PROOF[^\n]*IsOffline=true/i,
+        /LOCK-FIX STEP 5 COMPLETE[^\n]*IsOffline=true/i,
+        /OFFLINE_COMPLETE[^\n]*IsOffline=true/i,
+        /is_offline["']?\s*:\s*true/i,
+      ],
     },
   };
   const hasStepEvidence = (step, type) => {
@@ -2932,6 +4093,9 @@ function renderSources(data) {
     const previousTop = previousSessionScroll.get(row.dataset.scrollKey || "") ?? previousSessionScroll.get(String(index));
     if (Number.isFinite(previousTop)) row.scrollTop = previousTop;
   });
+
+  // Policy guard events continue to be generated and stored in audit/detail logs.
+  // The customer-facing Air-Gap screen keeps those background decisions hidden.
 
   const emergencyPanel = document.createElement("section");
   const emergencyEligible = Boolean(emergencySlot.eligible);
@@ -3762,11 +4926,98 @@ logoutSideButton.addEventListener("click", logout);
 licenseForm.addEventListener("submit", registerLicense);
 sidebarToggle?.addEventListener("click", toggleSidebar);
 sideItems.forEach((item) => item.addEventListener("click", () => showView(item.dataset.view)));
+settingsShortcutItems.forEach((item) => item.addEventListener("click", () => showView(item.dataset.settingsView)));
+approvalTabs?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-approval-tab]");
+  if (!button) return;
+  activeApprovalTab = button.dataset.approvalTab || "approvalRequestBox";
+  renderApprovals(latestApprovalsData);
+});
+approvalRequestsTable?.addEventListener("click", async (event) => {
+  const departmentReviewButton = event.target.closest("[data-department-review-id]");
+  if (departmentReviewButton) {
+    const action = departmentReviewButton.dataset.reviewAction || "comment";
+    const promptLabel = action === "mark-reviewed" ? "검토 완료 의견을 입력하세요." : "부서 검토 의견을 입력하세요.";
+    const comment = prompt(promptLabel, action === "mark-reviewed" ? "Department review completed." : "");
+    if (comment === null) return;
+    departmentReviewButton.disabled = true;
+    try {
+      await requestJson(`/api/approval-requests/${encodeURIComponent(departmentReviewButton.dataset.approvalRequestId)}/reviews/${encodeURIComponent(departmentReviewButton.dataset.departmentReviewId)}/${encodeURIComponent(action)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comment }),
+      });
+      await reloadApprovals();
+    } catch (error) {
+      alert(error.message);
+      departmentReviewButton.disabled = false;
+    }
+    return;
+  }
+  const reviewButton = event.target.closest("[data-review-id]");
+  if (reviewButton) {
+    const comment = window.prompt("Review comment") || "";
+    if (!comment.trim()) return;
+    reviewButton.disabled = true;
+    try {
+      await requestJson(`/api/approvals/${encodeURIComponent(reviewButton.dataset.reviewId)}/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reviewType: reviewButton.dataset.reviewType, comment }),
+      });
+      await reloadApprovals();
+    } catch (error) {
+      alert(error.message);
+      reviewButton.disabled = false;
+    }
+    return;
+  }
+  const button = event.target.closest("[data-approval-id]");
+  if (!button) return;
+  button.disabled = true;
+  try {
+    await requestJson(`/api/approvals/${encodeURIComponent(button.dataset.approvalId)}/decisions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "APPROVED", comment: "Approved from LOCK-FIX Web UI" }),
+    });
+    await reloadApprovals();
+  } catch (error) {
+    alert(error.message);
+    button.disabled = false;
+  }
+});
+
+approvalRequestsTable?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-reject-id]");
+  if (!button) return;
+  const comment = prompt("반려 사유를 입력하세요.", "Rejected from LOCK-FIX Web UI");
+  if (comment === null) return;
+  button.disabled = true;
+  try {
+    await requestJson(`/api/approvals/${encodeURIComponent(button.dataset.rejectId)}/decisions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "REJECTED", comment }),
+    });
+    await reloadApprovals();
+  } catch (error) {
+    alert(error.message);
+    button.disabled = false;
+  }
+});
+window.addEventListener("hashchange", () => {
+  if (currentSession.authenticated) showView(initialRouteView());
+});
 detectFingerprintRoot?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-detect-action]");
   if (!button) return;
   const action = button.dataset.detectAction;
-  if (action === "logs") showView("logs2");
+  if (action === "logs") {
+    const keyword = "disk.fingerprint";
+    logsRange.highlight = keyword;
+    showView("logs2");
+  }
   if (action === "airgap") showView("sources");
   if (action === "settings") showView("settings");
 });
@@ -3875,9 +5126,8 @@ checkSession();
 updateOpsClock();
 renderOperationsOverview();
 setInterval(updateOpsClock, 1000);
-setInterval(() => {
-  if (!appRoot.classList.contains("app-locked")) {
+globalRefreshTimer = setInterval(() => {
+  if (shouldRunGlobalRefresh()) {
     loadAll();
   }
-}, 5000);
-
+}, GLOBAL_REFRESH_INTERVAL_MS);

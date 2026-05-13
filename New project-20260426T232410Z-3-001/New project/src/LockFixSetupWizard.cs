@@ -5,6 +5,7 @@ using System.Drawing;
 using System.IO;
 using System.Net;
 using System.Net.Security;
+using System.Net.Sockets;
 using System.Text;
 using System.Web.Script.Serialization;
 using System.Threading;
@@ -165,11 +166,12 @@ namespace LockFix
             database.Text = "DB";
             database.Checked = true;
 
-            veeamHost.Text = "192.168.219.230";
+            // Temporary PoC default. Replace with customer-specific input before production packaging.
+            veeamHost.Text = "192.168.219.165";
             veeamPort.Text = "9419";
             authType.Items.AddRange(new object[] { "Windows Authentication", "API Token", "Basic Account" });
             authType.SelectedIndex = 0;
-            veeamUser.Text = "administrator";
+            veeamUser.Text = "DESKTOP-I3DF527\\OAM";
             veeamPassword.Text = "backup@1234";
             veeamPassword.PasswordChar = '*';
             veeamPasswordToggle.Text = "표시";
@@ -408,7 +410,7 @@ namespace LockFix
                 }
                 MessageBox.Show(
                     this,
-                    "Veeam REST API 9419 접속 및 토큰 인증이 완료되었습니다.\n\n인증된 정보로 다음 단계 진행이 가능합니다.",
+                    message,
                     "Veeam Connection Verified",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
@@ -441,37 +443,43 @@ namespace LockFix
                 ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
                 try
                 {
-                    HttpWebRequest request = (HttpWebRequest)WebRequest.Create(baseUrl + "/api/oauth2/token");
-                    request.Method = "POST";
-                    request.Timeout = 7000;
-                    request.ReadWriteTimeout = 7000;
-                    request.ContentType = "application/x-www-form-urlencoded";
-                    request.Accept = "application/json";
-                    request.Headers["x-api-version"] = "1.2-rev1";
-
                     string body =
                         "grant_type=password" +
                         "&username=" + Uri.EscapeDataString(user) +
                         "&password=" + Uri.EscapeDataString(password);
-                    byte[] data = Encoding.UTF8.GetBytes(body);
-                    request.ContentLength = data.Length;
-                    using (Stream stream = request.GetRequestStream())
+                    string tokenRaw = SendVeeamRequest(baseUrl + "/api/oauth2/token", "POST", body, "");
+                    string token = ExtractJsonString(tokenRaw, "access_token");
+                    if (String.IsNullOrWhiteSpace(token))
                     {
-                        stream.Write(data, 0, data.Length);
+                        message = "Veeam REST token response did not include access_token.";
+                        return false;
                     }
 
-                    using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
-                    using (StreamReader reader = new StreamReader(response.GetResponseStream()))
+                    string sessionsRaw = SendVeeamRequest(baseUrl + "/api/v1/sessions?limit=1", "GET", "", token);
+                    int sessionCount = CountJsonArrayItems(sessionsRaw);
+
+                    string jobsMessage;
+                    bool jobsOk = TryValidateVeeamReadEndpoint(baseUrl + "/api/v1/jobs", token, out jobsMessage);
+                    string backupsMessage;
+                    bool backupsOk = TryValidateVeeamReadEndpoint(baseUrl + "/api/v1/backups", token, out backupsMessage);
+                    if (!jobsOk && !backupsOk)
                     {
-                        string raw = reader.ReadToEnd();
-                        if (response.StatusCode == HttpStatusCode.OK && raw.IndexOf("access_token", StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            message = "OK";
-                            return true;
-                        }
+                        message =
+                            "Veeam REST token was issued, but job/backup inventory could not be queried.\n\n" +
+                            "Grant this account at least Veeam Backup Viewer permission, then run setup again.\n" +
+                            "jobs: " + jobsMessage + "\n" +
+                            "backups: " + backupsMessage;
+                        return false;
                     }
-                    message = "Veeam REST API 응답에서 access_token을 확인하지 못했습니다.";
-                    return false;
+
+                    message =
+                        "Veeam REST API preflight passed.\n\n" +
+                        "Port 9419: reachable\n" +
+                        "Token: issued\n" +
+                        "Sessions API: readable, latest count=" + sessionCount.ToString() + "\n" +
+                        "Inventory API: " + (jobsOk ? "jobs readable" : "backups readable") + "\n\n" +
+                        "If there is no matching completed backup session yet, LOCK-FIX will install normally and wait for the next Veeam success session.";
+                    return true;
                 }
                 finally
                 {
@@ -483,34 +491,174 @@ namespace LockFix
                 HttpWebResponse response = ex.Response as HttpWebResponse;
                 if (response != null)
                 {
+                    string responseBody = ReadWebExceptionBody(ex);
                     if (response.StatusCode == HttpStatusCode.Unauthorized)
                     {
-                        message = "401 인증 실패: Veeam 계정 또는 비밀번호가 올바르지 않습니다.";
+                        message = "401 authentication failed: check the Veeam REST username and password.";
                     }
                     else if (response.StatusCode == HttpStatusCode.Forbidden)
                     {
-                        message = "403 권한 부족: 계정에 Veeam Backup Viewer 이상 권한을 부여해야 합니다.";
+                        if (responseBody.IndexOf("product edition", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            message =
+                                "403 product edition blocked: Veeam accepted the account, but this Veeam product edition/license does not allow the REST API.\n\n" +
+                                "Veeam response: " + responseBody + "\n\n" +
+                                "Use a Veeam Backup & Replication edition/license that supports the REST API, then run setup again.";
+                        }
+                        else
+                        {
+                            message = "403 permission denied: grant this account at least Veeam Backup Viewer permission.";
+                        }
                     }
                     else if (response.StatusCode == HttpStatusCode.NotFound)
                     {
-                        message = "404 API 경로 또는 버전 문제: VBR REST API 9419와 x-api-version을 확인해야 합니다.";
+                        message = "404 API path/version issue: verify VBR REST API 9419 and x-api-version 1.2-rev1.";
                     }
                     else
                     {
-                        message = "Veeam REST API 오류: HTTP " + ((int)response.StatusCode).ToString() + " " + response.StatusDescription;
+                        message = "Veeam REST API error: HTTP " + ((int)response.StatusCode).ToString() + " " + response.StatusDescription;
                     }
                 }
                 else
                 {
-                    message = "ConnectionError: " + host + ":" + port.ToString() + " 접속에 실패했습니다. IP, 포트, 방화벽, Veeam Backup Service 상태를 확인하세요.";
+                    message = "ConnectionError: failed to connect to " + host + ":" + port.ToString() + ". Check IP, port, firewall, and Veeam Backup REST service.";
                 }
                 return false;
             }
             catch (Exception ex)
             {
-                message = "Veeam REST API 검증 실패: " + ex.Message;
+                message = "Veeam REST API preflight failed: " + ex.Message;
                 return false;
             }
+        }
+
+        private string SendVeeamRequest(string url, string method, string body, string token)
+        {
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
+            request.Method = method;
+            request.Timeout = 10000;
+            request.ReadWriteTimeout = 10000;
+            request.Accept = "application/json";
+            request.Headers["x-api-version"] = "1.2-rev1";
+            if (!String.IsNullOrWhiteSpace(token))
+            {
+                request.Headers["Authorization"] = "Bearer " + token;
+            }
+            if (method == "POST")
+            {
+                byte[] data = Encoding.UTF8.GetBytes(body);
+                request.ContentType = "application/x-www-form-urlencoded";
+                request.ContentLength = data.Length;
+                using (Stream stream = request.GetRequestStream())
+                {
+                    stream.Write(data, 0, data.Length);
+                }
+            }
+
+            using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+            using (StreamReader reader = new StreamReader(response.GetResponseStream()))
+            {
+                return reader.ReadToEnd();
+            }
+        }
+
+        private bool TryValidateVeeamReadEndpoint(string url, string token, out string message)
+        {
+            try
+            {
+                string raw = SendVeeamRequest(url, "GET", "", token);
+                message = "OK count=" + CountJsonArrayItems(raw).ToString();
+                return true;
+            }
+            catch (WebException ex)
+            {
+                HttpWebResponse response = ex.Response as HttpWebResponse;
+                if (response != null)
+                {
+                    string responseBody = ReadWebExceptionBody(ex);
+                    message = "HTTP " + ((int)response.StatusCode).ToString() + " " + response.StatusDescription;
+                    if (!String.IsNullOrWhiteSpace(responseBody))
+                    {
+                        message += ": " + responseBody;
+                    }
+                }
+                else
+                {
+                    message = ex.Message;
+                }
+                return false;
+            }
+        }
+
+        private string ReadWebExceptionBody(WebException ex)
+        {
+            try
+            {
+                if (ex.Response == null)
+                {
+                    return "";
+                }
+                using (Stream stream = ex.Response.GetResponseStream())
+                {
+                    if (stream == null)
+                    {
+                        return "";
+                    }
+                    using (StreamReader reader = new StreamReader(stream))
+                    {
+                        return reader.ReadToEnd().Trim();
+                    }
+                }
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private string ExtractJsonString(string raw, string key)
+        {
+            try
+            {
+                JavaScriptSerializer serializer = new JavaScriptSerializer();
+                Dictionary<string, object> data = serializer.Deserialize<Dictionary<string, object>>(raw);
+                if (data != null && data.ContainsKey(key) && data[key] != null)
+                {
+                    return Convert.ToString(data[key]);
+                }
+            }
+            catch
+            {
+            }
+            return "";
+        }
+
+        private int CountJsonArrayItems(string raw)
+        {
+            try
+            {
+                JavaScriptSerializer serializer = new JavaScriptSerializer();
+                Dictionary<string, object> data = serializer.Deserialize<Dictionary<string, object>>(raw);
+                if (data == null)
+                {
+                    return 0;
+                }
+                foreach (string key in new string[] { "data", "items", "results", "value" })
+                {
+                    if (data.ContainsKey(key) && data[key] is object[])
+                    {
+                        return ((object[])data[key]).Length;
+                    }
+                    if (data.ContainsKey(key) && data[key] is System.Collections.ArrayList)
+                    {
+                        return ((System.Collections.ArrayList)data[key]).Count;
+                    }
+                }
+            }
+            catch
+            {
+            }
+            return 0;
         }
 
         private void RenderSecurityKey()
@@ -957,16 +1105,41 @@ namespace LockFix
             root["dry_run"] = false;
             veeam["enabled"] = true;
             veeam["base_url"] = baseUrl;
-            veeam["auto_discover"] = true;
+            veeam["auto_discover"] = false;
             veeam["discovery_candidates"] = new string[] { baseUrl };
-            veeam["discovery_scan_local_subnet"] = true;
+            veeam["discovery_scan_local_subnet"] = false;
             veeam["api_version"] = "1.2-rev1";
             veeam["username"] = veeamUser.Text.Trim();
             veeam["username_env"] = "LOCKFIX_VEEAM_USER";
             veeam["password_env"] = "LOCKFIX_VEEAM_PASSWORD";
             veeam["verify_ssl"] = false;
+            veeam["job_name"] = "Backup Copy Job 1";
+            veeam["job_id"] = "";
+            veeam["require_backup_copy"] = true;
 
             File.WriteAllText(configPath, serializer.Serialize(root));
+        }
+
+        private static string DetectPrimaryIpv4()
+        {
+            try
+            {
+                foreach (IPAddress address in Dns.GetHostEntry(Dns.GetHostName()).AddressList)
+                {
+                    if (address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(address))
+                    {
+                        string text = address.ToString();
+                        if (!text.StartsWith("169.254."))
+                        {
+                            return text;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+            }
+            return "127.0.0.1";
         }
 
         private static void CopyDirectory(string source, string target)

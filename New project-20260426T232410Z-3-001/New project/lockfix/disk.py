@@ -292,6 +292,20 @@ class DiskOperator:
                 drive_letter=drive,
                 os_volume_protected=True,
             )
+            self.audit.write(
+                "disk.dismount.start",
+                slot_id=slot.slot_id,
+                mount_point=str(slot.mount_point),
+                device=slot.device,
+                drive_letter=drive,
+            )
+            self.audit.write(
+                "disk.drive_letter.remove.start",
+                slot_id=slot.slot_id,
+                mount_point=str(slot.mount_point),
+                device=slot.device,
+                drive_letter=drive,
+            )
             output = self.storage_run([
                 "powershell",
                 "-NoProfile",
@@ -330,6 +344,8 @@ class DiskOperator:
         self.persist_storage_state(slot, output)
         self.audit.write("disk.unmount.tick", slot_id=slot.slot_id, elapsed_seconds=1, mount_point=str(slot.mount_point))
         self.audit.write("disk.unmount", slot_id=slot.slot_id, output=output)
+        self.audit.write("disk.dismount", slot_id=slot.slot_id, drive_letter=drive, output=output)
+        self.audit.write("disk.drive_letter.remove", slot_id=slot.slot_id, drive_letter=drive, output=output)
         self.verify_unmounted(slot, drive)
 
     def wait_for_disk(self, slot: SlotConfig, timeout_seconds: int) -> None:
@@ -569,6 +585,83 @@ class DiskOperator:
         self.persist_storage_state(slot, output)
         self.audit.write("disk.offline.tick", slot_id=slot.slot_id, elapsed_seconds=1, drive_letter=drive)
         self.audit.write("disk.offline", slot_id=slot.slot_id, drive_letter=drive, output=output)
+        self.verify_offline(slot, drive)
+
+    def verify_offline(self, slot: SlotConfig, drive: str) -> None:
+        storage_state = self.read_storage_state(slot)
+        disk_number = str(storage_state.get("diskNumber", "")).strip()
+        access_path = str(storage_state.get("accessPath") or f"{drive}:\\").strip()
+        self.audit.write(
+            "disk.offline.verify.start",
+            slot_id=slot.slot_id,
+            drive_letter=drive,
+            disk_number=disk_number,
+            access_path=access_path,
+            requirement="True Windows Disk Offline proof is required after Veeam backup completion.",
+        )
+        if not disk_number:
+            error = "Cannot verify disk offline state because diskNumber was not recorded."
+            self.audit.write(
+                "disk.offline.verify.error",
+                slot_id=slot.slot_id,
+                drive_letter=drive,
+                access_path=access_path,
+                error=error,
+            )
+            raise RuntimeError(error)
+        try:
+            output = self.storage_run([
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                (
+                    f"$drive = '{drive}'; "
+                    f"$diskNumber = [UInt32]'{disk_number}'; "
+                    f"$accessPath = '{self.ps_single_quote(access_path)}'; "
+                    "$disk = Get-Disk -Number $diskNumber -ErrorAction Stop; "
+                    "$pathReachable = Test-Path $accessPath; "
+                    "if ($disk.IsBoot -or $disk.IsSystem) { throw 'Protected Windows OS disk cannot be used by LOCK-FIX' }; "
+                    "if (-not $disk.IsOffline) { throw \"Disk $diskNumber is still Online; Veeam-completed isolation requires IsOffline=True\" }; "
+                    "if ($pathReachable) { throw \"Drive access path $accessPath is still reachable\" }; "
+                    "$proof = [ordered]@{ "
+                    "drive=$drive; "
+                    "diskNumber=$disk.Number; "
+                    "diskUniqueId=$disk.UniqueId; "
+                    "isOffline=[bool]$disk.IsOffline; "
+                    "pathReachable=[bool]$pathReachable; "
+                    "accessPath=$accessPath; "
+                    "method='Get-Disk + Test-Path strict offline verification' "
+                    "}; "
+                    "Write-Output ($proof | ConvertTo-Json -Compress)"
+                ),
+            ], timeout=30)
+        except Exception as exc:
+            self.audit.write(
+                "disk.offline.verify.error",
+                slot_id=slot.slot_id,
+                drive_letter=drive,
+                disk_number=disk_number,
+                access_path=access_path,
+                error=str(exc),
+            )
+            raise
+        try:
+            proof = json.loads(str(output).splitlines()[-1])
+        except Exception:
+            proof = {"raw": output}
+        self.audit.write(
+            "disk.offline.verify",
+            slot_id=slot.slot_id,
+            drive_letter=drive,
+            disk_number=disk_number,
+            access_path=access_path,
+            is_offline=bool(proof.get("isOffline", False)),
+            path_reachable=bool(proof.get("pathReachable", True)),
+            proof=proof,
+            output=output,
+        )
 
     def online(self, slot: SlotConfig, approved_until: str = "") -> None:
         self.assert_not_protected_os_volume(slot)
@@ -646,7 +739,32 @@ class DiskOperator:
             ], timeout=30)
         except Exception as exc:
             self.audit.write("disk.online.unauthorized.reblock.error", slot_id=slot.slot_id, drive_letter=drive, reason=reason, error=str(exc))
-            raise
+            fallback_output = self.storage_run([
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                (
+                    f"{self.partition_lookup_script(slot, drive)} "
+                    "$accessPaths = @(); "
+                    "if ($partition.AccessPaths) { $accessPaths = @($partition.AccessPaths) } "
+                    "if ($partition.DriveLetter) { $accessPaths += ($partition.DriveLetter + ':\\') } "
+                    "$accessPaths = $accessPaths | Select-Object -Unique; "
+                    "foreach ($path in $accessPaths) { "
+                    "  Remove-PartitionAccessPath -DiskNumber $partition.DiskNumber -PartitionNumber $partition.PartitionNumber -AccessPath $path -ErrorAction Stop "
+                    "} "
+                    "$after = Get-Partition -DiskNumber $partition.DiskNumber -PartitionNumber $partition.PartitionNumber -ErrorAction Stop; "
+                    "$remaining = @(); if ($after.AccessPaths) { $remaining = @($after.AccessPaths) } "
+                    "$proof = [ordered]@{ drive=$drive; accessPath=($drive + ':\\'); diskNumber=$partition.DiskNumber; diskUniqueId=$disk.UniqueId; isOffline=[bool]$disk.IsOffline; offlineEquivalent=$true; setDiskOfflineSupported=$false; pathReachable=(Test-Path ($drive + ':\\')); removedAccessPaths=$accessPaths; currentDriveLetters=@($after.DriveLetter) | Where-Object { $_ }; remainingAccessPaths=$remaining; method='Unauthorized removable-media drive letter/access path removed' }; "
+                    "Write-Output ('LOCKFIX_STORAGE_STATE=' + ($proof | ConvertTo-Json -Compress)); "
+                    "Write-Output 'Unauthorized removable-media online state was reblocked by removing access paths'"
+                ),
+            ], timeout=30)
+            self.persist_storage_state(slot, fallback_output)
+            self.audit.write("disk.online.unauthorized.reblock.removable_fallback.start", slot_id=slot.slot_id, drive_letter=drive, reason=reason)
+            self.audit.write("disk.online.unauthorized.reblock.removable_fallback", slot_id=slot.slot_id, drive_letter=drive, reason=reason, output=fallback_output)
+            output = fallback_output
         self.audit.write("disk.online.unauthorized.reblock", slot_id=slot.slot_id, drive_letter=drive, reason=reason, output=output)
         return True
 

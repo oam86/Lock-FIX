@@ -30,10 +30,21 @@ from xml.sax.saxutils import escape
 
 from lockfix.config import get_veeam_config, load_app_config, load_config
 from lockfix.controller import LockFixController
+from lockfix.audit_log import audit_logs_to_csv, read_audit_logs
 from lockfix.hashcheck import verify_manifest
 from lockfix.identity import fingerprint_formula, fingerprint_parts, slot_uid, verify_uid
 from lockfix.integrated import integrated_solution_summary
+from lockfix.rbac import (
+    AuthorizationError,
+    Permission,
+    Role,
+    load_role_permissions,
+    normalize_role,
+    permissions_for_role,
+    require_permission,
+)
 from lockfix.source_inventory import integrated_source_inventory
+from lockfix.users import UserDirectory
 from lockfix.veeam_diagnostics import run_veeam_diagnostics
 
 
@@ -58,6 +69,9 @@ class WebContext:
         self.emergency_jobs_lock = threading.Lock()
         self.login_security_path = ROOT / "runtime" / "login_security.json"
         self.login_security_lock = threading.Lock()
+        self.rbac_policy_path = ROOT / "config" / "rbac_policy.json"
+        self.user_directory_path = ROOT / "runtime" / "users.json"
+        self.user_directory_lock = threading.Lock()
 
     @property
     def app_config(self):
@@ -70,6 +84,10 @@ class WebContext:
     @property
     def controller(self) -> LockFixController:
         return LockFixController(self.config)
+
+    @property
+    def user_directory(self) -> UserDirectory:
+        return UserDirectory(self.user_directory_path)
 
     def login_security_now(self) -> str:
         return datetime.now().isoformat(timespec="seconds")
@@ -256,11 +274,6 @@ class WebContext:
             running = self.emergency_jobs.get(slot_id)
             if running and running.get("status") == "running":
                 return dict(running)
-            approved_until = self.controller.grant_online_approval(
-                slot_id,
-                ttl_seconds=900,
-                reason="admin_emergency_reconnect_requested",
-            )
             job = {
                 "job_id": uuid.uuid4().hex,
                 "slot_id": slot_id,
@@ -268,7 +281,7 @@ class WebContext:
                 "status": "running",
                 "started_at": datetime.now().isoformat(timespec="seconds"),
                 "background_started_at": "",
-                "approved_until": approved_until,
+                "approved_until": "",
                 "message": "Emergency reconnect job started in background.",
             }
             self.emergency_jobs[slot_id] = job
@@ -454,16 +467,24 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             elif parsed.path.startswith("/static/"):
                 self.serve_file(STATIC_DIR / parsed.path[len("/static/") :])
             elif parsed.path == "/api/session":
-                self.send_json({"authenticated": self.is_authenticated(), "license": self.license_status()})
+                self.send_json(
+                    {
+                        "authenticated": self.is_authenticated(),
+                        "user": self.current_session_user() if self.is_authenticated() else "",
+                        "role": self.current_role().value if self.is_authenticated() else "",
+                        "permissions": self.current_permissions() if self.is_authenticated() else [],
+                        "license": self.license_status(),
+                    }
+                )
             elif parsed.path == "/api/security-temp-password/approve":
                 self.approve_security_temp_password(parsed.query)
             elif parsed.path == "/open-latest-package-folder":
                 self.open_latest_package_folder()
             elif parsed.path == "/api/console/status":
-                self.require_auth()
+                self.require_auth(Permission.DASHBOARD_VIEW)
                 self.send_json(self.console_status())
             elif parsed.path == "/api/service/status":
-                self.require_auth()
+                self.require_auth(Permission.SYSTEM_SETTING_MANAGE)
                 self.send_json(self.lockfix_service_status())
             elif parsed.path == "/api/qr-login/status":
                 token = parse_qs(parsed.query).get("token", [""])[0]
@@ -473,54 +494,60 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     headers["Set-Cookie"] = f"lockfix_session={response['session']}; HttpOnly; SameSite=Lax; Path=/"
                 self.send_json(response, headers=headers)
             elif parsed.path == "/api/summary":
-                self.require_auth()
+                self.require_auth(Permission.DASHBOARD_VIEW)
                 self.send_json(self.summary())
             elif parsed.path == "/api/audit":
-                self.require_auth()
+                self.require_auth(Permission.AUDIT_LOG_VIEW)
                 self.send_json({"items": self.audit_items()})
+            elif parsed.path == "/api/audit-logs":
+                self.require_audit_log_view()
+                self.send_json({"items": self.audit_logs()})
+            elif parsed.path == "/api/audit-logs/export":
+                self.require_audit_log_view()
+                self.send_audit_logs_export()
             elif parsed.path == "/api/integrated":
-                self.require_auth()
+                self.require_auth(Permission.DASHBOARD_VIEW)
                 self.send_json(integrated_solution_summary())
             elif parsed.path == "/api/monitoring":
-                self.require_auth()
+                self.require_auth(Permission.DASHBOARD_VIEW)
                 params = parse_qs(parsed.query)
                 self.send_json(self.monitoring_summary(params.get("start", [""])[0], params.get("end", [""])[0]))
             elif parsed.path == "/api/monitoring.csv":
-                self.require_auth()
+                self.require_auth(Permission.REPORT_EXPORT)
                 params = parse_qs(parsed.query)
                 self.send_monitoring_csv(params.get("start", [""])[0], params.get("end", [""])[0])
             elif parsed.path == "/api/report":
-                self.require_auth()
+                self.require_auth(Permission.REPORT_EXPORT)
                 self.send_json(self.report_summary())
             elif parsed.path == "/api/report/extras":
-                self.require_auth()
+                self.require_auth(Permission.REPORT_EXPORT)
                 self.send_json(self.report_extras_record())
             elif parsed.path == "/api/report.csv":
-                self.require_auth()
+                self.require_auth(Permission.REPORT_EXPORT)
                 self.send_report_csv()
             elif parsed.path == "/api/report.xlsx":
-                self.require_auth()
+                self.require_auth(Permission.REPORT_EXPORT)
                 self.send_report_xlsx()
             elif parsed.path == "/api/report.docx":
-                self.require_auth()
+                self.require_auth(Permission.REPORT_EXPORT)
                 self.send_report_docx()
             elif parsed.path == "/api/dashboard":
-                self.require_auth()
+                self.require_auth(Permission.DASHBOARD_VIEW)
                 self.send_json(self.dashboard_summary())
             elif parsed.path == "/api/notification":
-                self.require_auth()
+                self.require_auth(Permission.DASHBOARD_VIEW)
                 self.send_json(self.notification_summary())
             elif parsed.path == "/api/detect":
-                self.require_auth()
+                self.require_auth(Permission.AIRGAP_POLICY_VIEW)
                 self.send_json(self.detect_summary())
             elif parsed.path == "/api/network-status":
-                self.require_auth()
+                self.require_auth(Permission.DASHBOARD_VIEW)
                 self.send_json(self.network_status_summary())
             elif parsed.path == "/api/veeam-backup":
-                self.require_auth()
+                self.require_auth(Permission.VEEAM_VIEW)
                 self.send_json(self.veeam_backup_summary())
             elif parsed.path == "/api/logs":
-                self.require_auth()
+                self.require_auth(Permission.AUDIT_LOG_VIEW)
                 params = parse_qs(parsed.query)
                 self.send_json(
                     self.logs_summary(
@@ -534,7 +561,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     )
                 )
             elif parsed.path == "/api/logs.csv":
-                self.require_auth()
+                self.require_auth(Permission.REPORT_EXPORT)
                 params = parse_qs(parsed.query)
                 self.send_logs_csv(
                     params.get("start", [""])[0],
@@ -545,23 +572,45 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     params.get("q", [""])[0],
                 )
             elif parsed.path == "/api/license":
-                self.require_auth()
+                self.require_auth(Permission.SYSTEM_SETTING_MANAGE)
                 self.send_json(self.license_status())
             elif parsed.path == "/api/sources":
-                self.require_auth()
+                self.require_auth(Permission.AIRGAP_POLICY_VIEW)
                 inventory = integrated_source_inventory()
                 inventory["air_gap"] = self.air_gap_summary()
                 self.send_json(inventory)
             elif parsed.path == "/api/emergency-reconnect/status":
-                self.require_auth()
+                self.require_auth(Permission.DISK_ONLINE_APPROVE)
                 params = parse_qs(parsed.query)
                 slot_id = self.query_slot(parsed.query)
                 job_id = str(params.get("job_id", [""])[0])
                 self.send_json(self.context.emergency_reconnect_status(slot_id, job_id))
+            elif parsed.path == "/api/admin/users":
+                self.require_super_admin()
+                self.send_json({"items": self.admin_users()})
+            elif parsed.path == "/api/admin/departments":
+                self.require_super_admin()
+                self.send_json({"items": self.admin_departments()})
+            elif parsed.path == "/api/approvals":
+                self.require_auth(Permission.APPROVAL_REQUEST_VIEW)
+                self.send_json(self.approval_summary())
             else:
+                review_match = re.fullmatch(r"/api/approval-requests/([^/]+)/reviews", parsed.path)
+                if review_match:
+                    self.require_auth(Permission.APPROVAL_REQUEST_VIEW)
+                    self.send_json({"items": self.approval_department_reviews(review_match.group(1))})
+                    return
                 self.send_error(404, "not found")
+        except AuthorizationError as exc:
+            self.audit_access_denied(exc)
+            self.send_json({"error": str(exc), "permission": exc.permission.value, "role": exc.role.value}, status=403)
         except PermissionError as exc:
-            self.send_json({"error": str(exc)}, status=401)
+            self.audit_unauthorized_access(str(exc))
+            self.send_json({"error": str(exc)}, status=self.permission_error_status(exc))
+        except KeyError as exc:
+            self.send_json({"error": str(exc)}, status=404)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, status=400)
         except Exception as exc:
             self.send_json({"error": str(exc)}, status=500)
 
@@ -585,7 +634,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                         message="LOCK-FIX login succeeded with primary password.",
                     )
                     token = secrets.token_urlsafe(32)
-                    self.context.sessions[token] = time.time()
+                    self.context.sessions[token] = self.session_record(email, Role.SUPER_ADMIN)
                     self.send_json(
                         {"authenticated": True},
                         headers={"Set-Cookie": f"lockfix_session={token}; HttpOnly; SameSite=Lax; Path=/"},
@@ -603,7 +652,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                         message="LOCK-FIX login succeeded with an administrator-approved temporary password.",
                     )
                     token = secrets.token_urlsafe(32)
-                    self.context.sessions[token] = time.time()
+                    self.context.sessions[token] = self.session_record(email, Role.SUPER_ADMIN)
                     self.send_json(
                         {"authenticated": True},
                         headers={"Set-Cookie": f"lockfix_session={token}; HttpOnly; SameSite=Lax; Path=/"},
@@ -763,36 +812,38 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     headers={"Set-Cookie": "lockfix_session=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/"},
                 )
             elif parsed.path == "/api/license/register":
-                self.require_auth()
+                self.require_auth(Permission.SYSTEM_SETTING_MANAGE)
                 payload = self.read_json_body()
                 self.send_json(self.register_license(payload))
             elif parsed.path == "/api/report/customer":
-                self.require_auth()
+                self.require_auth(Permission.REPORT_EXPORT)
                 payload = self.read_json_body()
                 self.send_json(self.save_report_customer(payload))
             elif parsed.path == "/api/report/extras":
-                self.require_auth()
+                self.require_auth(Permission.REPORT_EXPORT)
                 payload = self.read_json_body()
                 self.send_json(self.save_report_extras(payload))
             elif parsed.path == "/api/service/control":
-                self.require_auth()
+                self.require_auth(Permission.SYSTEM_SETTING_MANAGE)
                 payload = self.read_json_body()
                 self.send_json(self.lockfix_service_control(str(payload.get("action") or "")))
             elif parsed.path == "/api/isolate":
-                self.require_auth()
+                self.require_auth(Permission.DISK_OFFLINE_EXECUTE)
                 slot_id = self.query_slot(parsed.query)
                 state = self.context.controller.isolate(slot_id)
                 self.send_json({"slot_id": slot_id, "state": state.value, "summary": self.summary()})
             elif parsed.path == "/api/reconnect":
-                self.require_auth()
+                self.require_auth(Permission.DISK_ONLINE_APPROVE)
                 slot_id = self.query_slot(parsed.query)
                 state = self.context.controller.reconnect(slot_id)
                 self.send_json({"slot_id": slot_id, "state": state.value, "summary": self.summary()})
             elif parsed.path == "/api/emergency-reconnect":
-                self.require_auth()
+                self.require_auth(Permission.DISK_ONLINE_APPROVE)
                 payload = self.read_json_body()
                 slot_id = self.query_slot(parsed.query)
                 slot = self.context.config.slot(slot_id)
+                self.context.controller.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)
+                self.context.controller.approvals.require_approved("DISK_ONLINE", slot_id)
                 approval_password = str(payload.get("approval_password") or "")
                 if not secrets.compare_digest(approval_password, "1"):
                     self.context.controller.audit.write(
@@ -826,10 +877,79 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     },
                     status=202,
                 )
+            elif parsed.path == "/api/admin/users":
+                self.require_super_admin()
+                payload = self.read_json_body()
+                self.send_json(self.admin_create_user(payload), status=201)
+            elif parsed.path == "/api/approvals":
+                self.require_auth(Permission.APPROVAL_REQUEST_CREATE)
+                payload = self.read_json_body()
+                self.send_json(self.create_approval_request(payload), status=201)
+            elif parsed.path.startswith("/api/approvals/") and parsed.path.endswith("/decisions"):
+                self.require_auth(Permission.APPROVAL_REQUEST_APPROVE)
+                payload = self.read_json_body()
+                approval_request_id = parsed.path.split("/")[3]
+                self.send_json(self.create_approval_decision(approval_request_id, payload))
+            elif parsed.path.startswith("/api/approvals/") and parsed.path.endswith("/reviews"):
+                self.require_auth(Permission.DEPARTMENT_REVIEW)
+                payload = self.read_json_body()
+                approval_request_id = parsed.path.split("/")[3]
+                self.send_json(self.create_approval_review(approval_request_id, payload))
             else:
+                review_match = re.fullmatch(
+                    r"/api/approval-requests/([^/]+)/reviews/([^/]+)/(comment|mark-reviewed|needs-changes|block)",
+                    parsed.path,
+                )
+                if review_match:
+                    self.require_auth(Permission.DEPARTMENT_REVIEW)
+                    payload = self.read_json_body()
+                    self.send_json(
+                        self.update_department_review(
+                            review_match.group(1),
+                            review_match.group(2),
+                            review_match.group(3),
+                            payload,
+                        )
+                    )
+                    return
                 self.send_error(404, "not found")
+        except AuthorizationError as exc:
+            self.audit_access_denied(exc)
+            self.send_json({"error": str(exc), "permission": exc.permission.value, "role": exc.role.value}, status=403)
         except PermissionError as exc:
-            self.send_json({"error": str(exc)}, status=401)
+            self.audit_unauthorized_access(str(exc))
+            self.send_json({"error": str(exc)}, status=self.permission_error_status(exc))
+        except KeyError as exc:
+            self.send_json({"error": str(exc)}, status=404)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            self.send_json({"error": str(exc), "summary": self.summary()}, status=500)
+
+    def do_PATCH(self) -> None:
+        try:
+            parsed = urlparse(self.path)
+            match = re.fullmatch(r"/api/admin/users/([^/]+)(/disable)?", parsed.path)
+            if not match:
+                self.send_error(404, "not found")
+                return
+            self.require_super_admin()
+            user_id = match.group(1)
+            if match.group(2):
+                self.send_json(self.admin_disable_user(user_id))
+            else:
+                payload = self.read_json_body()
+                self.send_json(self.admin_update_user(user_id, payload))
+        except AuthorizationError as exc:
+            self.audit_access_denied(exc)
+            self.send_json({"error": str(exc), "permission": exc.permission.value, "role": exc.role.value}, status=403)
+        except PermissionError as exc:
+            self.audit_unauthorized_access(str(exc))
+            self.send_json({"error": str(exc)}, status=self.permission_error_status(exc))
+        except KeyError as exc:
+            self.send_json({"error": str(exc)}, status=404)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, status=400)
         except Exception as exc:
             self.send_json({"error": str(exc), "summary": self.summary()}, status=500)
 
@@ -1042,9 +1162,10 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         token = self.session_token()
         if not token:
             return False
-        created_at = self.context.sessions.get(token)
-        if not created_at:
+        record = self.context.sessions.get(token)
+        if not record:
             return False
+        created_at = self.session_created_at(record)
         if time.time() - created_at > self.session_ttl_seconds:
             self.context.sessions.pop(token, None)
             return False
@@ -1187,7 +1308,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             return {"approved": False, "expired": False}
 
         session = secrets.token_urlsafe(32)
-        self.context.sessions[session] = time.time()
+        self.context.sessions[session] = self.session_record("qr-admin", Role.SUPER_ADMIN)
         self.context.qr_tokens.pop(token, None)
         return {
             "approved": True,
@@ -1195,9 +1316,208 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "session": session,
         }
 
-    def require_auth(self) -> None:
+    def session_record(self, user: str, role: Role) -> dict:
+        return {
+            "created_at": time.time(),
+            "user": str(user or "unknown"),
+            "role": role.value,
+        }
+
+    def session_created_at(self, record: object) -> float:
+        if isinstance(record, dict):
+            return float(record.get("created_at") or 0)
+        return float(record or 0)
+
+    def current_role(self) -> Role:
+        token = self.session_token()
+        if not token:
+            return Role.AUDITOR
+        record = self.context.sessions.get(token)
+        if isinstance(record, dict):
+            return normalize_role(record.get("role"))
+        if record:
+            return Role.SUPER_ADMIN
+        return Role.AUDITOR
+
+    def permission_error_status(self, exc: PermissionError) -> int:
+        return 401 if "authentication required" in str(exc).lower() else 403
+
+    def current_permissions(self) -> list[str]:
+        policy = load_role_permissions(self.context.rbac_policy_path)
+        return sorted(permission.value for permission in permissions_for_role(self.current_role(), policy))
+
+    def require_auth(self, permission: Permission | None = None) -> None:
         if not self.is_authenticated():
             raise PermissionError("authentication required")
+        if permission:
+            require_permission(self.current_role(), permission, load_role_permissions(self.context.rbac_policy_path))
+
+    def require_super_admin(self) -> None:
+        self.require_auth(Permission.USER_MANAGE)
+        if self.current_role() != Role.SUPER_ADMIN:
+            raise AuthorizationError(Permission.USER_MANAGE, self.current_role())
+
+    def require_audit_log_view(self) -> None:
+        self.require_auth(Permission.AUDIT_LOG_VIEW)
+        if self.current_role() not in {Role.AUDITOR, Role.SECURITY_ADMIN, Role.SUPER_ADMIN}:
+            raise AuthorizationError(Permission.AUDIT_LOG_VIEW, self.current_role())
+
+    def audit_unauthorized_access(self, reason: str) -> None:
+        self.context.controller.audit.write(
+            "security.unauthorized_access",
+            actorUserId=self.current_session_user(),
+            resourceType="API",
+            resourceId=self.path,
+            ipAddress=self.client_ip(),
+            userAgent=str(self.headers.get("User-Agent") or ""),
+            result="FAILED",
+            reason=reason,
+        )
+
+    def audit_access_denied(self, exc: AuthorizationError) -> None:
+        self.context.controller.audit.write(
+            "security.permission_denied",
+            actorUserId=self.current_session_user(),
+            resourceType="API",
+            resourceId=self.path,
+            ipAddress=self.client_ip(),
+            userAgent=str(self.headers.get("User-Agent") or ""),
+            result="FAILED",
+            role=exc.role.value,
+            permission=exc.permission.value,
+        )
+
+    def admin_departments(self) -> list[dict]:
+        with self.context.user_directory_lock:
+            return self.context.user_directory.departments()
+
+    def admin_users(self) -> list[dict]:
+        with self.context.user_directory_lock:
+            return self.context.user_directory.users()
+
+    def audit_user_change(self, event: str, user: dict, before: dict | None = None) -> None:
+        self.context.controller.audit.write(
+            event,
+            actor=self.current_session_user(),
+            actor_role=self.current_role().value,
+            user_id=str(user.get("id") or ""),
+            user_email=str(user.get("email") or ""),
+            department_id=str(user.get("departmentId") or ""),
+            role=str(user.get("role") or ""),
+            disabled=bool(user.get("disabled")),
+            before=before or {},
+            beforeValue=before or {},
+            afterValue=user,
+            result="SUCCESS",
+        )
+        before_role = str((before or {}).get("role") or "")
+        after_role = str(user.get("role") or "")
+        if before is not None and before_role and before_role != after_role:
+            self.context.controller.audit.write(
+                "admin.role.changed",
+                actorUserId=self.current_session_user(),
+                resourceType="ROLE",
+                resourceId=str(user.get("id") or ""),
+                beforeValue={"role": before_role},
+                afterValue={"role": after_role},
+                result="SUCCESS",
+            )
+
+    def admin_create_user(self, payload: dict) -> dict:
+        with self.context.user_directory_lock:
+            user = self.context.user_directory.create_user(payload)
+        self.audit_user_change("admin.user.created", user)
+        return {"ok": True, "user": user}
+
+    def admin_update_user(self, user_id: str, payload: dict) -> dict:
+        with self.context.user_directory_lock:
+            before = next((dict(user) for user in self.context.user_directory.users() if str(user.get("id") or "") == user_id), {})
+            user = self.context.user_directory.update_user(user_id, payload)
+        user.pop("previousEmail", None)
+        self.audit_user_change("admin.user.updated", user, before=before)
+        return {"ok": True, "user": user}
+
+    def admin_disable_user(self, user_id: str) -> dict:
+        with self.context.user_directory_lock:
+            before = next((dict(user) for user in self.context.user_directory.users() if str(user.get("id") or "") == user_id), {})
+            user = self.context.user_directory.disable_user(user_id)
+        self.audit_user_change("admin.user.disabled", user, before=before)
+        return {"ok": True, "user": user}
+
+    def approval_summary(self) -> dict:
+        store = self.context.controller.approvals
+        expired = store.expire_pending_requests()
+        data = store.load()
+        return {
+            "policies": data["policies"],
+            "requests": data["requests"],
+            "decisions": data["decisions"],
+            "departmentReviews": data.get("departmentReviews", []),
+            "reviewComments": data.get("reviewComments", []),
+            "notifications": data.get("notifications", []),
+            "expired": expired,
+        }
+
+    def create_approval_request(self, payload: dict) -> dict:
+        request = self.context.controller.approvals.create_request(
+            str(payload.get("requestType") or ""),
+            requester_user_id=str(payload.get("requesterUserId") or self.current_session_user()),
+            target_id=str(payload.get("targetId") or ""),
+            metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+        )
+        return {"ok": True, "request": request}
+
+    def create_approval_decision(self, approval_request_id: str, payload: dict) -> dict:
+        result = self.context.controller.approvals.decide(
+            approval_request_id,
+            approver_user_id=str(payload.get("approverUserId") or self.current_session_user()),
+            approver_role=self.current_role(),
+            decision=str(payload.get("decision") or ""),
+            comment=str(payload.get("comment") or ""),
+        )
+        return {"ok": True, **result}
+
+    def create_approval_review(self, approval_request_id: str, payload: dict) -> dict:
+        result = self.context.controller.approvals.review_request(
+            approval_request_id,
+            reviewer_user_id=str(payload.get("reviewerUserId") or self.current_session_user()),
+            reviewer_role=self.current_role(),
+            review_type=str(payload.get("reviewType") or ""),
+            comment=str(payload.get("comment") or ""),
+        )
+        return {"ok": True, **result}
+
+    def approval_department_reviews(self, approval_request_id: str) -> list[dict]:
+        return self.context.controller.approvals.department_reviews_for(approval_request_id)
+
+    def update_department_review(self, approval_request_id: str, review_id: str, action: str, payload: dict) -> dict:
+        store = self.context.controller.approvals
+        reviewer = str(payload.get("reviewerUserId") or self.current_session_user())
+        comment = str(payload.get("comment") or "")
+        if action == "comment":
+            result = store.comment_department_review(approval_request_id, review_id, reviewer, self.current_role(), comment)
+        elif action == "mark-reviewed":
+            result = store.mark_department_reviewed(approval_request_id, review_id, reviewer, self.current_role(), comment)
+        elif action == "needs-changes":
+            result = store.mark_department_needs_changes(approval_request_id, review_id, reviewer, self.current_role(), comment)
+        elif action == "block":
+            result = store.block_department_review(approval_request_id, review_id, reviewer, self.current_role(), comment)
+        else:
+            raise ValueError("unsupported department review action")
+        return {"ok": True, **result}
+
+    def current_session_user(self) -> str:
+        token = self.session_token()
+        record = self.context.sessions.get(token) if token else None
+        if isinstance(record, dict):
+            return str(record.get("user") or "unknown")
+        return "legacy-admin" if record else "unknown"
+
+    def audit_logs(self) -> list[dict]:
+        return read_audit_logs(self.context.config.audit_log_path)
+
+    def send_audit_logs_export(self) -> None:
+        self.send_download(audit_logs_to_csv(self.audit_logs()), "text/csv; charset=utf-8", "lockfix_audit_logs.csv")
 
     def summary(self) -> dict:
         config = self.context.config
@@ -1409,6 +1729,278 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             return None
         return packages[0] if packages else None
 
+    def policy_guard_state_path(self) -> Path:
+        return self.context.config.audit_log_path.parent / "policy-guard-state.json"
+
+    def policy_guard_state(self) -> dict:
+        path = self.policy_guard_state_path()
+        try:
+            data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        except (OSError, json.JSONDecodeError):
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        data.setdefault("events", {})
+        data.setdefault("retries", {})
+        return data
+
+    def save_policy_guard_state(self, state: dict) -> None:
+        path = self.policy_guard_state_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def recent_raw_audit_records(self, limit: int = 600) -> list[dict]:
+        records = []
+        for line in LockFixWebHandler.audit_log_lines(self)[-max(1, limit):]:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(record, dict):
+                records.append(record)
+        return records
+
+    def write_policy_guard_event_once(
+        self,
+        state: dict,
+        key: str,
+        event: str,
+        response: str,
+        *,
+        severity: str = "WARNING",
+        cooldown_seconds: int = 300,
+        **payload,
+    ) -> bool:
+        now = time.time()
+        events = state.setdefault("events", {})
+        previous = events.get(key) if isinstance(events.get(key), dict) else {}
+        previous_at = float(previous.get("written_at") or 0)
+        if previous_at and now - previous_at < cooldown_seconds:
+            return False
+        events[key] = {"written_at": now, "event": event, "response": response, "severity": severity}
+        self.context.controller.audit.write(
+            f"policy.guard.{key}",
+            result="FAILED" if severity in {"CRITICAL", "ERROR"} else "INFO",
+            resourceType="POLICY",
+            resourceId=key,
+            severity=severity,
+            policy_event=event,
+            automatic_response=response,
+            message=f"{event} -> {response}",
+            **payload,
+        )
+        return True
+
+    def approval_count_for_request(self, request: dict, decisions: list[dict]) -> int:
+        request_id = str(request.get("id") or "")
+        return sum(
+            1
+            for decision in decisions
+            if str(decision.get("approvalRequestId") or "") == request_id
+            and str(decision.get("decision") or "").upper() == "APPROVED"
+        )
+
+    def policy_guard_dual_approval_events(self, state: dict) -> list[dict]:
+        try:
+            approval_data = self.approval_summary()
+        except Exception as exc:
+            return [{
+                "event": "관리자 이중 승인 상태 확인 실패",
+                "response": "Mount/Online 버튼 상태 확인 보류",
+                "severity": "WARNING",
+                "detail": str(exc),
+                "time": datetime.now().isoformat(timespec="seconds"),
+            }]
+        decisions = approval_data.get("decisions") if isinstance(approval_data, dict) else []
+        critical = {"DISK_ONLINE", "POLICY_CHANGE", "EMERGENCY_UNLOCK", "HARDWARE_POWER_ON", "HARDWARE_POWER_OFF"}
+        events = []
+        for request_item in approval_data.get("requests", []):
+            request_type = str(request_item.get("requestType") or "")
+            status = str(request_item.get("status") or "").upper()
+            required = int(request_item.get("requiredApprovals") or 1)
+            approved = self.approval_count_for_request(request_item, decisions if isinstance(decisions, list) else [])
+            if request_type in critical and status not in {"APPROVED", "EXECUTED", "REJECTED", "EXPIRED"} and approved < required:
+                event = {
+                    "event": "관리자 이중 승인 미완료",
+                    "response": "Mount/Online 버튼 비활성화",
+                    "severity": "WARNING",
+                    "detail": f"{request_type} approval {approved}/{required} is incomplete.",
+                    "time": datetime.now().isoformat(timespec="seconds"),
+                }
+                self.write_policy_guard_event_once(
+                    state,
+                    f"dual_approval_incomplete_{request_item.get('id')}",
+                    event["event"],
+                    event["response"],
+                    severity=event["severity"],
+                    approvalRequestId=str(request_item.get("id") or ""),
+                    request_type=request_type,
+                    approved=approved,
+                    required=required,
+                )
+                events.append(event)
+        return events
+
+    def evaluate_airgap_policy_events(self, summary: dict, veeam_runtime: dict, bays: list[dict]) -> list[dict]:
+        state = self.policy_guard_state()
+        records = self.recent_raw_audit_records()
+        now_text = datetime.now().isoformat(timespec="seconds")
+        slot_id = str(next(iter(self.context.config.slots), "BAY-01"))
+        backup_complete = bool(
+            int(veeam_runtime.get("current_step") or 1) >= 2
+            or int(veeam_runtime.get("progress_percent") or 0) >= 100
+            or "success" in str(veeam_runtime.get("message") or "").lower()
+        )
+
+        def action(record: dict) -> str:
+            return str(record.get("event") or record.get("action") or "")
+
+        def text(record: dict) -> str:
+            return json.dumps(record, ensure_ascii=False, sort_keys=True)
+
+        events: list[dict] = []
+        offline_failures = [
+            record for record in records
+            if (
+                ("disk.offline" in action(record).lower() or action(record) == "veeam.auto_isolate.failed")
+                and (
+                    any(token in action(record).lower() for token in ("error", "fail"))
+                    or str(record.get("result") or "").upper() in {"FAILED", "ERROR"}
+                    or str(record.get("ok") or "").lower() in {"false", "0", "no"}
+                )
+            )
+        ]
+        if backup_complete and offline_failures:
+            latest = offline_failures[-1]
+            signature = str(latest.get("id") or latest.get("createdAt") or latest.get("ts") or text(latest))[:160]
+            retries = state.setdefault("retries", {})
+            retry_key = f"disk_offline_after_backup:{signature}"
+            if not retries.get(retry_key):
+                retries[retry_key] = {"attempted_at": now_text, "slot_id": slot_id}
+                self.context.controller.audit.write(
+                    "policy.guard.disk_offline_retry",
+                    slot_id=slot_id,
+                    result="INFO",
+                    resourceType="DISK",
+                    resourceId=slot_id,
+                    message="Backup completed but Disk Offline failed. LOCK-FIX starts one automatic retry.",
+                )
+                try:
+                    retry_state = self.context.controller.isolate(slot_id)
+                    retries[retry_key]["result"] = str(getattr(retry_state, "value", retry_state))
+                    self.context.controller.audit.write(
+                        "policy.guard.disk_offline_retry.success",
+                        slot_id=slot_id,
+                        result="SUCCESS",
+                        resourceType="DISK",
+                        resourceId=slot_id,
+                        message="Automatic Disk Offline retry completed.",
+                    )
+                except Exception as exc:
+                    retries[retry_key]["result"] = "FAILED"
+                    retries[retry_key]["error"] = str(exc)
+                    self.context.controller.audit.write(
+                        "policy.guard.disk_offline_admin_alert",
+                        slot_id=slot_id,
+                        result="FAILED",
+                        resourceType="DISK",
+                        resourceId=slot_id,
+                        message="Automatic Disk Offline retry failed. Administrator notification is required.",
+                        error=str(exc),
+                    )
+            events.append({
+                "event": "백업 완료 후 Disk Offline 실패",
+                "response": "재시도 1회 → 실패 시 관리자 알림",
+                "severity": "CRITICAL",
+                "detail": str(latest.get("error") or latest.get("message") or action(latest)),
+                "time": now_text,
+            })
+
+        online_requests = [record for record in records if action(record) == "disk.online.request"]
+        if online_requests:
+            try:
+                approval_data = self.approval_summary()
+                approved_targets = {
+                    str(request.get("targetId") or "")
+                    for request in approval_data.get("requests", [])
+                    if str(request.get("requestType") or "") == "DISK_ONLINE"
+                    and str(request.get("status") or "").upper() in {"APPROVED", "EXECUTED"}
+                }
+            except Exception:
+                approved_targets = set()
+            latest_online = online_requests[-1]
+            online_slot = str(latest_online.get("slot_id") or latest_online.get("resourceId") or slot_id)
+            if online_slot not in approved_targets:
+                event = {
+                    "event": "승인 없는 Online 시도",
+                    "response": "즉시 차단 + 감사로그 기록",
+                    "severity": "CRITICAL",
+                    "detail": f"DISK_ONLINE approval was not found for {online_slot}.",
+                    "time": now_text,
+                }
+                self.write_policy_guard_event_once(
+                    state,
+                    f"online_without_approval_{online_slot}",
+                    event["event"],
+                    event["response"],
+                    severity=event["severity"],
+                    slot_id=online_slot,
+                )
+                events.append(event)
+
+        ransomware_signals = [
+            record for record in records
+            if action(record) == "disk.io_quiet.error"
+            or any(token in text(record).lower() for token in ("ransomware", "write i/o is still active", "backup files are still changing"))
+        ]
+        if ransomware_signals:
+            event = {
+                "event": "랜섬웨어 의심 쓰기 패턴",
+                "response": "재연결 금지 + Disk Offline 유지",
+                "severity": "CRITICAL",
+                "detail": str(ransomware_signals[-1].get("error") or ransomware_signals[-1].get("message") or action(ransomware_signals[-1])),
+                "time": now_text,
+            }
+            self.write_policy_guard_event_once(state, "ransomware_write_pattern", event["event"], event["response"], severity=event["severity"], slot_id=slot_id)
+            events.append(event)
+
+        for bay in bays:
+            lock_state = str((bay.get("lock") or {}).get("state") or "").upper()
+            power_state = str((bay.get("power") or {}).get("state") or "").upper()
+            if power_state in {"OFF", "OFFLINE"} and lock_state not in {"LOCKED", "CLOSED"}:
+                event = {
+                    "event": "잠금핀 상태 불일치",
+                    "response": "복구 접속 차단",
+                    "severity": "CRITICAL",
+                    "detail": f"{bay.get('slot') or slot_id}: power={power_state}, lock={lock_state or '-'}",
+                    "time": now_text,
+                }
+                self.write_policy_guard_event_once(state, f"lock_pin_mismatch_{bay.get('slot') or slot_id}", event["event"], event["response"], severity=event["severity"], slot_id=str(bay.get("slot") or slot_id))
+                events.append(event)
+
+        hash_failures = [
+            record for record in records
+            if (
+                action(record) == "verify.hash"
+                and str(record.get("ok")).lower() in {"false", "0", "no"}
+            )
+            or "hash_mismatch" in text(record).lower()
+        ]
+        if hash_failures:
+            event = {
+                "event": "해시 검증 실패",
+                "response": "백업 세트 격리 + 복구 사용 금지",
+                "severity": "CRITICAL",
+                "detail": str(hash_failures[-1].get("message") or hash_failures[-1].get("reason") or action(hash_failures[-1])),
+                "time": now_text,
+            }
+            self.write_policy_guard_event_once(state, "hash_verification_failed", event["event"], event["response"], severity=event["severity"], slot_id=slot_id)
+            events.append(event)
+
+        events.extend(self.policy_guard_dual_approval_events(state))
+        self.save_policy_guard_state(state)
+        return events[-12:]
+
     def air_gap_summary(self) -> dict:
         summary = self.summary()
         now = time.time()
@@ -1416,6 +2008,15 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         veeam_runtime = self.veeam_interlock_runtime(now)
         current_step = veeam_runtime["current_step"]
         veeam_connected = bool(veeam_runtime.get("api_synced") or veeam_runtime.get("connected"))
+        if int(veeam_runtime.get("current_step") or 1) <= 1 and int(veeam_runtime.get("progress_percent") or 0) <= 0:
+            for log in veeam_runtime.get("step_logs") or []:
+                if not isinstance(log, dict):
+                    continue
+                log["state"] = "PENDING"
+                log["transition_allowed"] = False
+                log["progress_percent"] = ""
+                if int(log.get("step") or 0) == 1:
+                    log["detail"] = "새로운 Veeam Backup Done 완료 잡이 확인되기 전까지 1번 단계를 비활성화합니다."
         veeam_states = [
             {"step": 1, "title": "Backup completed", "label": "백업 완료", "state": "PENDING", "code": "BACKUP_COMPLETED"},
             {"step": 2, "title": "Flush running", "label": "Flush 실행", "state": "PENDING", "code": "FLUSHING"},
@@ -1424,13 +2025,16 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             {"step": 5, "title": "Offline", "label": "오프라인", "state": "PENDING", "code": "DISK_OFFLINING"},
         ]
         for item in veeam_states:
+            log = veeam_runtime["step_logs"][item["step"] - 1]
             if veeam_connected:
                 if item["step"] < current_step:
                     item["state"] = "DONE"
                 elif item["step"] == current_step:
                     item["state"] = "ACTIVE"
+            if isinstance(log, dict) and log.get("state"):
+                item["state"] = log["state"]
             item["checked_at"] = veeam_runtime["last_checked"]
-            item["log"] = veeam_runtime["step_logs"][item["step"] - 1]
+            item["log"] = log
         bays = []
         for index, slot in enumerate(summary["slots"], start=1):
             locked = (tick + index) % 5 != 0
@@ -1458,18 +2062,38 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     },
                 }
             )
+        policy_events = self.evaluate_airgap_policy_events(summary, veeam_runtime, bays)
+        session_logs = list(veeam_runtime["session_logs"])
+        if policy_events:
+            has_critical = any(str(event.get("severity") or "").upper() == "CRITICAL" for event in policy_events)
+            session_logs.append(
+                {
+                    "name": "LOCK-FIX Policy Guard",
+                    "status": "Blocked" if has_critical else "Monitoring",
+                    "actions": [
+                        "POLICY - {event} -> {response} ({detail})".format(
+                            event=event.get("event") or "-",
+                            response=event.get("response") or "-",
+                            detail=event.get("detail") or "-",
+                        )
+                        for event in policy_events
+                    ],
+                    "duration": "-",
+                    "progress_percent": "",
+                }
+            )
         return {
             "security_score": {
                 "score": 98,
                 "status": "SAFE AIR-GAP",
-                "description": "Power cut-off, solenoid lock, and integrity verification are all operating normally.",
+                "description": "Disk offline, solenoid lock, and integrity verification are all operating normally.",
             },
             "kpis": [
                 {
                     "id": "power",
-                    "title": "Power Cut-off",
-                    "value": "Physical Cut-off Complete",
-                    "detail": "Hard power isolation, not a software-only unmount.",
+                    "title": "Disk Offline",
+                    "value": "Disk Offline Complete",
+                    "detail": "Windows disk offline isolation after unmount.",
                 },
                 {
                     "id": "lock",
@@ -1504,7 +2128,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             },
             "timeline": veeam_states,
             "step_logs": veeam_runtime["step_logs"],
-            "session_logs": veeam_runtime["session_logs"],
+            "session_logs": session_logs,
+            "policy_events": policy_events,
             "bays": bays,
             "integrity_history": [
                 {"time": "2026-04-25 22:40:13", "target": "Backup Cycle #1042", "uid": "MATCH", "hash": "VALID"},
@@ -1922,8 +2547,12 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 payload = {}
 
         install_props = self.veeam_install_properties()
-        server = str(payload.get("server") or os.environ.get("LOCKFIX_VEEAM_HOST") or install_props.get("veeam_host") or "127.0.0.1")
-        port = int(payload.get("port") or os.environ.get("LOCKFIX_VEEAM_PORT") or install_props.get("veeam_port") or 9419)
+        veeam_config = get_veeam_config(self.context.app_config) or {}
+        configured_url = urlparse(str(veeam_config.get("base_url") or ""))
+        configured_server = configured_url.hostname or "127.0.0.1"
+        configured_port = configured_url.port or 9419
+        server = str(payload.get("server") or os.environ.get("LOCKFIX_VEEAM_HOST") or install_props.get("veeam_host") or configured_server)
+        port = int(payload.get("port") or os.environ.get("LOCKFIX_VEEAM_PORT") or install_props.get("veeam_port") or configured_port)
         port_open = self.tcp_port_open(server, port)
         api_payload = self.poll_veeam_api(server, port, payload)
         payload = api_payload or {}
@@ -2011,13 +2640,49 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             }
         payload["auto_isolate"] = auto_isolate
         session_completed = raw_result in {"SUCCESS", "SUCCEEDED", "COMPLETED"} or progress >= 100
+        pre_checks = payload.get("checks") if isinstance(payload.get("checks"), dict) else {}
+        pre_session_check = pre_checks.get("sessions") if isinstance(pre_checks.get("sessions"), dict) else {}
+        backup_restore_point_evidence = bool(
+            payload.get("backup_match_strategy")
+            or payload.get("restore_point_scope")
+            or payload.get("restore_point_id")
+            or payload.get("session_id")
+        )
+        pre_session_match_missing = (
+            not backup_restore_point_evidence
+            and (
+                str(pre_session_check.get("match_strategy") or "").lower() == "no_match"
+                or "no vbr 9419 session matched" in str(pre_session_check.get("message") or "").lower()
+            )
+        )
+        force_waiting_for_new_backup = (
+            ((not session_completed or pre_session_match_missing) and current_step <= 1)
+            or (
+                auto_isolate.get("state") in {"WAITING_FOR_NEW_BACKUP", "ISOLATED"}
+                and bool(auto_isolate.get("processed"))
+                and auto_isolate.get("triggered") is not True
+            )
+        )
+        if force_waiting_for_new_backup:
+            current_step = 1
+            progress = 0
+            for item in step_logs:
+                step_number = int(item.get("step") or 0)
+                item["state"] = "PENDING"
+                item["transition_allowed"] = False
+                item["progress_percent"] = ""
+                item["detail"] = (
+                    "새로운 Veeam Backup Done 완료 잡이 확인되기 전까지 단계 전환을 비활성화합니다."
+                    if step_number == 1
+                    else "새 백업 완료 신호가 들어오기 전까지 이 단계는 비활성 상태로 유지됩니다."
+                )
         processed_backup_waiting = (
             connected
             and session_completed
             and auto_isolate.get("state") == "WAITING_FOR_NEW_BACKUP"
             and bool(auto_isolate.get("processed"))
         )
-        if processed_backup_waiting:
+        if processed_backup_waiting and not force_waiting_for_new_backup:
             current_step = 1
             progress = 100
             for item in step_logs:
@@ -2035,7 +2700,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     item["transition_allowed"] = False
                     item["progress_percent"] = ""
                     item["detail"] = "과거 처리 완료된 백업 정보입니다. 새 백업 완료 접수 전까지 이 단계로 전환하지 않습니다."
-        elif connected and session_completed and auto_isolate.get("triggered") is not True and auto_isolate.get("state") != "ISOLATED":
+        elif connected and session_completed and not force_waiting_for_new_backup and auto_isolate.get("triggered") is not True and auto_isolate.get("state") != "ISOLATED":
             current_step = 1
             for item in step_logs:
                 step_number = int(item.get("step") or 0)
@@ -2056,7 +2721,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             and bool(auto_isolate.get("processed"))
             and auto_isolate.get("triggered") is not True
         )
-        if processed_isolated_waiting:
+        if processed_isolated_waiting and not force_waiting_for_new_backup:
             current_step = 1
             progress = 100
             for item in step_logs:
@@ -2074,7 +2739,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     item["transition_allowed"] = False
                     item["progress_percent"] = ""
                     item["detail"] = "이미 격리 완료된 백업 이력입니다. 새 백업 완료 접수 전까지 이 단계로 전환하지 않습니다."
-        elif auto_isolate.get("state") == "ISOLATED":
+        elif auto_isolate.get("state") == "ISOLATED" and not force_waiting_for_new_backup:
             current_step = 5
             progress = 100
             for item in step_logs:
@@ -2264,6 +2929,51 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             for entry in session_logs:
                 entry["status"] = "Success"
                 entry["progress_percent"] = 100
+        checks = payload.get("checks") if isinstance(payload.get("checks"), dict) else {}
+        session_check = checks.get("sessions") if isinstance(checks.get("sessions"), dict) else {}
+        backup_restore_point_evidence = bool(
+            payload.get("backup_match_strategy")
+            or payload.get("restore_point_scope")
+            or payload.get("restore_point_id")
+            or payload.get("session_id")
+        )
+        session_match_missing = (
+            not backup_restore_point_evidence
+            and (
+                str(session_check.get("match_strategy") or "").lower() == "no_match"
+                or "no vbr 9419 session matched" in str(session_check.get("message") or "").lower()
+                or any(
+                    "no vbr 9419 session matched" in "\n".join(str(action or "") for action in (entry.get("actions") if isinstance(entry, dict) and isinstance(entry.get("actions"), list) else [])).lower()
+                    for entry in session_logs
+                )
+            )
+        )
+        real_backup_complete = (
+            connected
+            and progress >= 100
+            and str(status or "").upper() in {"SUCCESS", "SUCCEEDED", "COMPLETED"}
+            and not session_match_missing
+        )
+        if current_step <= 1 and not real_backup_complete:
+            current_step = 1
+            progress = 0
+            status = "Waiting"
+            payload["progress_percent"] = 0
+            payload["status"] = "Waiting"
+            payload["result"] = "WAITING"
+            for item in step_logs:
+                step_number = int(item.get("step") or 0)
+                item["state"] = "PENDING"
+                item["transition_allowed"] = False
+                item["progress_percent"] = ""
+                item["detail"] = (
+                    "새로운 Veeam Backup Done 완료 잡이 매칭되기 전까지 1번 단계를 비활성화합니다."
+                    if step_number == 1
+                    else "새 백업 완료 세션이 매칭되기 전까지 이 단계는 비활성 상태입니다."
+                )
+            for entry in session_logs:
+                entry["status"] = "Waiting"
+                entry["progress_percent"] = 0
         if connected and session_logs:
             saver = getattr(self, "save_veeam_last_logs", None)
             if callable(saver):
@@ -2299,7 +3009,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             str(payload.get(key) or "")
             for key in ("result", "status", "session_state", "state")
         ).upper()
-        if any(token in status_text for token in ("SUCCESS", "SUCCEEDED", "COMPLETED", "BACKUP_COMPLETED")):
+        if any(token in status_text for token in ("SUCCESS", "SUCCEEDED", "COMPLETED")):
             return True
         if progress >= 100:
             return True
@@ -2318,7 +3028,6 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     "JOB FINISHED",
                     "HAS BEEN COMPLETED, STATUS: 'SUCCESS'",
                     "STATUS: 'SUCCESS'",
-                    "BACKUP_COMPLETED",
                 )
             ):
                 return True
@@ -2745,6 +3454,10 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "disk.offline.tick",
             "disk.offline",
             "disk.offline.error",
+            "disk.offline.verify.start",
+            "disk.offline.verify",
+            "disk.offline.verify.error",
+            "disk.offline.strict.error",
             "disk.offline.proof",
             "disk.online.unauthorized.reblock",
             "disk.online.unauthorized.reblock.error",
@@ -2784,8 +3497,10 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 ticks.setdefault(elapsed, record)
             elif event in {"power.mock.off", "power.command.off", "disk.offline"}:
                 completions.append(record)
-            elif event.endswith(".off.error") or event == "disk.offline.error":
+            elif event.endswith(".off.error") or event in {"disk.offline.error", "disk.offline.verify.error", "disk.offline.strict.error"}:
                 errors.append(record)
+            elif event in {"disk.offline.verify.start", "disk.offline.verify"}:
+                statuses.append(record)
             elif ".status" in event:
                 statuses.append(record)
             elif event in {"power.off.proof", "power.off.proof.required", "disk.offline.proof"}:
@@ -2829,6 +3544,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         if event.endswith(".off.error") or event == "disk.offline.error":
             error = LockFixWebHandler.compact_log_value(self, record.get("error") or "offline command failed")
             return f"{prefix}LOCK-FIX Offline ERROR - slot {slot_id}, {error}"
+        if event == "disk.offline.strict.error":
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "true disk offline proof was not obtained")
+            return f"{prefix}LOCK-FIX Offline STRICT ERROR - slot {slot_id}, {error}"
         if event in {"power.mock.off", "power.command.off", "disk.offline"}:
             output = LockFixWebHandler.compact_log_value(self, record.get("output") or f"{mode} offline completed")
             return f"{prefix}LOCK-FIX Power OFF OK - slot {slot_id}, {output}"
@@ -3146,6 +3864,16 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "message": "Veeam backup success detected. LOCK-FIX isolate was called automatically.",
             }
         except Exception as exc:
+            self.context.controller.audit.write(
+                "veeam.auto_isolate.failed",
+                slot_id=slot_id,
+                session_key=session_key,
+                result="FAILED",
+                resourceType="DISK",
+                resourceId=slot_id,
+                message="Veeam backup success detected, but automatic isolate failed.",
+                error=str(exc),
+            )
             return {
                 "enabled": True,
                 "triggered": False,
@@ -3432,19 +4160,130 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         ]
 
     def dashboard_summary(self) -> dict:
-        logs = [
-            {"type": "WARNING", "date": "2024-12-22 12:03:06", "content": "[MEMORY] 92.75% (Threshold:80.0%)"},
-            {"type": "LOGS", "date": "2024-12-22 11:56:07", "content": "rich.kim@oam.co.kr 계정 회원가입 완료"},
-            {"type": "WARNING", "date": "2024-12-22 11:53:05", "content": "[MEMORY] 92.65% (Threshold:80.0%)"},
-            {"type": "WARNING", "date": "2024-12-22 11:43:04", "content": "[MEMORY] 91.84% (Threshold:80.0%)"},
-            {"type": "WARNING", "date": "2024-12-22 11:33:02", "content": "[DISK] 88.20% (Threshold:85.0%)"},
-        ]
+        runtime_root = self.context.config.audit_log_path.parent
+
+        def read_json(path: Path, fallback: object) -> object:
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                return fallback
+
+        def ps_json(command: str) -> object:
+            try:
+                output = subprocess.run(
+                    ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=False,
+                )
+                if output.returncode != 0:
+                    return {}
+                text = output.stdout.strip()
+                return json.loads(text) if text else {}
+            except Exception:
+                return {}
+
+        state = read_json(runtime_root / "state.json", {})
+        auto_isolate = read_json(runtime_root / "veeam_auto_isolate.json", {})
+        session_payload = read_json(runtime_root / "veeam_last_session_logs.json", {})
+        storage_state = read_json(runtime_root / "storage-BAY-01.json", {})
+        sessions = session_payload.get("session_logs") if isinstance(session_payload, dict) else []
+        latest_session = sessions[0] if isinstance(sessions, list) and sessions else {}
+
+        slot_id = str(auto_isolate.get("slot_id") or next(iter(self.context.config.slots), "BAY-01"))
+        airgap_state = str((state or {}).get(slot_id) or "UNKNOWN") if isinstance(state, dict) else "UNKNOWN"
+        veeam_state = str(auto_isolate.get("state") or "UNKNOWN") if isinstance(auto_isolate, dict) else "UNKNOWN"
+        backup_status = str(latest_session.get("status") or "Unknown")
+        backup_job = str(latest_session.get("name") or self.context.config.app_config.veeam.job_name or "-")
+        backup_started = str(latest_session.get("started_at") or "-")
+        backup_ended = str(latest_session.get("ended_at") or "-")
+        backup_duration = str(latest_session.get("duration") or "-")
+        disk_number = str(storage_state.get("diskNumber") or "").strip() if isinstance(storage_state, dict) else ""
+        configured_drive = str(storage_state.get("drive") or "").strip() if isinstance(storage_state, dict) else ""
+        configured_path = str(storage_state.get("accessPath") or self.context.config.slot(slot_id).mount_point or "-") if isinstance(storage_state, dict) else "-"
+
+        disk_probe = {}
+        volume_probe = {}
+        if disk_number:
+            disk_probe = ps_json(
+                "$disk=Get-Disk -Number %s -ErrorAction SilentlyContinue; "
+                "if ($disk) { $disk | Select-Object Number,FriendlyName,IsOffline,OperationalStatus,BusType,IsBoot,IsSystem | ConvertTo-Json -Compress }" % disk_number
+            )
+        if configured_drive:
+            volume_probe = ps_json(
+                "$drive='%s'; "
+                "$vol=Get-Volume -DriveLetter $drive -ErrorAction SilentlyContinue; "
+                "if ($vol) { $vol | Select-Object DriveLetter,FileSystemLabel,FileSystem,DriveType,HealthStatus,OperationalStatus | ConvertTo-Json -Compress }" % configured_drive.replace("'", "")
+            )
+        disk_is_offline = bool(disk_probe.get("IsOffline")) if isinstance(disk_probe, dict) else False
+        disk_status = "Offline" if disk_is_offline else ("Online" if disk_probe else "Unknown")
+        disk_name = str(disk_probe.get("FriendlyName") or "-") if isinstance(disk_probe, dict) else "-"
+        volume_visible = bool(volume_probe)
+
+        offline_failed = False
+        recent_events: list[dict] = []
+        for line in LockFixWebHandler.audit_log_lines(self)[-300:]:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            event = str(record.get("event") or "")
+            if record.get("slot_id") and str(record.get("slot_id")) != slot_id:
+                continue
+            if event in {"disk.offline.error", "disk.offline.verify.error", "disk.offline.strict.error"}:
+                offline_failed = True
+            if event.startswith("state.transition") or event.startswith("disk.") or event.startswith("veeam."):
+                ts = LockFixWebHandler.format_audit_timestamp(self, record.get("ts")) or "-"
+                message = record.get("error") or record.get("message") or record.get("output") or event
+                recent_events.append({"type": "EVENT", "date": ts, "content": LockFixWebHandler.compact_log_value(self, message)})
+        recent_events = recent_events[-5:]
+
+        airgap_ok = airgap_state == "ISOLATED" and disk_is_offline
+        warning_count = sum([
+            backup_status.lower() not in {"success", "completed"},
+            veeam_state not in {"ISOLATED", "WAITING_FOR_NEW_BACKUP"},
+            airgap_state not in {"ISOLATED", "WAITING_DISK"},
+            not disk_is_offline,
+            offline_failed,
+        ])
+        logs = recent_events or [{"type": "INFO", "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "content": "No recent LOCK-FIX events."}]
+        result_label = "Offline Complete" if airgap_ok else ("Offline Failed" if offline_failed else airgap_state)
 
         return {
             "cards": [
-                {"id": "detect", "label": "Detect", "description": "Hardware changes", "value": 0},
-                {"id": "warning", "label": "Warning", "description": "Hardware threshold usage", "value": 4},
-                {"id": "logs", "label": "Logs", "description": "External server logs", "value": 1},
+                {"id": "detect", "label": "Detect", "description": f"Disk {disk_number or '-'} {disk_name}", "value": 0 if disk_probe else 1},
+                {"id": "warning", "label": "Warning", "description": "Live operation issues", "value": warning_count},
+                {"id": "logs", "label": "Logs", "description": "Recent LOCK-FIX events", "value": len(logs)},
+            ],
+            "security_kpis": [
+                {"icon": "data-protection-logo", "label": "Data Protection", "value": backup_status, "tone": "green" if backup_status == "Success" else "red", "meta": backup_ended},
+                {"icon": "airgap-logo", "label": "Air-Gap", "value": veeam_state, "tone": "green" if airgap_ok else "orange", "meta": airgap_state},
+                {"icon": "storage-power", "label": "Disk Offline", "value": disk_status, "tone": "green" if disk_is_offline else "red", "meta": configured_path},
+                {"icon": "veeam-backup-completed", "label": "Last Backup", "value": backup_status, "tone": "green" if backup_status == "Success" else "orange", "meta": backup_ended},
+                {"icon": "integrity-logo", "label": "LOCK-FIX State", "value": result_label, "tone": "green" if airgap_ok else "red", "meta": f"Disk {disk_number or '-'} / {configured_path}"},
+            ],
+            "flow": [
+                {"icon": "backup-complete", "lines": ["Backup", "Done"], "state": "done" if backup_status == "Success" else "active"},
+                {"icon": "flush-run", "lines": ["Flush", "Run"], "state": "done" if airgap_state not in {"BACKUP_COMPLETED", "FLUSHING"} else "active"},
+                {"icon": "io-check", "lines": ["I/O", "Check"], "state": "done" if airgap_state not in {"BACKUP_COMPLETED", "FLUSHING", "IO_CHECKING"} else "active"},
+                {"icon": "power-off", "lines": ["Disk", "Offline"], "state": "done" if disk_is_offline else "active"},
+                {"icon": "airgap-logo", "lines": ["Air-Gap", "Active"], "state": "done" if airgap_ok else "pending"},
+            ],
+            "backup": {
+                "solution": "Veeam Backup & Replication",
+                "job": backup_job,
+                "started_at": backup_started,
+                "ended_at": backup_ended,
+                "duration": backup_duration,
+                "isolation_state": airgap_state,
+                "result": result_label,
+            },
+            "alerts": [
+                {"label": "Disk Offline", "value": "Normal" if disk_is_offline else "Failed"},
+                {"label": "Veeam Auto Isolation", "value": veeam_state},
+                {"label": "Repository Volume", "value": "Visible" if volume_visible else "Not visible"},
+                {"label": "Offline Error", "value": "Detected" if offline_failed else "None"},
             ],
             "notifications": self.notification_items(),
             "logs": logs,
@@ -3654,8 +4493,76 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         for index in range(28):
             tx_history.append(round(18 + (((index + tick) * 9) % 27) + (6 if (index + tick) % 9 == 0 else 0), 1))
             rx_history.append(round(34 + (((index + tick) * 13) % 39) + (8 if (index + tick) % 9 == 0 else 0), 1))
+        packet_loss = round(0.05 + (tick % 9) * 0.06, 2)
+        latency_ms = 14 + (tick % 8) * 3
+        jitter_ms = 2 + (tick % 5)
+        ports = [
+            {"port": 9419, "service": "Veeam REST API", "protocol": "TCP", "state": "ALLOW", "risk": "Required"},
+            {"port": 5985, "service": "WinRM HTTP", "protocol": "TCP", "state": "ALLOW", "risk": "Managed"},
+            {"port": 5986, "service": "WinRM HTTPS", "protocol": "TCP", "state": "PROTECTED", "risk": "Not configured"},
+            {"port": 445, "service": "SMB", "protocol": "TCP", "state": "PROTECTED", "risk": "Recovery only"},
+            {"port": 3389, "service": "RDP", "protocol": "TCP", "state": "PROTECTED", "risk": "Admin approval"},
+        ]
+        insights = [
+            {
+                "level": "ok" if packet_loss < 0.3 else "warning",
+                "title": "Packet Loss",
+                "detail": f"Current loss is {packet_loss:.2f}%. Keep under 1.00% for backup traffic quality.",
+            },
+            {
+                "level": "ok" if latency_ms < 50 else "warning",
+                "title": "Latency",
+                "detail": f"Average response time is {latency_ms} ms. No path bottleneck is detected.",
+            },
+            {
+                "level": "warning" if any(port["state"] == "ALLOW" and port["port"] == 5985 for port in ports) else "ok",
+                "title": "Port Exposure",
+                "detail": "Only Veeam REST and managed WinRM are allowed. Recovery ports remain blocked until approval.",
+            },
+        ]
+        event_time = datetime.now().strftime("%H:%M:%S")
+        path_status = [
+            {
+                "name": "LOCK-FIX -> Veeam REST",
+                "target": "192.168.219.165:9419",
+                "state": "Reachable",
+                "latency_ms": max(1, latency_ms - 8),
+                "last_check": event_time,
+            },
+            {
+                "name": "LOCK-FIX -> WinRM",
+                "target": "192.168.219.165:5985",
+                "state": "Managed",
+                "latency_ms": max(2, latency_ms - 4),
+                "last_check": event_time,
+            },
+            {
+                "name": "LOCK-FIX -> Gateway",
+                "target": "storage-gateway",
+                "state": "Protected",
+                "latency_ms": latency_ms + 6,
+                "last_check": event_time,
+            },
+            {
+                "name": "LOCK-FIX -> Recovery Ports",
+                "target": "445 / 3389",
+                "state": "Blocked",
+                "latency_ms": None,
+                "last_check": event_time,
+            },
+        ]
+        events = [
+            {"level": "ok", "time": event_time, "message": "Veeam REST API 9419 path is reachable."},
+            {"level": "ok", "time": event_time, "message": "WinRM 5985 is allowed only for managed operation."},
+            {"level": "protected", "time": event_time, "message": "SMB and RDP recovery ports remain protected until approval."},
+            {
+                "level": "warning" if packet_loss >= 0.3 else "ok",
+                "time": event_time,
+                "message": f"Packet loss is {packet_loss:.2f}% and remains under the 1.00% operating threshold.",
+            },
+        ]
         return {
-            "title": "실시간 IP 별 누적 트래픽",
+            "title": "실시간 네트워크 상태",
             "unit": "GB",
             "interval_seconds": 10,
             "realtime": {
@@ -3673,6 +4580,17 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 },
             },
             "items": items,
+            "analysis": {
+                "quality": {
+                    "packet_loss_percent": packet_loss,
+                    "latency_ms": latency_ms,
+                    "jitter_ms": jitter_ms,
+                },
+                "ports": ports,
+                "insights": insights,
+                "path_status": path_status,
+                "events": events,
+            },
         }
 
     def log_items(self, start_date: str = "", end_date: str = "", retention_days: int = 30) -> tuple[list[dict], datetime, datetime]:
@@ -3837,6 +4755,20 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 f"LOCK-FIX Offline CONFIRMED - slot {slot_id}, drive {drive}, disk {disk_number}, "
                 f"IsOffline={is_offline}, method={method}."
             )
+        if event == "disk.offline.verify.start":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            disk_number = LockFixWebHandler.compact_log_value(self, record.get("disk_number") or "-")
+            access_path = LockFixWebHandler.compact_log_value(self, record.get("access_path") or f"{drive}:\\")
+            return f"LOCK-FIX Offline VERIFY START - slot {slot_id}, drive {drive}, disk {disk_number}, path {access_path}."
+        if event == "disk.offline.verify":
+            drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
+            disk_number = LockFixWebHandler.compact_log_value(self, record.get("disk_number") or "-")
+            is_offline = LockFixWebHandler.compact_log_value(self, record.get("is_offline"))
+            path_reachable = LockFixWebHandler.compact_log_value(self, record.get("path_reachable"))
+            return f"LOCK-FIX Offline VERIFY CONFIRMED - slot {slot_id}, drive {drive}, disk {disk_number}, IsOffline={is_offline}, PathReachable={path_reachable}."
+        if event == "disk.offline.verify.error":
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "offline verification failed")
+            return f"LOCK-FIX Offline VERIFY ERROR - slot {slot_id}, {error}"
         if event == "disk.offline.proof":
             drive = LockFixWebHandler.compact_log_value(self, record.get("drive_letter") or "-")
             disk_number = LockFixWebHandler.compact_log_value(self, record.get("disk_number") or "-")
@@ -3846,6 +4778,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 f"LOCK-FIX Offline PROOF - slot {slot_id}, drive {drive}, disk {disk_number}, "
                 f"IsOffline={is_offline}, evidence=Get-Disk/Set-Disk, method={method}."
             )
+        if event == "disk.offline.strict.error":
+            error = LockFixWebHandler.compact_log_value(self, record.get("error") or "true disk offline proof was not obtained")
+            return f"LOCK-FIX Offline STRICT ERROR - slot {slot_id}, {error}"
         if event == "disk.offline.error":
             error = LockFixWebHandler.compact_log_value(self, record.get("error") or "offline failed")
             return f"LOCK-FIX Offline ERROR - slot {slot_id}, {error}"

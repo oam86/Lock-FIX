@@ -70,8 +70,6 @@ def veeam_base_url_candidates(settings: "VeeamSettings") -> list[str]:
     for item in os.environ.get("LOCKFIX_VEEAM_CANDIDATES", "").split(","):
         add(item)
     add(settings.base_url)
-    add("https://127.0.0.1:9419")
-    add("https://localhost:9419")
     if settings.discovery_scan_local_subnet:
         for host in local_ipv4_subnet_hosts():
             add(f"https://{host}:9419")
@@ -179,9 +177,9 @@ def probe_veeam_candidate(url: str, settings: "VeeamSettings", context: ssl.SSLC
 class VeeamSettings:
     base_url: str = "https://127.0.0.1:9419"
     enterprise_manager_url: str = "https://127.0.0.1:9398"
-    auto_discover: bool = True
+    auto_discover: bool = False
     discovery_candidates: list[str] | None = None
-    discovery_scan_local_subnet: bool = True
+    discovery_scan_local_subnet: bool = False
     discovery_timeout_seconds: float = 0.35
     api_version: str = "1.2-rev1"
     username: str = ""
@@ -768,13 +766,27 @@ class VeeamEnterpriseManagerClient:
 
 
 def map_http_error(exc: urlerror.HTTPError) -> VeeamError:
+    body = ""
+    try:
+        body = exc.read().decode("utf-8", errors="replace").strip()
+    except Exception:
+        body = ""
     if exc.code == 401:
-        return VeeamAuthenticationError("401: authentication failed. Check Veeam username/password or token.")
+        detail = f" Veeam response: {body}" if body else ""
+        return VeeamAuthenticationError(f"401: authentication failed. Check Veeam username/password or token.{detail}")
     if exc.code == 403:
-        return VeeamPermissionError("403: Veeam permission denied. Grant Veeam Backup Viewer or higher.")
+        if "product edition" in body.lower():
+            return VeeamPermissionError(
+                "403: Veeam accepted the account, but this product edition/license does not allow the REST API. "
+                f"Veeam response: {body}"
+            )
+        detail = f" Veeam response: {body}" if body else ""
+        return VeeamPermissionError(f"403: Veeam permission denied. Grant Veeam Backup Viewer or higher.{detail}")
     if exc.code == 404:
-        return VeeamNotFoundError("404: Veeam API URL or x-api-version path is invalid.")
-    return VeeamError(f"HTTP {exc.code}: Veeam API request failed.")
+        detail = f" Veeam response: {body}" if body else ""
+        return VeeamNotFoundError(f"404: Veeam API URL or x-api-version path is invalid.{detail}")
+    detail = f" Veeam response: {body}" if body else ""
+    return VeeamError(f"HTTP {exc.code}: Veeam API request failed.{detail}")
 
 
 def list_items(data: dict[str, Any]) -> list[dict[str, Any]]:

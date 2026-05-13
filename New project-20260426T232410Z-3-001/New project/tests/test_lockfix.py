@@ -16,8 +16,27 @@ from lockfix.command import CommandError, CommandRunner
 from lockfix.audit import AuditLogger
 from lockfix.hashcheck import manifest_digest
 from lockfix.identity import compute_uid, fingerprint_parts, slot_uid
+from lockfix.offline_reconnect_validation import run_offline_reconnect_validation
+from lockfix.approvals import ApprovalStore
+from lockfix.audit_log import AUDIT_LOG_FIELDS, audit_logs_to_csv, read_audit_logs
+from lockfix.rbac import AuthorizationError, Permission, Role, default_policy_document, has_permission, load_role_permissions
+from lockfix.schema import (
+    LOCKFIX_TABLE_SCHEMA,
+    approval_decision_row,
+    approval_policy_row,
+    approval_request_row,
+    audit_log_row,
+    department_review_row,
+    departments_row,
+    notification_row,
+    review_comment_row,
+    load_schema_sql,
+    role_permissions_rows,
+    users_row,
+)
 from lockfix.state_store import StateStore
 from lockfix.states import LockFixState
+from lockfix.users import UserDirectory
 from lockfix.veeam_client import VeeamAuthenticationError, VeeamClient, VeeamSettings, enrich_summary_with_logs, filter_target_repositories, match_backups, restore_point_summary, session_summary
 from lockfix.veeam_console_logs import latest_backup_copy_console_log_summary
 from lockfix.veeam_factory import create_veeam_client
@@ -60,6 +79,56 @@ class LockFixTests(unittest.TestCase):
         root.mkdir(parents=True, exist_ok=True)
         return root
 
+    def approve_operation(self, controller: LockFixController, request_type: str, slot_id: str = "BAY-01") -> dict:
+        metadata = {"reason": "unit test emergency unlock"} if request_type == "EMERGENCY_UNLOCK" else {}
+        request = controller.approvals.create_request(request_type, "requester", target_id=slot_id, metadata=metadata)
+        for review in controller.approvals.department_reviews_for(request["id"]):
+            role = {
+                "security": Role.SECURITY_ADMIN,
+                "backup-operation": Role.BACKUP_OPERATOR,
+                "hardware-control": Role.HARDWARE_ADMIN,
+                "audit": Role.AUDITOR,
+            }.get(review["departmentId"], Role.SUPER_ADMIN)
+            controller.approvals.mark_department_reviewed(
+                request["id"],
+                review["id"],
+                f"{review['departmentId']}-reviewer",
+                role,
+                "department review completed",
+            )
+        required = int(request["requiredApprovals"])
+        if request_type == "DISK_ONLINE":
+            controller.approvals.review_request(request["id"], "security-reviewer", Role.SECURITY_ADMIN, "SECURITY_LOG_REVIEW", "isolation logs reviewed")
+            controller.approvals.review_request(request["id"], "hardware-reviewer", Role.HARDWARE_ADMIN, "HARDWARE_STATE_REVIEW", "disk and lock state checked")
+            controller.approvals.review_request(request["id"], "manager-reviewer", Role.SUPER_ADMIN, "MANAGER_REVIEW", "team opinions reviewed")
+            approvers = [("approver-1", Role.SECURITY_ADMIN), ("approver-2", Role.SUPER_ADMIN)]
+        else:
+            approvers = [
+                ("approver-1", Role.SUPER_ADMIN),
+                ("approver-2", Role.SECURITY_ADMIN),
+                ("approver-3", Role.HARDWARE_ADMIN),
+            ]
+        result = {"request": request}
+        for approver_id, role in approvers[:required]:
+            result = controller.approvals.decide(request["id"], approver_id, role, "APPROVED")
+        return result["request"]
+
+    def complete_department_reviews(self, store: ApprovalStore, request: dict) -> None:
+        for review in store.department_reviews_for(request["id"]):
+            role = {
+                "security": Role.SECURITY_ADMIN,
+                "backup-operation": Role.BACKUP_OPERATOR,
+                "hardware-control": Role.HARDWARE_ADMIN,
+                "audit": Role.AUDITOR,
+            }.get(review["departmentId"], Role.SUPER_ADMIN)
+            store.mark_department_reviewed(
+                request["id"],
+                review["id"],
+                f"{review['departmentId']}-reviewer",
+                role,
+                "department review completed",
+            )
+
     def test_compute_uid_is_stable(self) -> None:
         self.assertEqual(
             compute_uid("S1", "M1", "W1", "BAY-01"),
@@ -75,6 +144,610 @@ class LockFixTests(unittest.TestCase):
         config = load_config(config_path)
 
         self.assertEqual(config.slot("BAY-01").device, "D:\\")
+
+    def test_rbac_policy_has_required_roles_and_no_audit_delete_permission(self) -> None:
+        policy = load_role_permissions(Path("config/rbac_policy.json"))
+
+        self.assertEqual(set(policy), set(Role))
+        self.assertEqual(
+            [role.value for role in Role],
+            [
+                "SUPER_ADMIN",
+                "SECURITY_ADMIN",
+                "BACKUP_OPERATOR",
+                "HARDWARE_ADMIN",
+                "AUDITOR",
+                "UI_DESIGNER",
+                "DEVELOPER",
+            ],
+        )
+        self.assertEqual(
+            [permission.value for permission in Permission],
+            [
+                "DASHBOARD_VIEW",
+                "USER_MANAGE",
+                "ROLE_MANAGE",
+                "VEEAM_VIEW",
+                "VEEAM_MANAGE",
+                "AIRGAP_POLICY_VIEW",
+                "AIRGAP_POLICY_MANAGE",
+                "DISK_OFFLINE_REQUEST",
+                "DISK_OFFLINE_EXECUTE",
+                "DISK_ONLINE_REQUEST",
+                "DISK_ONLINE_APPROVE",
+                "HARDWARE_CONTROL",
+                "APPROVAL_REQUEST_VIEW",
+                "APPROVAL_REQUEST_CREATE",
+                "APPROVAL_REQUEST_APPROVE",
+                "DEPARTMENT_REVIEW",
+                "AUDIT_LOG_VIEW",
+                "REPORT_EXPORT",
+                "SYSTEM_SETTING_MANAGE",
+            ],
+        )
+        self.assertNotIn("AUDIT_LOG_DELETE", {permission.value for permission in Permission})
+        self.assertNotIn("AUDIT_LOG_DELETE", json.dumps(default_policy_document()))
+        self.assertTrue(has_permission(Role.SUPER_ADMIN, Permission.AUDIT_LOG_VIEW, policy))
+        self.assertFalse(has_permission(Role.SUPER_ADMIN, Permission("AUDIT_LOG_VIEW"), {Role.SUPER_ADMIN: set()}))
+        self.assertTrue(all(has_permission(Role.SUPER_ADMIN, permission, policy) for permission in Permission))
+        self.assertTrue(has_permission(Role.BACKUP_OPERATOR, Permission.APPROVAL_REQUEST_CREATE, policy))
+        self.assertTrue(has_permission(Role.BACKUP_OPERATOR, Permission.APPROVAL_REQUEST_VIEW, policy))
+        self.assertFalse(has_permission(Role.BACKUP_OPERATOR, Permission.APPROVAL_REQUEST_APPROVE, policy))
+        self.assertTrue(has_permission(Role.AUDITOR, Permission.APPROVAL_REQUEST_VIEW, policy))
+        self.assertFalse(has_permission(Role.AUDITOR, Permission.APPROVAL_REQUEST_CREATE, policy))
+        self.assertFalse(has_permission(Role.AUDITOR, Permission.DEPARTMENT_REVIEW, policy))
+        self.assertEqual(
+            {role.value: sorted(permission.value for permission in permissions) for role, permissions in policy.items()},
+            default_policy_document(),
+        )
+
+    def test_approval_api_guards_use_dedicated_rbac_permissions(self) -> None:
+        source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")
+
+        self.assertIn("Permission.APPROVAL_REQUEST_VIEW", source)
+        self.assertIn("Permission.APPROVAL_REQUEST_CREATE", source)
+        self.assertIn("Permission.APPROVAL_REQUEST_APPROVE", source)
+        self.assertIn("Permission.DEPARTMENT_REVIEW", source)
+
+    def test_rbac_denies_missing_api_permission_with_forbidden_error(self) -> None:
+        tmp_path = self.make_workspace()
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(write_config(tmp_path))
+        handler.headers = {"Cookie": "lockfix_session=test-token"}
+        handler.context.sessions["test-token"] = handler.session_record("auditor", Role.AUDITOR)
+
+        with self.assertRaises(AuthorizationError) as raised:
+            handler.require_auth(Permission.DISK_OFFLINE_EXECUTE)
+
+        self.assertEqual(raised.exception.permission, Permission.DISK_OFFLINE_EXECUTE)
+        self.assertEqual(raised.exception.role, Role.AUDITOR)
+
+    def test_rbac_permission_denied_is_audited_for_api_guard(self) -> None:
+        tmp_path = self.make_workspace()
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(write_config(tmp_path))
+        handler.headers = {"Cookie": "lockfix_session=test-token", "User-Agent": "unit-test"}
+        handler.path = "/api/isolate?slot=BAY-01"
+        handler.client_address = ("127.0.0.1", 12345)
+        handler.context.sessions["test-token"] = handler.session_record("auditor", Role.AUDITOR)
+
+        try:
+            handler.require_auth(Permission.DISK_OFFLINE_EXECUTE)
+        except AuthorizationError as exc:
+            handler.audit_access_denied(exc)
+
+        audit_text = (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
+        self.assertIn('"event": "security.permission_denied"', audit_text)
+        self.assertIn('"resourceType": "API"', audit_text)
+        self.assertIn('"resourceId": "/api/isolate?slot=BAY-01"', audit_text)
+        self.assertIn('"role": "AUDITOR"', audit_text)
+        self.assertIn('"permission": "DISK_OFFLINE_EXECUTE"', audit_text)
+        self.assertIn('"result": "FAILED"', audit_text)
+
+    def test_rbac_allows_super_admin_existing_session_format(self) -> None:
+        tmp_path = self.make_workspace()
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(write_config(tmp_path))
+        handler.headers = {"Cookie": "lockfix_session=legacy-token"}
+        handler.context.sessions["legacy-token"] = 9999999999.0
+
+        handler.require_auth(Permission.DISK_OFFLINE_EXECUTE)
+
+        self.assertEqual(handler.current_role(), Role.SUPER_ADMIN)
+
+    def test_user_directory_seeds_default_departments(self) -> None:
+        tmp_path = self.make_workspace()
+        directory = UserDirectory(tmp_path / "users.json")
+
+        departments = directory.departments()
+
+        self.assertEqual(
+            [department["name"] for department in departments],
+            ["Management", "Security", "Backup Operation", "Hardware Control", "Audit", "Development", "Web Design"],
+        )
+        self.assertEqual({"id", "name", "description", "createdAt", "updatedAt"}, set(departments[0]))
+
+    def test_lockfix_database_schema_matches_required_tables(self) -> None:
+        expected = {
+            "users": (
+                "id",
+                "email",
+                "name",
+                "password_hash",
+                "department_id",
+                "role",
+                "disabled",
+                "created_at",
+                "updated_at",
+            ),
+            "departments": ("id", "name", "description", "created_at", "updated_at"),
+            "role_permissions": ("id", "role", "permission"),
+            "approval_requests": (
+                "id",
+                "request_type",
+                "requested_by_user_id",
+                "target_resource_type",
+                "target_resource_id",
+                "reason",
+                "review_departments",
+                "status",
+                "created_at",
+                "updated_at",
+            ),
+            "approval_policies": (
+                "id",
+                "request_type",
+                "required_approvals",
+                "allowed_approver_roles",
+                "expires_in_minutes",
+                "enabled",
+            ),
+            "department_reviews": (
+                "id",
+                "approval_request_id",
+                "department_id",
+                "reviewer_user_id",
+                "status",
+                "comment",
+                "created_at",
+                "updated_at",
+            ),
+            "review_comments": (
+                "id",
+                "approval_request_id",
+                "department_review_id",
+                "author_user_id",
+                "comment",
+                "created_at",
+            ),
+            "notifications": (
+                "id",
+                "user_id",
+                "title",
+                "message",
+                "target_type",
+                "target_id",
+                "read_at",
+                "created_at",
+            ),
+            "approval_decisions": ("id", "approval_request_id", "approver_user_id", "decision", "comment", "created_at"),
+            "audit_logs": (
+                "id",
+                "actor_user_id",
+                "action",
+                "resource_type",
+                "resource_id",
+                "ip_address",
+                "user_agent",
+                "result",
+                "before_value",
+                "after_value",
+                "created_at",
+            ),
+        }
+        schema_sql = load_schema_sql()
+        migration_sql = (Path.cwd() / "migrations" / "001_lockfix_rbac_approval_audit.sql").read_text(encoding="utf-8")
+
+        self.assertEqual(expected, LOCKFIX_TABLE_SCHEMA)
+        for table, fields in expected.items():
+            self.assertIn(f"CREATE TABLE IF NOT EXISTS {table}", schema_sql)
+            self.assertIn(f"CREATE TABLE IF NOT EXISTS {table}", migration_sql)
+            for field in fields:
+                self.assertIn(field, schema_sql)
+                self.assertIn(field, migration_sql)
+        self.assertNotIn("audit_log_delete", schema_sql.lower())
+        self.assertNotIn("audit_log_delete", migration_sql.lower())
+
+    def test_schema_row_mappers_preserve_snake_case_contract(self) -> None:
+        policy = load_role_permissions(Path("config/rbac_policy.json"))
+        user = users_row(
+            {
+                "id": "u1",
+                "email": "backup@example.test",
+                "name": "Backup Lead",
+                "passwordHash": "hash",
+                "departmentId": "backup-operation",
+                "role": "BACKUP_OPERATOR",
+                "disabled": False,
+                "createdAt": "2026-05-11T00:00:00Z",
+                "updatedAt": "2026-05-11T00:00:00Z",
+            }
+        )
+        department = departments_row({"id": "backup-operation", "name": "Backup Operation", "createdAt": "c", "updatedAt": "u"})
+        approval_policy = approval_policy_row(
+            {
+                "id": "disk-online",
+                "requestType": "DISK_ONLINE",
+                "requiredApprovals": 2,
+                "allowedApproverRoles": ["SUPER_ADMIN"],
+                "expiresInMinutes": 30,
+                "enabled": True,
+            }
+        )
+        approval_request = approval_request_row(
+            {
+                "id": "req1",
+                "requestType": "DISK_ONLINE",
+                "requesterUserId": "u1",
+                "targetId": "BAY-01",
+                "status": "PENDING",
+                "createdAt": "c",
+                "updatedAt": "u",
+                "reviewDepartments": ["Security", "Hardware Control"],
+                "metadata": {"targetResourceType": "DISK", "reason": "maintenance"},
+            }
+        )
+        approval_decision = approval_decision_row(
+            {"id": "dec1", "approvalRequestId": "req1", "approverUserId": "u2", "decision": "APPROVED", "createdAt": "c"}
+        )
+        department_review = department_review_row(
+            {
+                "id": "review1",
+                "approvalRequestId": "req1",
+                "departmentId": "security",
+                "reviewerUserId": "security-reviewer",
+                "status": "REVIEWED",
+                "comment": "checked",
+                "createdAt": "c",
+                "updatedAt": "u",
+            }
+        )
+        review_comment = review_comment_row(
+            {
+                "id": "comment1",
+                "approvalRequestId": "req1",
+                "departmentReviewId": "review1",
+                "authorUserId": "security-reviewer",
+                "comment": "checked",
+                "createdAt": "c",
+            }
+        )
+        notification = notification_row(
+            {
+                "id": "notice1",
+                "userId": "department:security",
+                "title": "Review required",
+                "message": "Security review required",
+                "targetType": "APPROVAL_REQUEST",
+                "targetId": "req1",
+                "readAt": "",
+                "createdAt": "c",
+            }
+        )
+        audit_log = audit_log_row(
+            {
+                "id": "log1",
+                "actorUserId": "u1",
+                "action": "admin.user.created",
+                "resourceType": "USER",
+                "resourceId": "u1",
+                "ipAddress": "127.0.0.1",
+                "userAgent": "unit-test",
+                "result": "SUCCESS",
+                "beforeValue": {},
+                "afterValue": {"id": "u1"},
+                "createdAt": "c",
+            }
+        )
+
+        self.assertEqual(set(LOCKFIX_TABLE_SCHEMA["users"]), set(user))
+        self.assertEqual("backup-operation", user["department_id"])
+        self.assertEqual(set(LOCKFIX_TABLE_SCHEMA["departments"]), set(department))
+        self.assertTrue(role_permissions_rows(policy))
+        self.assertEqual("DISK_ONLINE", approval_policy["request_type"])
+        self.assertEqual("u1", approval_request["requested_by_user_id"])
+        self.assertEqual("DISK", approval_request["target_resource_type"])
+        self.assertIn("Security", approval_request["review_departments"])
+        self.assertEqual("security", department_review["department_id"])
+        self.assertEqual("review1", review_comment["department_review_id"])
+        self.assertEqual("department:security", notification["user_id"])
+        self.assertEqual("APPROVAL_REQUEST", notification["target_type"])
+        self.assertEqual("u2", approval_decision["approver_user_id"])
+        self.assertEqual("127.0.0.1", audit_log["ip_address"])
+
+    def test_super_admin_can_create_update_and_disable_users_with_audit_log(self) -> None:
+        tmp_path = self.make_workspace()
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(write_config(tmp_path))
+        handler.context.user_directory_path = tmp_path / "users.json"
+        handler.headers = {"Cookie": "lockfix_session=admin-token"}
+        handler.context.sessions["admin-token"] = handler.session_record("admin", Role.SUPER_ADMIN)
+
+        created = handler.admin_create_user(
+            {
+                "email": "backup@example.com",
+                "name": "Backup Operator",
+                "departmentId": "backup-operation",
+                "role": "BACKUP_OPERATOR",
+            }
+        )["user"]
+        updated = handler.admin_update_user(
+            created["id"],
+            {"name": "Backup Lead", "departmentId": "security", "role": "SECURITY_ADMIN"},
+        )["user"]
+        disabled = handler.admin_disable_user(created["id"])["user"]
+
+        self.assertEqual(created["departmentId"], "backup-operation")
+        self.assertEqual(updated["role"], "SECURITY_ADMIN")
+        self.assertTrue(disabled["disabled"])
+        audit_text = (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
+        self.assertIn('"event": "admin.user.created"', audit_text)
+        self.assertIn('"event": "admin.user.updated"', audit_text)
+        self.assertIn('"event": "admin.user.disabled"', audit_text)
+
+    def test_non_super_admin_cannot_manage_users(self) -> None:
+        tmp_path = self.make_workspace()
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(write_config(tmp_path))
+        handler.headers = {"Cookie": "lockfix_session=security-token"}
+        handler.context.sessions["security-token"] = handler.session_record("security-admin", Role.SECURITY_ADMIN)
+
+        with self.assertRaises(AuthorizationError):
+            handler.require_super_admin()
+
+    def test_audit_log_model_normalizes_existing_jsonl_records(self) -> None:
+        tmp_path = self.make_workspace()
+        audit_path = tmp_path / "audit.jsonl"
+        AuditLogger(audit_path).write(
+            "auth.login.success",
+            actorUserId="admin",
+            ipAddress="127.0.0.1",
+            userAgent="unit-test",
+            result="SUCCESS",
+        )
+
+        logs = read_audit_logs(audit_path)
+
+        self.assertEqual(set(AUDIT_LOG_FIELDS), set(logs[0]) - {"raw"})
+        self.assertEqual(logs[0]["actorUserId"], "admin")
+        self.assertEqual(logs[0]["action"], "auth.login.success")
+        self.assertEqual(logs[0]["resourceType"], "AUTH")
+        self.assertEqual(logs[0]["result"], "SUCCESS")
+
+    def test_audit_log_view_is_limited_to_auditor_security_and_super_admin(self) -> None:
+        tmp_path = self.make_workspace()
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(write_config(tmp_path))
+        handler.headers = {"Cookie": "lockfix_session=auditor-token", "User-Agent": "unit-test"}
+        handler.path = "/api/audit-logs"
+        handler.client_address = ("127.0.0.1", 12345)
+        handler.context.sessions["auditor-token"] = handler.session_record("auditor", Role.AUDITOR)
+
+        handler.require_audit_log_view()
+
+        handler.context.sessions["auditor-token"] = handler.session_record("developer", Role.DEVELOPER)
+        with self.assertRaises(AuthorizationError):
+            handler.require_audit_log_view()
+
+    def test_audit_log_export_is_csv_and_no_delete_api_is_defined(self) -> None:
+        tmp_path = self.make_workspace()
+        audit_path = tmp_path / "audit.jsonl"
+        AuditLogger(audit_path).write("admin.user.disabled", actorUserId="admin", resourceId="user-1")
+        logs = read_audit_logs(audit_path)
+        csv_body = audit_logs_to_csv(logs).decode("utf-8-sig")
+        webui_source = Path("webui.py").read_text(encoding="utf-8")
+
+        self.assertIn("actorUserId,action,resourceType", csv_body)
+        self.assertIn("admin.user.disabled", csv_body)
+        self.assertNotIn("def do_DELETE", webui_source)
+
+    def test_approval_policy_defaults_and_two_person_approval(self) -> None:
+        tmp_path = self.make_workspace()
+        audit = AuditLogger(tmp_path / "audit.jsonl")
+        store = ApprovalStore(tmp_path / "approvals.json", audit)
+
+        policy = store.policy_for("DISK_ONLINE")
+        request = store.create_repository_online_request("creator", target_id="BAY-01", reason="Repository Online requested")
+        store.review_request(request["id"], "security-reviewer", Role.SECURITY_ADMIN, "SECURITY_LOG_REVIEW", "isolation period logs checked")
+        store.review_request(request["id"], "hardware-reviewer", Role.HARDWARE_ADMIN, "HARDWARE_STATE_REVIEW", "JBOD lock state checked")
+        store.review_request(request["id"], "manager-reviewer", Role.SUPER_ADMIN, "MANAGER_REVIEW", "team opinions confirmed")
+        first = store.decide(request["id"], "approver-a", Role.SECURITY_ADMIN, "APPROVED")
+        second = store.decide(request["id"], "approver-b", Role.SUPER_ADMIN, "APPROVED")
+
+        self.assertEqual(policy["requiredApprovals"], 2)
+        self.assertEqual(first["request"]["status"], "PENDING")
+        self.assertEqual(second["request"]["status"], "APPROVED")
+        self.assertIsNotNone(store.approved_request_for("DISK_ONLINE", "BAY-01"))
+
+    def test_repository_online_workflow_requires_team_reviews_and_ordered_approval(self) -> None:
+        tmp_path = self.make_workspace()
+        store = ApprovalStore(tmp_path / "approvals.json", AuditLogger(tmp_path / "audit.jsonl"))
+        request = store.create_repository_online_request("backup-operator", "BAY-01", "restore repository access")
+
+        with self.assertRaisesRegex(PermissionError, "review required"):
+            store.decide(request["id"], "security-admin", Role.SECURITY_ADMIN, "APPROVED")
+
+        store.review_request(request["id"], "security-reviewer", Role.SECURITY_ADMIN, "SECURITY_LOG_REVIEW", "격리 기간 로그 정상")
+        store.review_request(request["id"], "hardware-reviewer", Role.HARDWARE_ADMIN, "HARDWARE_STATE_REVIEW", "디스크/JBOD/락 정상")
+        reviewed = store.review_request(request["id"], "manager", Role.SUPER_ADMIN, "MANAGER_REVIEW", "두 팀 의견 확인")
+
+        self.assertEqual(reviewed["request"]["metadata"]["workflowStatus"], "AWAITING_SECURITY_ADMIN_APPROVAL")
+        with self.assertRaisesRegex(PermissionError, "SECURITY_ADMIN"):
+            store.decide(request["id"], "super-admin", Role.SUPER_ADMIN, "APPROVED")
+
+        first = store.decide(request["id"], "security-admin", Role.SECURITY_ADMIN, "APPROVED")
+        self.assertEqual(first["request"]["metadata"]["workflowStatus"], "AWAITING_SUPER_ADMIN_APPROVAL")
+        second = store.decide(request["id"], "super-admin", Role.SUPER_ADMIN, "APPROVED")
+
+        self.assertEqual(second["request"]["status"], "APPROVED")
+        self.assertEqual(second["request"]["metadata"]["workflowStatus"], "APPROVED_READY_TO_EXECUTE")
+        audit_text = (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
+        self.assertIn("approval.notification.sent", audit_text)
+        self.assertIn("approval.review.created", audit_text)
+
+    def test_department_reviews_are_assigned_and_gate_final_approval(self) -> None:
+        tmp_path = self.make_workspace()
+        store = ApprovalStore(tmp_path / "approvals.json", AuditLogger(tmp_path / "audit.jsonl"))
+        request = store.create_request("POLICY_CHANGE", requester_user_id="developer", target_id="rbac-policy")
+        reviews = store.department_reviews_for(request["id"])
+
+        self.assertEqual(["Security", "Audit"], request["reviewDepartments"])
+        self.assertEqual({"security", "audit"}, {review["departmentId"] for review in reviews})
+        with self.assertRaisesRegex(PermissionError, "department review required"):
+            store.decide(request["id"], "security-admin", Role.SECURITY_ADMIN, "APPROVED")
+
+        security_review = next(review for review in reviews if review["departmentId"] == "security")
+        audit_review = next(review for review in reviews if review["departmentId"] == "audit")
+        store.comment_department_review(request["id"], security_review["id"], "security-admin", Role.SECURITY_ADMIN, "logs look clean")
+        store.mark_department_reviewed(request["id"], security_review["id"], "security-admin", Role.SECURITY_ADMIN, "security reviewed")
+        store.mark_department_reviewed(request["id"], audit_review["id"], "auditor", Role.AUDITOR, "audit reviewed")
+        data = store.load()
+        self.assertEqual(3, len(data["reviewComments"]))
+        self.assertTrue(data["notifications"])
+        self.assertEqual("APPROVAL_REQUEST", data["notifications"][0]["targetType"])
+        self.assertEqual(f"department:{data['notifications'][0]['departmentId']}", data["notifications"][0]["userId"])
+        first = store.decide(request["id"], "security-approver", Role.SECURITY_ADMIN, "APPROVED")
+
+        self.assertEqual(first["request"]["status"], "PENDING")
+        audit_text = (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
+        self.assertIn("department.review.assigned", audit_text)
+        self.assertIn("department.review.comment.created", audit_text)
+        self.assertIn("department.review.marked_reviewed", audit_text)
+
+    def test_department_review_needs_changes_and_blocked_rules(self) -> None:
+        tmp_path = self.make_workspace()
+        store = ApprovalStore(tmp_path / "approvals.json", AuditLogger(tmp_path / "audit.jsonl"))
+        request = store.create_request("DISK_OFFLINE", requester_user_id="backup-operator", target_id="BAY-01")
+        reviews = store.department_reviews_for(request["id"])
+        backup_review = next(review for review in reviews if review["departmentId"] == "backup-operation")
+        security_review = next(review for review in reviews if review["departmentId"] == "security")
+
+        store.mark_department_needs_changes(request["id"], backup_review["id"], "backup-reviewer", Role.BACKUP_OPERATOR, "add isolation evidence")
+        with self.assertRaisesRegex(PermissionError, "needs changes"):
+            store.decide(request["id"], "security-admin", Role.SECURITY_ADMIN, "APPROVED")
+
+        store.block_department_review(request["id"], security_review["id"], "security-admin", Role.SECURITY_ADMIN, "security incident open")
+        with self.assertRaisesRegex(PermissionError, "Super Admin"):
+            store.mark_department_reviewed(request["id"], security_review["id"], "security-admin", Role.SECURITY_ADMIN, "try to override")
+        override = store.mark_department_reviewed(request["id"], security_review["id"], "super-admin", Role.SUPER_ADMIN, "exception review started")
+
+        self.assertEqual(override["review"]["status"], "REVIEWED")
+
+    def test_approval_blocks_duplicate_and_creator_self_approval(self) -> None:
+        tmp_path = self.make_workspace()
+        store = ApprovalStore(tmp_path / "approvals.json", AuditLogger(tmp_path / "audit.jsonl"))
+        request = store.create_request("POLICY_CHANGE", requester_user_id="creator", target_id="policy")
+
+        with self.assertRaisesRegex(PermissionError, "creator cannot approve"):
+            store.decide(request["id"], "creator", Role.SECURITY_ADMIN, "APPROVED")
+
+        self.complete_department_reviews(store, request)
+        store.decide(request["id"], "approver-a", Role.SECURITY_ADMIN, "APPROVED")
+        with self.assertRaisesRegex(PermissionError, "duplicate"):
+            store.decide(request["id"], "approver-a", Role.SECURITY_ADMIN, "APPROVED")
+
+    def test_emergency_unlock_approval_requires_reason_and_two_approvers(self) -> None:
+        tmp_path = self.make_workspace()
+        store = ApprovalStore(tmp_path / "approvals.json", AuditLogger(tmp_path / "audit.jsonl"))
+
+        with self.assertRaisesRegex(ValueError, "reason is required"):
+            store.create_request("EMERGENCY_UNLOCK", requester_user_id="creator", target_id="BAY-01")
+
+        request = store.create_request(
+            "EMERGENCY_UNLOCK",
+            requester_user_id="creator",
+            target_id="BAY-01",
+            metadata={"reason": "recover locked backup volume"},
+        )
+        self.complete_department_reviews(store, request)
+        first = store.decide(request["id"], "approver-a", Role.SUPER_ADMIN, "APPROVED")
+        second = store.decide(request["id"], "approver-b", Role.SECURITY_ADMIN, "APPROVED")
+
+        self.assertEqual(request["requiredApprovals"], 2)
+        self.assertEqual(first["request"]["status"], "PENDING")
+        self.assertEqual(second["request"]["status"], "APPROVED")
+        self.assertIn("recover locked backup volume", json.dumps(second["request"], ensure_ascii=False))
+
+    def test_approval_expiration_updates_status_and_audit_log(self) -> None:
+        tmp_path = self.make_workspace()
+        store = ApprovalStore(tmp_path / "approvals.json", AuditLogger(tmp_path / "audit.jsonl"))
+        request = store.create_request("HARDWARE_POWER_ON", requester_user_id="creator", target_id="BAY-01")
+        data = store.load()
+        data["requests"][0]["expiresAt"] = "2000-01-01T00:00:00+00:00"
+        store.save(data)
+
+        expired = store.expire_pending_requests()
+
+        self.assertEqual(expired[0]["id"], request["id"])
+        self.assertEqual(expired[0]["status"], "EXPIRED")
+        self.assertIn("approval.request.expired", (tmp_path / "audit.jsonl").read_text(encoding="utf-8"))
+
+    def test_controller_blocks_disk_online_until_approval_is_complete(self) -> None:
+        tmp_path = self.make_workspace()
+        controller = LockFixController(load_config(write_config(tmp_path)))
+
+        with self.assertRaisesRegex(PermissionError, "approval required"):
+            controller.reconnect("BAY-01")
+
+        self.approve_operation(controller, "DISK_ONLINE")
+        state = controller.reconnect("BAY-01")
+
+        self.assertIn(state, {LockFixState.ONLINE_VERIFIED_RW, LockFixState.QUARANTINE})
+
+    def test_controller_blocks_policy_and_hardware_power_until_approval_is_complete(self) -> None:
+        tmp_path = self.make_workspace()
+        controller = LockFixController(load_config(write_config(tmp_path)))
+
+        with self.assertRaisesRegex(PermissionError, "approval required"):
+            controller.require_policy_change_approval("rbac-policy")
+        with self.assertRaisesRegex(PermissionError, "approval required"):
+            controller.hardware_power_on("BAY-01")
+        with self.assertRaisesRegex(PermissionError, "approval required"):
+            controller.hardware_power_off("BAY-01")
+
+        self.approve_operation(controller, "POLICY_CHANGE", "rbac-policy")
+        self.approve_operation(controller, "HARDWARE_POWER_ON")
+        self.approve_operation(controller, "HARDWARE_POWER_OFF")
+
+        self.assertEqual(controller.require_policy_change_approval("rbac-policy")["status"], "APPROVED")
+        controller.hardware_power_on("BAY-01")
+        controller.hardware_power_off("BAY-01")
+
+    def test_offline_reconnect_validation_writes_report_and_checks_agent_portability(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+
+        summary = run_offline_reconnect_validation(config_path, report_dir=tmp_path / "reports", json_log_dir=tmp_path / "runtime")
+
+        self.assertIn(summary["overall_status"], {"OK", "ISSUE_DETECTED"})
+        self.assertTrue(Path(summary["html_report_path"]).exists())
+        self.assertTrue(Path(summary["json_log_path"]).exists())
+        finding_ids = {item["id"] for item in summary["findings"]}
+        self.assertIn("offline.proof", finding_ids)
+        self.assertIn("emergency.approval.gate", finding_ids)
+        self.assertIn("reconnect.blocked.until.approved", finding_ids)
+        self.assertIn("agent.os.backend", finding_ids)
+        self.assertIn("offline.reconnect.validation.completed", (tmp_path / "audit.jsonl").read_text(encoding="utf-8"))
+
+    def test_webui_permission_errors_return_403_and_emergency_does_not_pregrant_online(self) -> None:
+        source = Path("webui.py").read_text(encoding="utf-8")
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+
+        self.assertEqual(handler.permission_error_status(PermissionError("approval required: DISK_ONLINE")), 403)
+        self.assertEqual(handler.permission_error_status(PermissionError("authentication required")), 401)
+        self.assertIn('self.context.controller.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)', source)
+        self.assertIn('self.context.controller.approvals.require_approved("DISK_ONLINE", slot_id)', source)
+        self.assertNotIn("reason=\"admin_emergency_reconnect_requested\"", source)
 
     def test_install_properties_can_enable_live_operation_mode(self) -> None:
         tmp_path = self.make_workspace()
@@ -192,6 +865,7 @@ class LockFixTests(unittest.TestCase):
     def test_isolate_records_power_off_proof_requirement_when_status_is_unavailable(self) -> None:
         tmp_path = self.make_workspace()
         controller = LockFixController(load_config(write_config(tmp_path)))
+        self.approve_operation(controller, "DISK_OFFLINE")
 
         controller.isolate("BAY-01")
 
@@ -211,6 +885,7 @@ class LockFixTests(unittest.TestCase):
         }
         config_path.write_text(json.dumps(raw), encoding="utf-8")
         controller = LockFixController(load_config(config_path))
+        self.approve_operation(controller, "DISK_OFFLINE")
 
         controller.isolate("BAY-01")
 
@@ -232,6 +907,7 @@ class LockFixTests(unittest.TestCase):
         }
         config_path.write_text(json.dumps(raw), encoding="utf-8")
         controller = LockFixController(load_config(config_path))
+        self.approve_operation(controller, "DISK_OFFLINE")
 
         with self.assertRaisesRegex(ValueError, "protected Windows OS volume"):
             controller.isolate("BAY-01")
@@ -325,7 +1001,9 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("디스크 식별 판정", app_source)
         self.assertIn("detect-action-row", app_source)
         self.assertIn('data-detect-action="logs"', app_source)
-        self.assertIn('if (action === "logs") showView("logs2");', app_source)
+        self.assertIn('logsRange.highlight = keyword;', app_source)
+        self.assertIn('showView("logs2");', app_source)
+        self.assertIn("logs-highlight-row", css_source)
         self.assertIn('statusClass = isNormal ? "normal" : "abnormal"', app_source)
         self.assertIn(".detect-judgement-normal", css_source)
         self.assertIn(".detect-judgement-abnormal", css_source)
@@ -335,16 +1013,21 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("color: #16a34a", css_source)
         self.assertIn("color: #ef4444", css_source)
 
-    def test_logs_navigation_uses_simple_inline_logs_icon(self) -> None:
+    def test_customer_sidebar_uses_simplified_navigation_icons(self) -> None:
         root = Path.cwd()
         index_source = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
         css_source = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
 
+        self.assertIn('class="nav-icon detect-nav-icon"', index_source)
+        self.assertIn('class="nav-icon settings-nav-icon"', index_source)
+        self.assertIn('class="nav-icon logout-nav-icon"', index_source)
         self.assertIn('class="nav-icon logs-nav-icon"', index_source)
-        self.assertIn('class="log-dot"', index_source)
-        self.assertIn('d="M11 7h8"', index_source)
-        self.assertIn(".logs-nav-icon .log-dot", css_source)
-        self.assertIn("fill: currentColor;", css_source)
+        self.assertIn('data-view="logs2"', index_source)
+        self.assertIn(".detect-nav-icon svg", css_source)
+        self.assertIn(".settings-nav-icon svg", css_source)
+        self.assertIn(".logout-nav-icon svg", css_source)
+        self.assertIn("width: 28px;", css_source)
+        self.assertIn("height: 28px;", css_source)
         self.assertNotIn("transform: scale(2.25);", css_source)
 
     def test_security_audit_menu_is_separate_operational_view(self) -> None:
@@ -353,7 +1036,7 @@ class LockFixTests(unittest.TestCase):
         app_source = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
         css_source = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
 
-        self.assertIn('data-view="securityAudit"', index_source)
+        self.assertNotIn('data-view="securityAudit"', index_source)
         self.assertIn('id="securityAuditView"', index_source)
         self.assertIn('id="securityAuditSummary"', index_source)
         self.assertIn('id="securityAuditTable"', index_source)
@@ -425,6 +1108,7 @@ class LockFixTests(unittest.TestCase):
     def test_isolate_reaches_isolated(self) -> None:
         tmp_path = self.make_workspace()
         controller = LockFixController(load_config(write_config(tmp_path)))
+        self.approve_operation(controller, "DISK_OFFLINE")
 
         state = controller.isolate("BAY-01")
 
@@ -434,6 +1118,7 @@ class LockFixTests(unittest.TestCase):
     def test_reconnect_uid_mismatch_quarantines(self) -> None:
         tmp_path = self.make_workspace()
         controller = LockFixController(load_config(write_config(tmp_path, expected_uid="wrong")))
+        self.approve_operation(controller, "DISK_ONLINE")
 
         state = controller.reconnect("BAY-01")
 
@@ -443,6 +1128,7 @@ class LockFixTests(unittest.TestCase):
     def test_reconnect_recovers_access_path_when_power_on_fails_but_disk_is_visible(self) -> None:
         tmp_path = self.make_workspace()
         controller = LockFixController(load_config(write_config(tmp_path)))
+        self.approve_operation(controller, "DISK_ONLINE")
 
         class FailingPower:
             def on(self, slot_id: str) -> None:
@@ -468,6 +1154,7 @@ class LockFixTests(unittest.TestCase):
     def test_emergency_reconnect_requires_matching_disk_hash(self) -> None:
         tmp_path = self.make_workspace()
         controller = LockFixController(load_config(write_config(tmp_path)))
+        self.approve_operation(controller, "EMERGENCY_UNLOCK")
 
         with self.assertRaises(PermissionError):
             controller.emergency_reconnect("BAY-01", "wrong-hash")
@@ -482,6 +1169,8 @@ class LockFixTests(unittest.TestCase):
     def test_emergency_reconnect_verifies_then_reconnects_volume(self) -> None:
         tmp_path = self.make_workspace()
         controller = LockFixController(load_config(write_config(tmp_path)))
+        self.approve_operation(controller, "EMERGENCY_UNLOCK")
+        self.approve_operation(controller, "DISK_ONLINE")
 
         state = controller.emergency_reconnect("BAY-01", controller.emergency_access_hash("BAY-01"))
 
@@ -499,6 +1188,91 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("disk.access_path", audit_text)
         self.assertIn("disk.mount_rw", audit_text)
         self.assertIn("emergency.reconnect.complete", audit_text)
+
+    def test_windows_disk_offline_requires_strict_offline_verification(self) -> None:
+        tmp_path = self.make_workspace()
+        config = load_config(write_config(tmp_path))
+        base_slot = config.slot("BAY-01")
+        slot = type(base_slot)(
+            slot_id=base_slot.slot_id,
+            device="D:\\",
+            mount_point=Path("D:\\"),
+            expected_uid=base_slot.expected_uid,
+            identity=base_slot.identity,
+            manifest_path=base_slot.manifest_path,
+            power=base_slot.power,
+        )
+        audit_path = tmp_path / "offline-strict-audit.jsonl"
+
+        class OfflineRunner(CommandRunner):
+            def __init__(self) -> None:
+                super().__init__(dry_run=False)
+
+            def run(self, args: list[str], timeout: int = 120) -> str:
+                command = " ".join(args)
+                if "Set-Disk -Number $disk.Number -IsOffline $true" in command:
+                    return (
+                        'LOCKFIX_STORAGE_STATE={"drive":"D","accessPath":"D:\\\\","diskNumber":3,'
+                        '"diskUniqueId":"TEST-DISK","isOffline":true,"method":"Set-Disk -IsOffline true"}\n'
+                        "Disk 3: offline isolation completed for D:"
+                    )
+                if "Get-Disk -Number $diskNumber" in command:
+                    return (
+                        '{"drive":"D","diskNumber":3,"diskUniqueId":"TEST-DISK",'
+                        '"isOffline":true,"pathReachable":false,'
+                        '"accessPath":"D:\\\\","method":"Get-Disk + Test-Path strict offline verification"}'
+                    )
+                raise AssertionError(f"unexpected command: {command}")
+
+        disk = DiskOperator(OfflineRunner(), AuditLogger(audit_path))
+
+        disk.offline(slot)
+
+        audit_text = audit_path.read_text(encoding="utf-8")
+        self.assertIn("disk.offline.verify.start", audit_text)
+        self.assertIn("disk.offline.verify", audit_text)
+        self.assertIn('"is_offline": true', audit_text)
+        self.assertIn('"path_reachable": false', audit_text)
+
+    def test_windows_disk_offline_fails_when_disk_remains_online(self) -> None:
+        tmp_path = self.make_workspace()
+        config = load_config(write_config(tmp_path))
+        base_slot = config.slot("BAY-01")
+        slot = type(base_slot)(
+            slot_id=base_slot.slot_id,
+            device="D:\\",
+            mount_point=Path("D:\\"),
+            expected_uid=base_slot.expected_uid,
+            identity=base_slot.identity,
+            manifest_path=base_slot.manifest_path,
+            power=base_slot.power,
+        )
+        audit_path = tmp_path / "offline-online-failure-audit.jsonl"
+
+        class OnlineRunner(CommandRunner):
+            def __init__(self) -> None:
+                super().__init__(dry_run=False)
+
+            def run(self, args: list[str], timeout: int = 120) -> str:
+                command = " ".join(args)
+                if "Set-Disk -Number $disk.Number -IsOffline $true" in command:
+                    return (
+                        'LOCKFIX_STORAGE_STATE={"drive":"D","accessPath":"D:\\\\","diskNumber":3,'
+                        '"diskUniqueId":"TEST-DISK","isOffline":true,"method":"Set-Disk -IsOffline true"}\n'
+                        "Disk 3: offline isolation completed for D:"
+                    )
+                if "Get-Disk -Number $diskNumber" in command:
+                    raise CommandError("Disk 3 is still Online; Veeam-completed isolation requires IsOffline=True")
+                raise AssertionError(f"unexpected command: {command}")
+
+        disk = DiskOperator(OnlineRunner(), AuditLogger(audit_path))
+
+        with self.assertRaises(CommandError):
+            disk.offline(slot)
+
+        audit_text = audit_path.read_text(encoding="utf-8")
+        self.assertIn("disk.offline.verify.error", audit_text)
+        self.assertIn("still Online", audit_text)
 
     def test_airgap_summary_exposes_emergency_volume_access_state(self) -> None:
         tmp_path = self.make_workspace()
@@ -643,11 +1417,124 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("disk.safety.preflight.ok", audit_text)
         self.assertIn("disk.cache.flush.start", audit_text)
         self.assertIn("disk.cache.flush", audit_text)
+        self.assertIn("disk.dismount.start", audit_text)
+        self.assertIn("disk.dismount", audit_text)
+        self.assertIn("disk.drive_letter.remove.start", audit_text)
+        self.assertIn("disk.drive_letter.remove", audit_text)
         self.assertIn("Dismount-Volume -DriveLetter $drive -ErrorAction Stop", audit_text)
         self.assertIn("Remove-PartitionAccessPath", audit_text)
         self.assertIn("access path removed and no longer reachable", audit_text)
         self.assertIn("disk.unmount.verify", audit_text)
         self.assertNotIn("-Force", audit_text)
+
+    def test_windows_offline_records_drive_path_verification(self) -> None:
+        tmp_path = self.make_workspace()
+        config = load_config(write_config(tmp_path))
+        base_slot = config.slot("BAY-01")
+        slot = type(base_slot)(
+            slot_id=base_slot.slot_id,
+            device="D:\\",
+            mount_point=Path("D:\\"),
+            expected_uid=base_slot.expected_uid,
+            identity=base_slot.identity,
+            manifest_path=base_slot.manifest_path,
+            power=base_slot.power,
+        )
+        audit_path = tmp_path / "offline-verify-audit.jsonl"
+
+        class StorageRunner(CommandRunner):
+            def __init__(self) -> None:
+                super().__init__(dry_run=False)
+
+            def run(self, args: list[str], timeout: int = 120) -> str:
+                command = " ".join(args)
+                if "Set-Disk -Number $disk.Number -IsOffline $true" in command:
+                    return (
+                        'LOCKFIX_STORAGE_STATE={"drive":"D","accessPath":"D:\\\\","diskNumber":3,'
+                        '"diskUniqueId":"TEST-DISK","isOffline":true,"method":"Set-Disk -IsOffline true"}\n'
+                        "Disk 3: offline isolation completed for D:"
+                    )
+                if "Get-Disk -Number $diskNumber" in command:
+                    return (
+                        '{"drive":"D","diskNumber":3,"diskUniqueId":"TEST-DISK",'
+                        '"isOffline":true,"pathReachable":false,'
+                        '"accessPath":"D:\\\\","method":"Get-Disk + Test-Path offline verification"}'
+                    )
+                raise AssertionError(f"unexpected command: {command}")
+
+        disk = DiskOperator(StorageRunner(), AuditLogger(audit_path))
+
+        disk.offline(slot)
+
+        audit_text = audit_path.read_text(encoding="utf-8")
+        self.assertIn("disk.offline.start", audit_text)
+        self.assertIn("disk.offline", audit_text)
+        self.assertIn("disk.offline.verify.start", audit_text)
+        self.assertIn("disk.offline.verify", audit_text)
+        self.assertIn('"path_reachable": false', audit_text)
+        self.assertIn('"is_offline": true', audit_text)
+
+    def test_removable_reblock_removes_current_drive_letter_when_set_disk_offline_is_unsupported(self) -> None:
+        tmp_path = self.make_workspace()
+        config = load_config(write_config(tmp_path))
+        base_slot = config.slot("BAY-01")
+        slot = type(base_slot)(
+            slot_id=base_slot.slot_id,
+            device="G:\\",
+            mount_point=Path("G:\\"),
+            expected_uid=base_slot.expected_uid,
+            identity=base_slot.identity,
+            manifest_path=base_slot.manifest_path,
+            power=base_slot.power,
+        )
+        audit_path = tmp_path / "removable-reblock-audit.jsonl"
+        (tmp_path / "storage-BAY-01.json").write_text(
+            json.dumps(
+                {
+                    "accessPath": "G:\\",
+                    "diskNumber": 1,
+                    "partitionNumber": 1,
+                    "diskUniqueId": "USB-DISK",
+                    "isOffline": False,
+                    "offlineEquivalent": True,
+                    "setDiskOfflineSupported": False,
+                    "pathReachable": False,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        class RemovableRunner(CommandRunner):
+            def __init__(self) -> None:
+                super().__init__(dry_run=False)
+
+            def run(self, args: list[str], timeout: int = 120) -> str:
+                command = " ".join(args)
+                if "Set-Disk -Number $disk.Number -IsOffline $true" in command:
+                    raise CommandError("Set-Disk : Not Supported. Removable media cannot be set to offline.")
+                if "Unauthorized removable-media online state was reblocked" in command:
+                    if "Remove-PartitionAccessPath" not in command:
+                        raise AssertionError(f"expected access path removal command: {command}")
+                    return (
+                        'LOCKFIX_STORAGE_STATE={"drive":"G","accessPath":"G:\\\\","diskNumber":1,'
+                        '"diskUniqueId":"USB-DISK","isOffline":false,"offlineEquivalent":true,'
+                        '"setDiskOfflineSupported":false,"pathReachable":false,'
+                        '"removedAccessPaths":["F:\\\\"],"currentDriveLetters":[],"remainingAccessPaths":[],'
+                        '"method":"Unauthorized removable-media drive letter/access path removed"}\n'
+                        "Unauthorized removable-media online state was reblocked by removing access paths"
+                    )
+                raise AssertionError(f"unexpected command: {command}")
+
+        disk = DiskOperator(RemovableRunner(), AuditLogger(audit_path))
+
+        self.assertTrue(disk.enforce_offline_unless_approved(slot, approved=False, reason="unit_test_guard"))
+
+        audit_text = audit_path.read_text(encoding="utf-8")
+        self.assertIn("disk.online.unauthorized.reblock.error", audit_text)
+        self.assertIn("disk.online.unauthorized.reblock.removable_fallback.start", audit_text)
+        self.assertIn("disk.online.unauthorized.reblock.removable_fallback", audit_text)
+        self.assertIn("disk.online.unauthorized.reblock", audit_text)
+        self.assertIn("F:\\\\", audit_text)
 
     def test_storage_permission_denied_uses_system_fallback(self) -> None:
         tmp_path = self.make_workspace()
@@ -904,90 +1791,143 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("Set-ObjectProperty -Object $config -Name dry_run -Value $effectiveDryRun", source)
         self.assertIn('"lockfix\\command.py"', source)
 
-    def test_installer_and_default_config_use_live_operation_mode(self) -> None:
+    def test_readme_documents_rbac_approval_audit_automation(self) -> None:
+        source = (Path.cwd() / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("RBAC, Approval, and Audit Automation", source)
+        self.assertIn("migrations/001_lockfix_rbac_approval_audit.sql", source)
+        self.assertIn("The request creator cannot approve their own request.", source)
+        self.assertIn("Emergency unlock requires a reason, dual approval, and audit logging.", source)
+        self.assertIn("Repository Online workflow", source)
+        self.assertIn("Collaboration workflow menu", source)
+        self.assertIn("Department collaboration workflow", source)
+        self.assertIn("ApprovalRequest.reviewDepartments", source)
+        self.assertIn("DepartmentReview statuses", source)
+        self.assertIn("GET /api/approval-requests/:id/reviews", source)
+        self.assertIn("협업/승인 워크플로우", source)
+
+    def test_web_ui_rbac_menu_and_direct_access_guards_are_present(self) -> None:
         root = Path.cwd()
-        config = load_config(root / "config" / "lockfix.example.json")
-        setup_source = (root / "src" / "LockFixSetupWizard.cs").read_text(encoding="utf-8")
+        html = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        app = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
+        server = (root / "webui.py").read_text(encoding="utf-8")
 
-        self.assertFalse(config.dry_run)
-        self.assertEqual(json.loads((root / "config" / "lockfix.example.json").read_text(encoding="utf-8"))["operation_mode"], "live")
-        self.assertIn('"operation_mode=live"', setup_source)
-        self.assertIn('"dry_run=false"', setup_source)
-        self.assertIn('root["operation_mode"] = "live";', setup_source)
-        self.assertIn('root["dry_run"] = false;', setup_source)
+        for label in [
+            "Dashboard",
+            "Hardware Detect",
+            "Air-Gap",
+            "Reports",
+            "License",
+            "Settings",
+            "Logout",
+            "Operation",
+            "Hardware",
+            "User & Role",
+            "Audit Logs",
+        ]:
+            self.assertIn(label, html)
 
-    def test_latest_package_zip_selects_newest_release_package(self) -> None:
-        tmp_path = self.make_workspace()
-        old_package = tmp_path / "LOCK-FIX-Windows-Installer-Package-20260505-010000.zip"
-        new_package = tmp_path / "LOCK-FIX-Windows-Installer-Package-20260505-020000.zip"
-        old_package.write_text("old", encoding="utf-8")
-        new_package.write_text("new", encoding="utf-8")
-        os.utime(old_package, (1, 1))
-        os.utime(new_package, (2, 2))
+        self.assertNotIn("Air-Gap Policy", html)
+        self.assertNotIn("Veeam Integration</span>", html)
 
-        selected = webui.LockFixWebHandler.latest_package_zip(object(), tmp_path)
+        self.assertIn("menuDefinitions", app)
+        self.assertIn('roles: ["SUPER_ADMIN"]', app)
+        self.assertIn("visibleMenuDefinitions", app)
+        self.assertIn("canAccessView", app)
+        self.assertIn("showAccessDenied", app)
+        self.assertIn("accessDeniedView", html)
+        self.assertIn("window.addEventListener(\"hashchange\"", app)
+        self.assertIn('"permissions": self.current_permissions()', server)
+        self.assertIn("permissions_for_role", server)
+        self.assertIn("/api/approval-requests/([^/]+)/reviews", server)
+        self.assertIn("comment|mark-reviewed|needs-changes|block", server)
 
-        self.assertEqual(selected, new_package)
+    def test_web_ui_approval_tabs_and_button_visibility_are_testable(self) -> None:
+        root = Path.cwd()
+        html = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        app = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
+        css = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
 
-    def test_webui_renders_interlock_action_sections_without_status_icon(self) -> None:
-        source = (Path.cwd() / "web" / "static" / "app.js").read_text(encoding="utf-8")
-        css = (Path.cwd() / "web" / "static" / "styles.css").read_text(encoding="utf-8")
+        for tab in ["작업 요청", "부서 검토", "승인", "실행", "감사 기록"]:
+            self.assertIn(tab, html)
 
-        self.assertIn('text.startsWith("LOCK-FIX STEP ")', source)
-        self.assertIn("veeam-action-section", source)
-        self.assertIn(".veeam-session-actions .veeam-action-section", css)
-
-    def test_airgap_steps_stay_grey_until_real_api_transition(self) -> None:
-        source = (Path.cwd() / "web" / "static" / "app.js").read_text(encoding="utf-8")
-        css = (Path.cwd() / "web" / "static" / "styles.css").read_text(encoding="utf-8")
-
-        self.assertIn('state: "PENDING", code: "BACKUP_COMPLETED"', source)
-        self.assertIn("apiSynced &&", source)
-        self.assertIn("isStepLive(item)", source)
-        self.assertIn(".veeam-step-pending,", css)
-        self.assertIn("background: #f6f8fb;", css)
-        self.assertIn("background: #94a3b8;", css)
-        self.assertIn(".veeam-step-active,", css)
-        self.assertIn("background: linear-gradient(90deg, #22c55e 0%, #16a34a 52%, #0f8f3d 100%);", css)
-        self.assertIn("filter: drop-shadow(0 6px 9px rgba(15, 143, 61, 0.28));", css)
-        self.assertIn("grid-template-columns: repeat(5, minmax(158px, 1fr));", css)
-        self.assertIn("grid-template-columns: 30px minmax(0, 1fr);", css)
-        self.assertIn("gap: 10px;", css)
-        self.assertIn("padding: 14px 22px;", css)
-        self.assertIn("min-height: 104px;", css)
-        self.assertIn("width: 100%;", css)
-        self.assertIn("text-overflow: ellipsis;", css)
-        self.assertIn("width: 42px;", css)
-        self.assertIn("height: 26px;", css)
+        self.assertIn("approvalDecisionSummary", app)
+        self.assertIn("repositoryOnlineWorkflowSummary", app)
+        self.assertIn("departmentReviewsFor", app)
+        self.assertIn("departmentReviewStatus", app)
+        self.assertIn("departmentReviewSummary", app)
+        self.assertIn("renderRepositoryOnlineRequestPanel", app)
+        self.assertIn("renderFinalApprovalPanel", app)
+        self.assertIn("[최종 승인 대기]", app)
+        self.assertIn("승인 상태:", app)
+        self.assertIn("승인 완료", app)
+        self.assertIn("data-reject-id", app)
+        self.assertIn('decision: "REJECTED"', app)
+        self.assertIn("[Repository Online 요청]", app)
+        self.assertIn("백업 검증을 위해 Repository Online 필요", app)
+        self.assertIn("□", app)
+        self.assertIn("보안팀", app)
+        self.assertIn("하드웨어팀", app)
+        self.assertIn("부서 검토 진행 중", app)
+        self.assertIn("pendingDepartmentReviewsForSession", app)
+        self.assertIn("data-department-review-id", app)
+        self.assertIn("data-review-action", app)
+        self.assertIn("/api/approval-requests/", app)
+        self.assertIn("최종 승인 가능 여부", html + app)
+        self.assertIn("작업 요청에서 부서 검토, 승인, 실행, 감사 기록까지", html)
+        self.assertIn("approvalWorkflowPipeline", html + app)
+        self.assertIn("부서 검토", html)
+        self.assertIn("실행", html)
+        self.assertIn("감사 기록", html)
+        self.assertIn("approval-review-state", css)
+        self.assertIn("repository-online-request-card", css)
+        self.assertIn("final-approval-wait-card", css)
+        self.assertIn("rbac-danger-action", css)
+        self.assertIn("workflowHistoryItems", app)
+        self.assertIn("renderWorkflowHistory", app)
+        self.assertIn("canShowReviewButton", app)
+        self.assertIn('data-review-id', app)
+        self.assertIn("approvalRequestBox", app)
+        self.assertIn("departmentReviewBox", app)
+        self.assertIn("myApprovalPending", app)
+        self.assertIn("approvalWorkflowStages", app)
+        self.assertIn("renderApprovalWorkflowPipeline", app)
+        self.assertIn("completedHistory", app)
+        self.assertIn("auditRecord", app)
+        self.assertIn("workflow-history-list", css)
+        self.assertIn("canShowApprovalButton", app)
+        self.assertIn('`${approved} / ${required} approved`', app)
+        self.assertIn('hasPermission("DISK_ONLINE_APPROVE"', app)
+        self.assertIn("request.allowedApproverRoles.includes(session.role)", app)
+        self.assertIn('request.requesterUserId || "") === String(session.user || "")', app)
+        self.assertIn("data-approval-id", app)
+        self.assertIn("window.lockfixUiAuth", app)
 
     def test_airgap_detail_log_area_scrolls_inside_blue_left_border(self) -> None:
         css = (Path.cwd() / "web" / "static" / "styles.css").read_text(encoding="utf-8")
 
         self.assertIn(".veeam-log-wrap", css)
         self.assertIn("box-sizing: border-box;", css)
-        self.assertIn("height: clamp(280px, 42vh, 340px);", css)
-        self.assertIn("max-height: 340px;", css)
+        self.assertIn("min-height: 132px;", css)
+        self.assertIn("max-height: 300px;", css)
         self.assertIn("border: 1px solid #c8d8ea;", css)
         self.assertIn("direction: ltr;", css)
         self.assertIn("overflow-x: auto;", css)
-        self.assertIn("overflow-y: scroll;", css)
+        self.assertIn("overflow-y: auto;", css)
         self.assertIn("overscroll-behavior: contain;", css)
         self.assertIn("scrollbar-width: thin;", css)
-        self.assertIn("scrollbar-gutter: stable;", css)
-        self.assertIn("scrollbar-color: #dcdcdf #ffffff;", css)
+        self.assertIn("scrollbar-color: #aeb7c3 #f1f5f9;", css)
         self.assertIn(".veeam-log-wrap:hover", css)
-        self.assertIn("scrollbar-color: #8a8a8f #ffffff;", css)
-        self.assertIn(".veeam-log-wrap::-webkit-scrollbar-button:vertical:decrement", css)
-        self.assertIn(".veeam-log-wrap::-webkit-scrollbar-button:vertical:increment", css)
+        self.assertIn("scrollbar-color: #7f8a98 #f1f5f9;", css)
+        self.assertIn(".veeam-log-wrap::-webkit-scrollbar-button", css)
         self.assertIn(".veeam-log-wrap::-webkit-scrollbar-track-piece", css)
         self.assertIn(".veeam-log-wrap::-webkit-scrollbar-corner", css)
-        self.assertIn("border-left: 1px solid #eef2f7;", css)
         self.assertIn("min-height: 112px;", css)
-        self.assertIn("border: 4px solid #ffffff;", css)
+        self.assertIn("border: 3px solid #f1f5f9;", css)
         self.assertIn("background-clip: padding-box;", css)
-        self.assertIn("background: #dcdcdf;", css)
-        self.assertIn("background: #8a8a8f;", css)
-        self.assertIn("background: #747478;", css)
+        self.assertIn("background: #aeb7c3;", css)
+        self.assertIn("background: #7f8a98;", css)
+        self.assertIn("background: #697586;", css)
         self.assertIn(".veeam-log-wrap:hover::-webkit-scrollbar-thumb", css)
         self.assertIn("position: sticky;", css)
 
@@ -1562,6 +2502,7 @@ class LockFixTests(unittest.TestCase):
         class Probe:
             context = webui.WebContext(config_path)
 
+        self.approve_operation(Probe.context.controller, "DISK_OFFLINE")
         marker_path = webui.ROOT / "runtime" / "veeam_auto_isolate.json"
         old_value = marker_path.read_text(encoding="utf-8") if marker_path.exists() else None
         payload = {
@@ -1955,6 +2896,7 @@ class LockFixTests(unittest.TestCase):
         config_path.write_text(json.dumps(raw), encoding="utf-8")
         config = load_config(config_path)
         controller = LockFixController(config)
+        self.approve_operation(controller, "DISK_OFFLINE")
 
         diagnostics = {
             "success": True,
@@ -2083,4 +3025,3 @@ class LockFixTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

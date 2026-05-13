@@ -1,6 +1,6 @@
 param(
     [string]$InstallRoot = "$env:LOCALAPPDATA\Programs\OAM\LOCK-FIX",
-    [string]$VeeamHost = "192.168.219.230",
+    [string]$VeeamHost = "",
     [int]$VeeamPort = 9419,
     [string]$VeeamUser = "administrator",
     [string]$ApiVersion = "1.2-rev1",
@@ -18,6 +18,21 @@ function Convert-SecureStringToPlainText {
     finally {
         [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
     }
+}
+
+function Get-PrimaryIPv4 {
+    $ip = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.IPAddress -notlike "127.*" -and
+            $_.IPAddress -notlike "169.254.*" -and
+            $_.AddressState -eq "Preferred"
+        } |
+        Sort-Object InterfaceMetric, InterfaceIndex |
+        Select-Object -First 1 -ExpandProperty IPAddress
+    if ([string]::IsNullOrWhiteSpace($ip)) {
+        return "127.0.0.1"
+    }
+    return $ip
 }
 
 function Copy-DirectoryClean {
@@ -45,6 +60,10 @@ if (-not (Test-Path -LiteralPath $InstallRoot)) {
 }
 if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot "webui.py"))) {
     throw "Run this repair tool from a LOCK-FIX package or source folder that contains webui.py."
+}
+
+if ([string]::IsNullOrWhiteSpace($VeeamHost)) {
+    $VeeamHost = Get-PrimaryIPv4
 }
 
 $securePassword = Read-Host "Veeam password for $VeeamUser@$VeeamHost" -AsSecureString
@@ -81,9 +100,9 @@ if (-not $config.veeam) {
 $baseUrl = "https://${VeeamHost}:${VeeamPort}"
 $config.veeam.enabled = $true
 $config.veeam.base_url = $baseUrl
-$config.veeam.auto_discover = $true
+$config.veeam.auto_discover = $false
 $config.veeam.discovery_candidates = @($baseUrl)
-$config.veeam.discovery_scan_local_subnet = $true
+$config.veeam.discovery_scan_local_subnet = $false
 $config.veeam.api_version = $ApiVersion
 $config.veeam.username = $VeeamUser
 $config.veeam.username_env = "LOCKFIX_VEEAM_USER"

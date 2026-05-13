@@ -29,13 +29,13 @@ def create_veeam_client(veeam_config: dict[str, Any]) -> VeeamClient:
     settings = VeeamSettings(
         base_url=str(veeam_config.get("base_url") or "https://127.0.0.1:9419").rstrip("/"),
         enterprise_manager_url=str(veeam_config.get("enterprise_manager_url") or "https://127.0.0.1:9398").rstrip("/"),
-        auto_discover=bool_value(veeam_config.get("auto_discover", True), True),
+        auto_discover=bool_value(veeam_config.get("auto_discover", False), False),
         discovery_candidates=[
             str(item).rstrip("/")
             for item in veeam_config.get("discovery_candidates", [])
             if str(item).strip()
         ],
-        discovery_scan_local_subnet=bool_value(veeam_config.get("discovery_scan_local_subnet", True), True),
+        discovery_scan_local_subnet=bool_value(veeam_config.get("discovery_scan_local_subnet", False), False),
         discovery_timeout_seconds=float(veeam_config.get("discovery_timeout_seconds", 0.35)),
         api_version=str(veeam_config.get("api_version") or "1.2-rev1"),
         username=username,

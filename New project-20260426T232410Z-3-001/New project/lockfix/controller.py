@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import secrets
 
+from .approvals import ApprovalStore
 from .audit import AuditLogger
 from .command import CommandRunner
 from .config import LockFixConfig, SlotConfig
@@ -28,12 +29,15 @@ class LockFixController:
         self.disk = DiskOperator(self.runner, self.audit)
         self.secure_store = LockFixSecureStore.from_runtime(config.audit_log_path.parent)
         self.online_approval_path = config.audit_log_path.parent / "online-approvals.json"
+        self.approvals = ApprovalStore(config.audit_log_path.parent / "approvals.json", self.audit)
 
     def set_state(self, slot_id: str, state: LockFixState, **payload: object) -> None:
         self.state.set(slot_id, state)
         self.audit.write("state.transition", slot_id=slot_id, state=state.value, **payload)
 
     def isolate(self, slot_id: str, repository_path: str = "") -> LockFixState:
+        self.audit.write("disk.offline.request", slot_id=slot_id, resourceType="DISK", resourceId=slot_id)
+        self.approvals.require_approved("DISK_OFFLINE", slot_id)
         slot = self.repository_slot(self.config.slot(slot_id), repository_path)
         try:
             self.set_state(slot_id, LockFixState.BACKUP_COMPLETED)
@@ -47,12 +51,25 @@ class LockFixController:
             self.set_state(slot_id, LockFixState.DISK_OFFLINING)
             self.disk.offline(slot)
             offline_proof = self.disk.read_storage_state(slot)
+            if not self.config.dry_run and not bool(offline_proof.get("isOffline", False)):
+                error = "True Disk Offline proof was not obtained after Veeam backup completion."
+                self.audit.write(
+                    "disk.offline.strict.error",
+                    slot_id=slot_id,
+                    disk_number=offline_proof.get("diskNumber", ""),
+                    disk_unique_id=offline_proof.get("diskUniqueId", ""),
+                    drive_letter=offline_proof.get("drive", ""),
+                    is_offline=offline_proof.get("isOffline", False),
+                    path_reachable=offline_proof.get("pathReachable", True),
+                    error=error,
+                )
+                raise RuntimeError(error)
             self.audit.write(
                 "power.mock.status",
                 slot_id=slot_id,
                 ok=None,
                 requirement="Use Windows disk offline proof for current LOCK-FIX storage isolation.",
-                compatibility_note="Legacy power proof compatibility event; actual isolation uses Set-Disk -IsOffline true.",
+                compatibility_note="Legacy power proof compatibility event; actual isolation uses Windows disk offline proof or removable-media access-path removal proof.",
             )
             self.audit.write(
                 "power.off.proof.required",
@@ -70,8 +87,10 @@ class LockFixController:
                 disk_unique_id=offline_proof.get("diskUniqueId", ""),
                 drive_letter=offline_proof.get("drive", ""),
                 is_offline=offline_proof.get("isOffline", True),
+                offline_equivalent=offline_proof.get("offlineEquivalent", False),
+                path_reachable=offline_proof.get("pathReachable", False),
                 method=offline_proof.get("method", "Set-Disk -IsOffline true"),
-                message="Windows cannot cut disk power directly; LOCK-FIX completed Set-Disk offline isolation.",
+                message="LOCK-FIX completed Windows storage isolation using the recorded disk offline proof or removable-media access-path removal proof.",
             )
             self.set_state(slot_id, LockFixState.ISOLATED)
             return LockFixState.ISOLATED
@@ -80,6 +99,8 @@ class LockFixController:
             raise
 
     def reconnect(self, slot_id: str, repository_path: str = "") -> LockFixState:
+        self.audit.write("disk.online.request", slot_id=slot_id, resourceType="DISK", resourceId=slot_id)
+        self.approvals.require_approved("DISK_ONLINE", slot_id)
         base_slot = self.config.slot(slot_id)
         remembered_path = str(self.disk.read_storage_state(base_slot).get("accessPath") or "").strip()
         slot = self.repository_slot(base_slot, repository_path or remembered_path)
@@ -296,6 +317,19 @@ class LockFixController:
         return slot_uid(slot)
 
     def emergency_reconnect(self, slot_id: str, verification_hash: str = "", repository_path: str = "") -> LockFixState:
+        self.audit.write("emergency.unlock.request", slot_id=slot_id, resourceType="EMERGENCY", resourceId=slot_id)
+        emergency_approval = self.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)
+        emergency_reason = str((emergency_approval.get("metadata") or {}).get("reason") or "").strip()
+        if not emergency_reason:
+            self.audit.write(
+                "emergency.unlock.denied",
+                slot_id=slot_id,
+                resourceType="EMERGENCY",
+                resourceId=slot_id,
+                result="FAILED",
+                reason="emergency unlock reason is required",
+            )
+            raise PermissionError("emergency unlock reason is required")
         slot = self.config.slot(slot_id)
         storage_state = self.disk.read_storage_state(slot)
         remembered_path = str(storage_state.get("accessPath") or "").strip()
@@ -322,6 +356,7 @@ class LockFixController:
             mount_point=str(slot.mount_point),
             device=slot.device,
             repository_path=reconnect_path,
+            emergency_reason=emergency_reason,
             verification_source="local_secure_store" if not provided else "manual_compatibility",
             stored_hash_hmac=current_hash_hmac[:16],
         )
@@ -352,6 +387,7 @@ class LockFixController:
             "emergency.reconnect.approved",
             slot_id=slot_id,
             repository_path=reconnect_path,
+            emergency_reason=emergency_reason,
             expected_hash_digest=expected_digest,
             hash_source="local_secure_store",
         )
@@ -389,6 +425,22 @@ class LockFixController:
             message="emergency reconnect completed",
         )
         return state
+
+    def hardware_power_off(self, slot_id: str) -> None:
+        self.audit.write("hardware.power_off.requested", slot_id=slot_id, resourceType="HARDWARE_POWER", resourceId=slot_id)
+        self.approvals.require_approved("HARDWARE_POWER_OFF", slot_id)
+        slot = self.config.slot(slot_id)
+        build_power_controller(self.runner, slot.power, self.audit).off(slot_id)
+
+    def hardware_power_on(self, slot_id: str) -> None:
+        self.audit.write("hardware.power_on.requested", slot_id=slot_id, resourceType="HARDWARE_POWER", resourceId=slot_id)
+        self.approvals.require_approved("HARDWARE_POWER_ON", slot_id)
+        slot = self.config.slot(slot_id)
+        build_power_controller(self.runner, slot.power, self.audit).on(slot_id)
+
+    def require_policy_change_approval(self, target_id: str = "policy") -> dict:
+        self.audit.write("policy.change.requested", resourceType="POLICY", resourceId=target_id)
+        return self.approvals.require_approved("POLICY_CHANGE", target_id)
 
     def isolation_proof(self, slot_id: str, repository_path: str = "") -> dict[str, object]:
         slot = self.repository_slot(self.config.slot(slot_id), repository_path)

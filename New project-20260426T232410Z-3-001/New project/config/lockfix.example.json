@@ -7,25 +7,25 @@
   "disk_wait_seconds": 60,
   "veeam": {
     "enabled": true,
-    "base_url": "https://192.168.219.230:9419",
+    "base_url": "https://192.168.219.165:9419",
     "enterprise_manager_url": "https://127.0.0.1:9398",
-    "auto_discover": true,
+    "auto_discover": false,
     "discovery_candidates": [
-      "https://192.168.219.230:9419"
+      "https://192.168.219.165:9419"
     ],
-    "discovery_scan_local_subnet": true,
+    "discovery_scan_local_subnet": false,
     "discovery_timeout_seconds": 0.35,
     "api_version": "1.2-rev1",
-    "username": "administrator",
+    "username": "DESKTOP-I3DF527\\OAM",
     "username_env": "LOCKFIX_VEEAM_USER",
     "password_env": "LOCKFIX_VEEAM_PASSWORD",
     "verify_ssl": false,
     "job_name": "Backup Copy Job 1",
-    "job_id": "7cda3ae9-317b-4952-990e-428f7801342f",
+    "job_id": "",
     "require_backup_copy": true,
-    "target_repository_id": "88788f9e-d8f5-4eb4-bc4f-9b3f5403bcec",
-    "target_repository_name": "D REPO",
-    "target_repository_path": "D:\\Backup",
+    "target_repository_id": "912bec6a-e5e9-4895-a5a6-fbaa996a475f",
+    "target_repository_name": "G",
+    "target_repository_path": "G:\\",
     "exclude_os_repository": true,
     "console_log_fallback_enabled": true,
     "console_log_root": "C:\\ProgramData\\Veeam\\Backup",
@@ -33,14 +33,15 @@
     "isolate_on_status": [
       "Success"
     ],
+    "auto_approve_disk_offline_after_success": true,
     "post_success_delay_seconds": 10,
     "require_repository_resync_quiet": true
   },
   "slots": [
     {
       "slot_id": "BAY-01",
-      "device": "D:\\",
-      "mount_point": "D:\\",
+      "device": "G:\\",
+      "mount_point": "G:\\",
       "expected_uid": "replace-with-registered-uid",
       "identity": {
         "serial": "TEST-SERIAL-001",
