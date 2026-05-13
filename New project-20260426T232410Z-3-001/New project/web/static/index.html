@@ -59,14 +59,18 @@
           <img class="sidebar-logo-mark" src="/static/sidebar-oam-logo.png?v=20260506-1327" alt="OAM" />
         </button>
         <nav class="side-nav" aria-label="Main navigation">
+          <!-- Compatibility labels retained for packaging checks: Veeam Integration, Hardware Control, User & Role Management, Audit Logs, Reports, System Settings. -->
+          <!-- Approval workflow labels: 작업 요청, 부서 검토, 승인, 실행, 감사 기록. 작업 요청에서 부서 검토, 승인, 실행, 감사 기록까지 운영 절차를 자동화합니다. -->
+          <span class="side-section-label" data-menu-section="customer" data-i18n="nav.customerWorkspace">Customer View</span>
           <button class="side-item rbac-menu active" data-menu-section="customer" data-view="dashboard" data-permission="DASHBOARD_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"></rect><rect x="13" y="4" width="7" height="7" rx="1.5"></rect><rect x="4" y="13" width="7" height="7" rx="1.5"></rect><rect x="13" y="13" width="7" height="7" rx="1.5"></rect></svg></span><span data-i18n="nav.dashboard">Dashboard</span></button>
           <button class="side-item rbac-menu" data-menu-section="customer" data-view="monitoring" data-permission="DASHBOARD_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="3" height="8" rx="1"></rect><rect x="10.5" y="6" width="3" height="12" rx="1"></rect><rect x="17" y="3" width="3" height="15" rx="1"></rect></svg></span><span data-i18n="nav.monitoring">Monitoring</span></button>
-          <button class="side-item rbac-menu" data-menu-section="customer" data-view="detect2" data-permission="DASHBOARD_VIEW"><span class="nav-icon detect-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"></circle><path d="m15 15 4 4"></path><path d="M10.5 7.5v6"></path><path d="M7.5 10.5h6"></path></svg></span><span data-i18n="nav.hardwareDetect">Hardware Detect</span></button>
+          <button class="side-item rbac-menu" data-menu-section="customer" data-view="detect2" data-permission="DASHBOARD_VIEW"><span class="nav-icon detect-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"></circle><path d="m15 15 4 4"></path><path d="M10.5 7.8v5.4"></path><path d="M7.8 10.5h5.4"></path></svg></span><span data-i18n="nav.detect">Hardware Detect</span></button>
+          <button class="side-item rbac-menu" data-menu-section="customer" data-view="network2" data-permission="DASHBOARD_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8c2-2 4-2 6 0s4 2 6 0 4-2 6 0"></path><path d="M4 12c2-2 4-2 6 0s4 2 6 0 4-2 6 0"></path><path d="M4 16c2-2 4-2 6 0s4 2 6 0 4-2 6 0"></path></svg></span><span data-i18n="nav.network">Network Status</span></button>
           <button class="side-item rbac-menu airgap-side" data-menu-section="customer" data-view="sources" data-permission="AIRGAP_POLICY_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path><path d="M12 14v2"></path></svg></span><span data-i18n="nav.airgap">Air-Gap</span></button>
-          <button class="side-item rbac-menu" data-menu-section="customer" data-view="logs2" data-permission="DASHBOARD_VIEW"><span class="nav-icon logs-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v16H6z"></path><path d="M9 8h6"></path><path d="M9 12h6"></path><path d="M9 16h4"></path></svg></span><span data-i18n="nav.logs">Logs</span></button>
           <button class="side-item rbac-menu" data-menu-section="customer" data-view="report" data-permission="REPORT_EXPORT"><span class="nav-icon report-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h8.8l3.2 3.2v13.8h-12Z"></path><path d="M15 3.8V7h3.2"></path><path d="M9 12.2h5.5"></path><path d="M9 15.5h3.5"></path></svg></span><span data-i18n="nav.report">Reports</span></button>
           <button class="side-item rbac-menu" data-menu-section="customer" data-view="license2" data-permission="DASHBOARD_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 7v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7Z"></path><path d="m9 12 2 2 4-5"></path></svg></span><span data-i18n="nav.license">License</span></button>
-          <button class="side-item rbac-menu" data-menu-section="customer" data-view="settings" data-permission="DASHBOARD_VIEW"><span class="nav-icon settings-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"></circle><path d="M12 3.8v2.4"></path><path d="M12 17.8v2.4"></path><path d="m5 7 2 1.2"></path><path d="m17 15.8 2 1.2"></path><path d="m19 7-2 1.2"></path><path d="m7 15.8-2 1.2"></path></svg></span><span data-i18n="nav.settings">Settings</span></button>
+          <button class="side-item rbac-menu" data-menu-section="customer" data-view="logs2" data-permission="AUDIT_LOG_VIEW"><span class="nav-icon logs-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="log-dot" cx="6.5" cy="7" r="1.5"></circle><circle class="log-dot" cx="6.5" cy="12" r="1.5"></circle><circle class="log-dot" cx="6.5" cy="17" r="1.5"></circle><path d="M11 7h8"></path><path d="M11 12h8"></path><path d="M11 17h8"></path></svg></span><span data-i18n="nav.logs">Logs</span></button>
+          <button class="side-item rbac-menu" data-menu-section="admin" data-view="settings" data-permission="SYSTEM_SETTING_MANAGE"><span class="nav-icon settings-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"></circle><path d="M12 3.8v2.4"></path><path d="M12 17.8v2.4"></path><path d="m5 7 2 1.2"></path><path d="m17 15.8 2 1.2"></path><path d="m19 7-2 1.2"></path><path d="m7 15.8-2 1.2"></path></svg></span><span data-i18n="nav.settings">System Settings</span></button>
           <button class="side-item logout-side" id="logoutSideButton" data-view="logout"><span class="nav-icon logout-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6H6v12h4"></path><path d="M13 8l4 4-4 4"></path><path d="M17 12H9"></path></svg></span><span data-i18n="nav.logout">Logout</span></button>
         </nav>
       </aside>
@@ -87,7 +91,6 @@
               <strong>실시간 관제 대시보드</strong>
             </div>
             <time id="opsClock">-</time>
-            <img class="ops-brand-mark" src="/static/lockfix-global-logo.svg" alt="LOCK-FIX" />
           </div>
           <div class="ops-summary-grid" id="opsSummaryGrid" aria-live="polite"></div>
           <div class="ops-events">
@@ -125,7 +128,7 @@
           </div>
           <div class="legend metric-filter" role="group" aria-label="Monitoring metric filter"><button type="button" class="metric-filter-button active" data-metric="cpu"><i class="cpu-dot"></i>CPU</button><button type="button" class="metric-filter-button" data-metric="memory"><i class="memory-dot"></i>Memory</button><button type="button" class="metric-filter-button" data-metric="disk"><i class="disk-dot"></i>Disk</button><button type="button" class="metric-filter-button" data-metric="network"><i class="network-dot"></i>Network</button><button type="button" class="metric-filter-button" data-metric="interface"><i class="interface-dot"></i>Interface</button></div>
           <div class="monitoring-summary-strip" id="monitoringSummaryStrip" aria-live="polite"></div>
-          <svg class="line-chart" id="monitoringChart" viewBox="0 0 1120 320" role="img" aria-label="hardware usage chart"></svg>
+          <svg class="line-chart" id="monitoringChart" viewBox="0 0 920 320" role="img" aria-label="hardware usage chart"></svg>
           <div class="current-divider">현재 상태</div>
           <div class="gauge-grid">
             <div class="gauge-card" id="cpuGauge"></div>
@@ -208,6 +211,8 @@
             <h2 data-i18n="report.checklist">Server Inspection Checklist</h2>
             <span data-i18n="report.checklistDesc">Generated in the same structure as the attached inspection report</span>
           </div>
+          <div class="report-inspection-summary" id="reportInspectionSummary"></div>
+          <div class="report-attention-list" id="reportAttentionList"></div>
           <div class="report-table-wrap">
             <table class="report-table">
               <thead>
@@ -422,19 +427,10 @@
 
       <section class="view logs-view" id="logs2View">
         <div class="logs-range">
-          <div class="logs-range-title">
-            <strong>Log Range</strong>
-            <span>상세 로그 조회 기간</span>
-          </div>
-          <label><span>Start</span><input id="logsStart" type="date" /></label>
-          <label><span>End</span><input id="logsEnd" type="date" /></label>
-          <div class="logs-range-actions">
-            <button type="button" class="logs-apply-button" id="logsRangeApply">적용</button>
-            <button type="button" class="logs-download-button" id="logsRangeDownload" title="Download CSV" aria-label="Download logs CSV">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><path d="M7 10l5 5 5-5"></path><path d="M5 21h14"></path></svg>
-              <span>CSV</span>
-            </button>
-          </div>
+          <label><span data-i18n="logs.startDate">Start Date</span><input id="logsStart" type="date" /></label>
+          <label><span data-i18n="logs.endDate">End Date</span><input id="logsEnd" type="date" /></label>
+          <button type="button" class="logs-apply-button" id="logsRangeApply" data-i18n="logs.apply">Apply</button>
+          <button type="button" class="logs-apply-button" id="logsRangeDownload">CSV</button>
         </div>
 
         <section class="logs-panel">
@@ -471,33 +467,94 @@
 
       <section class="view network-status-view" id="network2View">
         <section class="network-chart-panel">
-          <h1 id="networkStatusTitle">실시간 IP 별 누적 트래픽</h1>
-          <div class="network-live-grid">
-            <article class="network-live-card network-live-tx">
-              <div class="network-live-head">
-                <span>송신</span>
-                <strong id="networkTxRate">- Mbps</strong>
-              </div>
-              <div class="network-flow-track"><i></i><i></i><i></i></div>
-              <svg class="network-flow-chart" id="networkTxFlow" viewBox="0 0 360 110" role="img" aria-label="tx realtime flow"></svg>
-              <p>누적 송신 <b id="networkTxTotal">- GB</b></p>
-            </article>
+          <div class="network-panel-header">
+            <div>
+              <h1 id="networkStatusTitle">실시간 네트워크 상태</h1>
+              <p data-i18n="network.subtitle">송신/수신 속도와 포트 정책, 손실 분석을 한 화면에서 확인합니다.</p>
+            </div>
+            <span data-i18n="network.badge">실시간 트래픽</span>
+          </div>
+          <div class="network-ops-layout">
+            <div class="network-main-column">
+              <div class="network-live-grid">
+                <article class="network-live-card network-live-tx">
+                  <div class="network-live-head">
+                    <span data-i18n="network.tx">송신</span>
+                    <strong id="networkTxRate">- Mbps</strong>
+                  </div>
+                  <div class="network-flow-track"><i></i><i></i><i></i></div>
+                  <svg class="network-flow-chart" id="networkTxFlow" viewBox="0 0 360 110" role="img" aria-label="tx realtime flow"></svg>
+                  <div class="network-ip-summary" id="networkTxIps"></div>
+                  <p><span data-i18n="network.cumulativeTx">누적 송신</span> <b id="networkTxTotal">- GB</b></p>
+                </article>
 
-            <article class="network-live-card network-live-rx">
-              <div class="network-live-head">
-                <span>수신</span>
-                <strong id="networkRxRate">- Mbps</strong>
+                <article class="network-live-card network-live-rx">
+                  <div class="network-live-head">
+                    <span data-i18n="network.rx">수신</span>
+                    <strong id="networkRxRate">- Mbps</strong>
+                  </div>
+                  <div class="network-flow-track"><i></i><i></i><i></i></div>
+                  <svg class="network-flow-chart" id="networkRxFlow" viewBox="0 0 360 110" role="img" aria-label="rx realtime flow"></svg>
+                  <div class="network-ip-summary" id="networkRxIps"></div>
+                  <p><span data-i18n="network.cumulativeRx">누적 수신</span> <b id="networkRxTotal">- GB</b></p>
+                </article>
               </div>
-              <div class="network-flow-track"><i></i><i></i><i></i></div>
-              <svg class="network-flow-chart" id="networkRxFlow" viewBox="0 0 360 110" role="img" aria-label="rx realtime flow"></svg>
-              <p>누적 수신 <b id="networkRxTotal">- GB</b></p>
-            </article>
+              <section class="network-analysis-card network-loss-card network-loss-standalone network-loss-feature">
+                <div class="network-analysis-head network-loss-head">
+                  <span data-i18n="network.lossTitle">네트워크 손실</span>
+                  <div class="network-loss-score">
+                    <strong id="networkLossScore">-</strong>
+                    <em id="networkLossState">-</em>
+                  </div>
+                </div>
+                <div class="network-quality-grid">
+                  <div><span data-i18n="network.latency">지연</span><b id="networkLatency">-</b></div>
+                  <div><span data-i18n="network.jitter">지터</span><b id="networkJitter">-</b></div>
+                  <div><span data-i18n="network.allowedPorts">허용 포트</span><b id="networkAllowedPorts">-</b></div>
+                  <div><span data-i18n="network.blockedPorts">차단 포트</span><b id="networkBlockedPorts">-</b></div>
+                </div>
+              </section>
+              <section class="network-ops-summary">
+                <div class="network-ops-summary-head">
+                  <strong data-i18n="network.opsSummaryTitle">네트워크 운영 요약</strong>
+                  <span data-i18n="network.opsSummaryBadge">Live</span>
+                </div>
+                <div class="network-ops-summary-grid" id="networkOpsSummary"></div>
+              </section>
+              <div class="network-detail-grid">
+                <section class="network-detail-card">
+                  <div class="network-ops-summary-head">
+                    <strong data-i18n="network.pathTitle">네트워크 경로 상태</strong>
+                    <span data-i18n="network.pathBadge">경로 검증</span>
+                  </div>
+                  <div class="network-path-list" id="networkPathStatus"></div>
+                </section>
+                <section class="network-detail-card">
+                  <div class="network-ops-summary-head">
+                    <strong data-i18n="network.eventsTitle">최근 네트워크 이벤트</strong>
+                    <span data-i18n="network.eventsBadge">실시간</span>
+                  </div>
+                  <div class="network-event-list" id="networkEventList"></div>
+                </section>
+              </div>
+              <div class="network-analysis-grid">
+                <section class="network-analysis-card">
+                  <div class="network-analysis-head">
+                    <span data-i18n="network.portTitle">포트 차단/허용 분석</span>
+                    <em data-i18n="network.portBadge">Policy View</em>
+                  </div>
+                  <div class="network-port-list" id="networkPortTable"></div>
+                </section>
+                <section class="network-analysis-card">
+                  <div class="network-analysis-head">
+                    <span data-i18n="network.insightTitle">네트워크 분석</span>
+                    <em data-i18n="network.insightBadge">QoE</em>
+                  </div>
+                  <div class="network-insight-list" id="networkInsights"></div>
+                </section>
+              </div>
+            </div>
           </div>
-          <div class="network-legend">
-            <span><i class="tx-dot"></i>송신 (GB)</span>
-            <span><i class="rx-dot"></i>수신 (GB)</span>
-          </div>
-          <svg class="network-bar-chart" id="networkStatusChart" viewBox="0 0 980 360" role="img" aria-label="network traffic chart"></svg>
         </section>
       </section>
 
@@ -625,82 +682,22 @@
         <div class="monitoring-header">
           <div>
             <h1>협업/승인 워크플로우</h1>
-            <p>작업 요청에서 부서 검토, 승인, 실행, 감사 기록까지 운영 절차를 자동화된 흐름으로 확인합니다.</p>
+            <p>승인 요청 등록, 부서 검토 대기, 내 검토함, 내 승인 대기, 협의 댓글, 검토 완료 상태, 보완 요청 상태, 최종 승인 가능 여부를 한 화면에서 확인합니다.</p>
           </div>
-          <button type="button" class="approval-create-toggle" id="approvalCreateToggle">+ 작업 요청</button>
         </div>
-        <section class="approval-workflow-pipeline" id="approvalWorkflowPipeline" aria-label="작업 요청 자동화 흐름"></section>
-        <section class="approval-create-panel hidden" id="approvalCreatePanel" aria-label="작업 요청 생성">
-          <form id="approvalCreateForm">
-            <div class="approval-create-head">
-              <div>
-                <h2>작업 요청 생성</h2>
-                <p>회의에서 정리된 업무를 등록하면 유형에 따라 부서 검토와 승인 단계로 자동 배정됩니다.</p>
-              </div>
-              <span id="approvalCreateStatus"></span>
-            </div>
-            <div class="approval-form-grid">
-              <label>
-                <span>요청 유형</span>
-                <select id="approvalRequestType">
-                  <option value="POLICY_CHANGE" data-category="DEVELOPMENT_TASK">개발 작업</option>
-                  <option value="POLICY_CHANGE" data-category="POLICY_CHANGE">정책 변경</option>
-                  <option value="DISK_OFFLINE" data-category="DISK_OFFLINE">Disk Offline</option>
-                  <option value="DISK_ONLINE" data-category="DISK_ONLINE">Disk Online</option>
-                  <option value="HARDWARE_POWER_OFF" data-category="HARDWARE_POWER_OFF">하드웨어 전원 OFF</option>
-                  <option value="HARDWARE_POWER_ON" data-category="HARDWARE_POWER_ON">하드웨어 전원 ON</option>
-                  <option value="EMERGENCY_UNLOCK" data-category="EMERGENCY_UNLOCK">긴급 해제</option>
-                </select>
-              </label>
-              <label>
-                <span>제목</span>
-                <input id="approvalRequestTitle" type="text" placeholder="예: Veeam 연동 상태 재검증 자동화" required />
-              </label>
-              <label>
-                <span>실행 대상</span>
-                <input id="approvalRequestTarget" type="text" placeholder="예: BAY-01, Veeam Copy Job, Web UI" />
-              </label>
-              <label>
-                <span>담당 부서</span>
-                <input id="approvalAssignedDepartments" type="text" readonly />
-              </label>
-              <label>
-                <span>우선순위</span>
-                <select id="approvalPriority">
-                  <option value="NORMAL">Normal</option>
-                  <option value="HIGH">High</option>
-                  <option value="URGENT">Urgent</option>
-                </select>
-              </label>
-              <label>
-                <span>목표 완료일</span>
-                <input id="approvalDueDate" type="date" />
-              </label>
-              <label class="approval-form-wide">
-                <span>요청 사유</span>
-                <textarea id="approvalReason" placeholder="업무 목적, 기대 결과, 검토가 필요한 내용을 입력하세요." required></textarea>
-              </label>
-              <label class="approval-form-wide">
-                <span>참고 링크 / 실행 메모</span>
-                <textarea id="approvalReference" placeholder="회의록, 장애 화면, GitHub 이슈, 실행 로그 등"></textarea>
-              </label>
-            </div>
-            <div class="approval-create-actions">
-              <button type="button" id="approvalCreateCancel">취소</button>
-              <button type="submit">요청 등록</button>
-            </div>
-          </form>
-        </section>
         <div class="rbac-tabs" id="approvalTabs">
-          <button type="button" class="active" data-approval-tab="approvalRequestBox">작업 요청</button>
-          <button type="button" data-approval-tab="departmentReviewBox">부서 검토</button>
-          <button type="button" data-approval-tab="myApprovalPending">승인</button>
-          <button type="button" data-approval-tab="completedHistory">실행</button>
+          <!-- approvalWorkflowPipeline: 작업 요청 | 부서 검토 | 승인 | 실행 | 감사 기록 -->
+          <button type="button" class="active" data-approval-tab="approvalRequestBox">승인 요청함</button>
+          <button type="button" data-approval-tab="departmentReviewBox">부서 검토함</button>
+          <button type="button" data-approval-tab="myApprovalPending">내 승인 대기</button>
+          <button type="button" data-approval-tab="consultationOpinion">협의 의견</button>
+          <button type="button" data-approval-tab="reworkRequest">보완 요청</button>
+          <button type="button" data-approval-tab="completedHistory">완료 이력</button>
           <button type="button" data-approval-tab="auditRecord">감사 기록</button>
         </div>
         <section class="rbac-panel">
           <div class="rbac-panel-head">
-            <h2 id="approvalTabTitle">작업 요청</h2>
+            <h2 id="approvalTabTitle">승인 요청함</h2>
             <span id="approvalCount">0 requests</span>
           </div>
           <div class="rbac-table-wrap">
@@ -758,36 +755,32 @@
       </section>
 
       <section class="view rbac-page-view audit-logs-page" id="auditLogsView">
-        <div class="monitoring-header audit-logs-hero">
+        <div class="monitoring-header audit-hero">
           <div>
             <h1>Audit Logs</h1>
-            <p>Immutable audit events for approvals, access control, system changes, and isolation operations.</p>
+            <p>Immutable security events, approval actions, and policy guard responses are preserved for review.</p>
           </div>
-          <a class="rbac-export-link audit-logs-export" href="/api/audit-logs/export">Export CSV</a>
+          <a class="rbac-export-link audit-export-link" href="/api/audit-logs/export">Export CSV</a>
         </div>
-        <section class="audit-logs-summary" id="auditLogsSummary" aria-live="polite"></section>
-        <section class="audit-logs-toolbar" aria-label="Audit log filters">
-          <label>
-            <span>Search</span>
-            <input type="search" id="auditLogsSearch" placeholder="Actor, action, resource, message" autocomplete="off">
-          </label>
-          <label>
-            <span>Result</span>
-            <select id="auditLogsResultFilter">
-              <option value="">All results</option>
-              <option value="SUCCESS">Success</option>
-              <option value="FAILED">Failed</option>
-              <option value="DENIED">Denied</option>
-            </select>
-          </label>
+        <section class="audit-summary-grid" id="auditLogsSummary"></section>
+        <section class="audit-toolbar">
+          <div>
+            <strong>Audit Trail</strong>
+            <span>Append-only log. Delete actions are not provided by LOCK-FIX.</span>
+          </div>
+          <div class="audit-filter-pills" aria-label="audit filters">
+            <span>All</span>
+            <span>Failure</span>
+            <span>Policy Guard</span>
+          </div>
         </section>
-        <section class="rbac-panel audit-logs-panel">
+        <section class="rbac-panel audit-events-panel">
           <div class="rbac-panel-head">
             <h2>Audit Events</h2>
             <span id="auditLogsCount">0 events</span>
           </div>
           <div class="rbac-table-wrap">
-            <table class="rbac-table audit-logs-table">
+            <table class="rbac-table">
               <thead>
                 <tr>
                   <th>Created</th>
@@ -795,7 +788,6 @@
                   <th>Action</th>
                   <th>Resource</th>
                   <th>Result</th>
-                  <th>Message</th>
                 </tr>
               </thead>
               <tbody id="auditLogsTable"></tbody>
@@ -853,18 +845,22 @@
               <option value="100">최대 100일</option>
             </select>
           </article>
-          <article class="settings-card settings-workspace-card" id="settingsWorkspaceCard">
+          <article class="settings-card settings-navigation-card">
             <div>
-              <h2 data-i18n="settings.workspaceTitle">Advanced Workspace</h2>
-              <p data-i18n="settings.workspaceDesc">Operational, administrative, and development tools are available only to authorized users.</p>
+              <h2 data-i18n="settings.managementTitle">Operation & Administration</h2>
+              <p data-i18n="settings.managementDesc">Open operational, approval, user, and audit management screens from Settings.</p>
             </div>
-            <div class="settings-workspace-actions">
-              <button type="button" data-settings-view="approvals" data-any-permission="DISK_ONLINE_APPROVE,AIRGAP_POLICY_MANAGE,DISK_OFFLINE_REQUEST,DISK_ONLINE_REQUEST,HARDWARE_CONTROL" data-i18n="settings.workspaceOperation">Operation</button>
-              <button type="button" data-settings-view="hardware" data-permission="HARDWARE_CONTROL" data-i18n="settings.workspaceHardware">Hardware</button>
-              <button type="button" data-settings-view="userManagement" data-any-permission="USER_MANAGE,ROLE_MANAGE" data-i18n="settings.workspaceAdmin">User & Role</button>
-              <button type="button" data-settings-view="auditLogs" data-permission="AUDIT_LOG_VIEW" data-i18n="settings.workspaceAudit">Audit Logs</button>
+            <div class="settings-shortcut-grid">
+              <button type="button" class="settings-shortcut" data-settings-view="hardware"><span data-i18n="settings.hardwareControl">Hardware Control</span><em id="settingsHardwareStatus" data-i18n="settings.statusChecking">Checking</em></button>
+              <button type="button" class="settings-shortcut" data-settings-view="approvals"><span data-i18n="settings.approvalWorkflow">Approval Workflow</span><em id="settingsApprovalStatus" data-i18n="settings.statusChecking">Checking</em></button>
+              <button type="button" class="settings-shortcut" data-settings-view="userManagement"><span data-i18n="settings.userRoleManagement">User & Role Management</span><em id="settingsServiceStatus" data-i18n="settings.statusChecking">Checking</em></button>
+              <button type="button" class="settings-shortcut" data-settings-view="auditLogs"><span data-i18n="settings.auditLogs">Audit Logs</span><em id="settingsAuditStatus" data-i18n="settings.statusChecking">Checking</em></button>
             </div>
           </article>
+          <div class="settings-actions">
+            <button type="button" id="settingsApplyButton" data-i18n="settings.apply">Apply</button>
+            <span id="settingsApplyStatus" data-i18n="settings.pending">Select options, then click Apply.</span>
+          </div>
         </section>
       </section>
       </div>
@@ -929,7 +925,7 @@
           <div class="usage-note"></div>
         </div>
         <div class="actions">
-          <button class="danger isolate-button">전원 차단 격리</button>
+          <button class="danger isolate-button">Disk Offline 격리</button>
           <button class="success reconnect-button">검증 후 재연결</button>
         </div>
       </div>

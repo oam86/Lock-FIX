@@ -76,8 +76,6 @@ class DiskOperator:
             "access denied",
             "permission denied",
             "unauthorized",
-            "액세스",
-            "액세스를 사용할 수 없습니다",
             "액세스가 거부",
             "권한",
             "거부",
@@ -300,7 +298,6 @@ class DiskOperator:
                 mount_point=str(slot.mount_point),
                 device=slot.device,
                 drive_letter=drive,
-                command="Dismount-Volume -DriveLetter",
             )
             self.audit.write(
                 "disk.drive_letter.remove.start",
@@ -308,8 +305,6 @@ class DiskOperator:
                 mount_point=str(slot.mount_point),
                 device=slot.device,
                 drive_letter=drive,
-                access_path=f"{drive}:\\",
-                command="Remove-PartitionAccessPath",
             )
             output = self.storage_run([
                 "powershell",
@@ -334,20 +329,6 @@ class DiskOperator:
                     reason="Drive letter is already absent; continuing isolation because the volume is already released.",
                     error=str(exc),
                 )
-                self.audit.write(
-                    "disk.drive_letter.remove",
-                    slot_id=slot.slot_id,
-                    drive_letter=drive,
-                    access_path=f"{drive}:\\",
-                    already_absent=True,
-                    output=output,
-                )
-                self.audit.write(
-                    "disk.unmount.verify",
-                    slot_id=slot.slot_id,
-                    drive_letter=drive,
-                    output=f"Volume {drive}: access path was already absent and no longer reachable",
-                )
                 self.audit.write("disk.unmount.tick", slot_id=slot.slot_id, elapsed_seconds=1, mount_point=str(slot.mount_point))
                 self.audit.write("disk.unmount", slot_id=slot.slot_id, output=output, already_absent=True)
                 return
@@ -361,21 +342,10 @@ class DiskOperator:
             )
             raise
         self.persist_storage_state(slot, output)
-        self.audit.write(
-            "disk.dismount",
-            slot_id=slot.slot_id,
-            drive_letter=drive,
-            output="Dismount-Volume completed or was bypassed when unavailable; access path removal gate follows.",
-        )
-        self.audit.write(
-            "disk.drive_letter.remove",
-            slot_id=slot.slot_id,
-            drive_letter=drive,
-            access_path=f"{drive}:\\",
-            output=f"Remove-PartitionAccessPath completed for {drive}:\\",
-        )
         self.audit.write("disk.unmount.tick", slot_id=slot.slot_id, elapsed_seconds=1, mount_point=str(slot.mount_point))
         self.audit.write("disk.unmount", slot_id=slot.slot_id, output=output)
+        self.audit.write("disk.dismount", slot_id=slot.slot_id, drive_letter=drive, output=output)
+        self.audit.write("disk.drive_letter.remove", slot_id=slot.slot_id, drive_letter=drive, output=output)
         self.verify_unmounted(slot, drive)
 
     def wait_for_disk(self, slot: SlotConfig, timeout_seconds: int) -> None:
@@ -611,10 +581,7 @@ class DiskOperator:
             ], timeout=30)
         except Exception as exc:
             self.audit.write("disk.offline.error", slot_id=slot.slot_id, drive_letter=drive, error=str(exc))
-            if self.is_removable_offline_unsupported_error(str(exc)):
-                output = self.removable_offline_equivalent_proof(slot, drive, str(exc))
-            else:
-                raise
+            raise
         self.persist_storage_state(slot, output)
         self.audit.write("disk.offline.tick", slot_id=slot.slot_id, elapsed_seconds=1, drive_letter=drive)
         self.audit.write("disk.offline", slot_id=slot.slot_id, drive_letter=drive, output=output)
@@ -624,14 +591,13 @@ class DiskOperator:
         storage_state = self.read_storage_state(slot)
         disk_number = str(storage_state.get("diskNumber", "")).strip()
         access_path = str(storage_state.get("accessPath") or f"{drive}:\\").strip()
-        offline_equivalent = bool(storage_state.get("offlineEquivalent")) and storage_state.get("setDiskOfflineSupported") is False
         self.audit.write(
             "disk.offline.verify.start",
             slot_id=slot.slot_id,
             drive_letter=drive,
             disk_number=disk_number,
             access_path=access_path,
-            offline_equivalent=offline_equivalent,
+            requirement="True Windows Disk Offline proof is required after Veeam backup completion.",
         )
         if not disk_number:
             error = "Cannot verify disk offline state because diskNumber was not recorded."
@@ -654,42 +620,19 @@ class DiskOperator:
                     f"$drive = '{drive}'; "
                     f"$diskNumber = [UInt32]'{disk_number}'; "
                     f"$accessPath = '{self.ps_single_quote(access_path)}'; "
-                    f"$offlineEquivalent = ${str(offline_equivalent).lower()}; "
                     "$disk = Get-Disk -Number $diskNumber -ErrorAction Stop; "
                     "$pathReachable = Test-Path $accessPath; "
                     "if ($disk.IsBoot -or $disk.IsSystem) { throw 'Protected Windows OS disk cannot be used by LOCK-FIX' }; "
-                    "$currentDriveLetters = @(); "
-                    "$remainingAccessPaths = @(); "
-                    "$targetPartitions = @(Get-Partition -DiskNumber $disk.Number -ErrorAction SilentlyContinue | Where-Object { $_.Type -notin @('Reserved','System') }); "
-                    "foreach ($targetPartition in $targetPartitions) { "
-                    "if ($targetPartition.DriveLetter) { $currentDriveLetters += (\"$($targetPartition.DriveLetter):\\\") }; "
-                    "foreach ($candidateAccessPath in @($targetPartition.AccessPaths)) { "
-                    "if ($candidateAccessPath -and -not ([string]$candidateAccessPath).StartsWith('\\\\?\\Volume{')) { "
-                    "$remainingAccessPaths += [string]$candidateAccessPath "
-                    "} "
-                    "} "
-                    "}; "
-                    "$remainingAccessPaths = @($remainingAccessPaths | Select-Object -Unique); "
-                    "$currentDriveLetters = @($currentDriveLetters | Select-Object -Unique); "
-                    "foreach ($candidateAccessPath in $remainingAccessPaths) { "
-                    "if (Test-Path $candidateAccessPath) { $pathReachable = $true } "
-                    "}; "
-                    "if (-not $offlineEquivalent -and -not $disk.IsOffline) { throw \"Disk $diskNumber is not offline\" }; "
-                    "if ($offlineEquivalent -and ($currentDriveLetters.Count -gt 0 -or $remainingAccessPaths.Count -gt 0)) { "
-                    "throw \"Removable-media offline equivalent failed; current access paths remain: $($remainingAccessPaths -join ', ') $($currentDriveLetters -join ', ')\" "
-                    "}; "
+                    "if (-not $disk.IsOffline) { throw \"Disk $diskNumber is still Online; Veeam-completed isolation requires IsOffline=True\" }; "
                     "if ($pathReachable) { throw \"Drive access path $accessPath is still reachable\" }; "
                     "$proof = [ordered]@{ "
                     "drive=$drive; "
                     "diskNumber=$disk.Number; "
                     "diskUniqueId=$disk.UniqueId; "
                     "isOffline=[bool]$disk.IsOffline; "
-                    "offlineEquivalent=[bool]$offlineEquivalent; "
                     "pathReachable=[bool]$pathReachable; "
                     "accessPath=$accessPath; "
-                    "currentDriveLetters=$currentDriveLetters; "
-                    "remainingAccessPaths=$remainingAccessPaths; "
-                    "method=($(if ($offlineEquivalent) { 'Get-Disk + Test-Path offline-equivalent verification' } else { 'Get-Disk + Test-Path offline verification' })) "
+                    "method='Get-Disk + Test-Path strict offline verification' "
                     "}; "
                     "Write-Output ($proof | ConvertTo-Json -Compress)"
                 ),
@@ -714,117 +657,11 @@ class DiskOperator:
             drive_letter=drive,
             disk_number=disk_number,
             access_path=access_path,
-            is_offline=bool(proof.get("isOffline", True)),
-            offline_equivalent=bool(proof.get("offlineEquivalent", False)),
-            path_reachable=bool(proof.get("pathReachable", False)),
+            is_offline=bool(proof.get("isOffline", False)),
+            path_reachable=bool(proof.get("pathReachable", True)),
             proof=proof,
             output=output,
         )
-
-    def removable_offline_equivalent_proof(self, slot: SlotConfig, drive: str, original_error: str) -> str:
-        storage_state = self.read_storage_state(slot)
-        disk_number = str(storage_state.get("diskNumber", "")).strip()
-        partition_number = str(storage_state.get("partitionNumber", "")).strip()
-        disk_unique_id = str(storage_state.get("diskUniqueId", "")).strip()
-        access_path = str(storage_state.get("accessPath") or f"{drive}:\\").strip()
-        self.audit.write(
-            "disk.offline.removable_fallback.start",
-            slot_id=slot.slot_id,
-            drive_letter=drive,
-            disk_number=disk_number,
-            partition_number=partition_number,
-            access_path=access_path,
-            reason="Set-Disk -IsOffline is not supported for this removable Windows media; verifying drive-letter/access-path isolation instead.",
-            original_error=original_error,
-        )
-        output = self.storage_run([
-            "powershell",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            (
-                f"$drive = '{drive}'; "
-                f"$accessPath = '{self.ps_single_quote(access_path)}'; "
-                f"$storedDiskNumber = '{disk_number}'; "
-                f"$storedPartitionNumber = '{partition_number}'; "
-                f"$storedDiskUniqueId = '{self.ps_single_quote(disk_unique_id)}'; "
-                f"$originalError = '{self.ps_single_quote(original_error)}'; "
-                "Update-HostStorageCache -ErrorAction SilentlyContinue; "
-                "$disk = $null; "
-                "if ($storedDiskNumber) { $disk = Get-Disk -Number ([UInt32]$storedDiskNumber) -ErrorAction SilentlyContinue }; "
-                "if (-not $disk -and $storedDiskUniqueId) { $disk = Get-Disk -ErrorAction SilentlyContinue | Where-Object { [string]$_.UniqueId -eq $storedDiskUniqueId } | Select-Object -First 1 }; "
-                "if (-not $disk) { throw 'Cannot verify removable media isolation because the target disk identity was not found.' }; "
-                "if ($disk.IsBoot -or $disk.IsSystem) { throw 'Protected Windows OS disk cannot be used by LOCK-FIX' }; "
-                "$targetPartitions = @(Get-Partition -DiskNumber $disk.Number -ErrorAction Stop | Where-Object { $_.Type -notin @('Reserved','System') }); "
-                "$removedAccessPaths = @(); "
-                "foreach ($targetPartition in $targetPartitions) { "
-                "$candidateAccessPaths = @(); "
-                "if ($targetPartition.DriveLetter) { $candidateAccessPaths += (\"$($targetPartition.DriveLetter):\\\") }; "
-                "foreach ($candidateAccessPath in @($targetPartition.AccessPaths)) { "
-                "if ($candidateAccessPath -and -not ([string]$candidateAccessPath).StartsWith('\\\\?\\Volume{')) { "
-                "$candidateAccessPaths += [string]$candidateAccessPath "
-                "} "
-                "}; "
-                "foreach ($candidateAccessPath in @($candidateAccessPaths | Select-Object -Unique)) { "
-                "if (-not $candidateAccessPath) { continue }; "
-                "try { "
-                "Remove-PartitionAccessPath -DiskNumber $targetPartition.DiskNumber -PartitionNumber $targetPartition.PartitionNumber -AccessPath $candidateAccessPath -ErrorAction Stop; "
-                "$removedAccessPaths += $candidateAccessPath "
-                "} catch { "
-                "if (Test-Path $candidateAccessPath) { throw } "
-                "} "
-                "} "
-                "}; "
-                "Update-HostStorageCache -ErrorAction SilentlyContinue; "
-                "$targetPartitions = @(Get-Partition -DiskNumber $disk.Number -ErrorAction Stop | Where-Object { $_.Type -notin @('Reserved','System') }); "
-                "$currentDriveLetters = @(); "
-                "$remainingAccessPaths = @(); "
-                "foreach ($targetPartition in $targetPartitions) { "
-                "if ($targetPartition.DriveLetter) { $currentDriveLetters += (\"$($targetPartition.DriveLetter):\\\") }; "
-                "foreach ($candidateAccessPath in @($targetPartition.AccessPaths)) { "
-                "if ($candidateAccessPath -and -not ([string]$candidateAccessPath).StartsWith('\\\\?\\Volume{')) { "
-                "$remainingAccessPaths += [string]$candidateAccessPath "
-                "} "
-                "} "
-                "}; "
-                "$currentDriveLetters = @($currentDriveLetters | Select-Object -Unique); "
-                "$remainingAccessPaths = @($remainingAccessPaths | Select-Object -Unique); "
-                "$pathReachable = Test-Path $accessPath; "
-                "foreach ($candidateAccessPath in $remainingAccessPaths) { "
-                "if (Test-Path $candidateAccessPath) { $pathReachable = $true } "
-                "}; "
-                "if ($currentDriveLetters.Count -gt 0 -or $remainingAccessPaths.Count -gt 0) { "
-                "throw \"Removable-media access paths remain after removal: $($remainingAccessPaths -join ', ') $($currentDriveLetters -join ', ')\" "
-                "}; "
-                "if ($pathReachable) { throw \"Drive access path $accessPath is still reachable after access-path removal\" }; "
-                "$proof = [ordered]@{ "
-                "drive=$drive; "
-                "diskNumber=$disk.Number; "
-                "diskUniqueId=$disk.UniqueId; "
-                "isOffline=[bool]$disk.IsOffline; "
-                "offlineEquivalent=$true; "
-                "setDiskOfflineSupported=$false; "
-                "pathReachable=[bool]$pathReachable; "
-                "accessPath=$accessPath; "
-                "removedAccessPaths=$removedAccessPaths; "
-                "currentDriveLetters=$currentDriveLetters; "
-                "remainingAccessPaths=$remainingAccessPaths; "
-                "method='Drive letter/access path removed; Set-Disk offline unsupported for removable media'; "
-                "originalError=$originalError "
-                "}; "
-                "Write-Output ('LOCKFIX_STORAGE_STATE=' + ($proof | ConvertTo-Json -Compress)); "
-                "Write-Output \"Volume $drive`: access path is absent; removable-media offline equivalent isolation completed\""
-            ),
-        ], timeout=30)
-        self.audit.write(
-            "disk.offline.removable_fallback",
-            slot_id=slot.slot_id,
-            drive_letter=drive,
-            access_path=access_path,
-            output=output,
-        )
-        return output
 
     def online(self, slot: SlotConfig, approved_until: str = "") -> None:
         self.assert_not_protected_os_volume(slot)
@@ -902,120 +739,34 @@ class DiskOperator:
             ], timeout=30)
         except Exception as exc:
             self.audit.write("disk.online.unauthorized.reblock.error", slot_id=slot.slot_id, drive_letter=drive, reason=reason, error=str(exc))
-            if self.is_removable_offline_unsupported_error(str(exc)):
-                output = self.removable_reblock_offline_equivalent(slot, drive, reason, str(exc))
-            else:
-                raise
-        self.persist_storage_state(slot, output)
+            fallback_output = self.storage_run([
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                (
+                    f"{self.partition_lookup_script(slot, drive)} "
+                    "$accessPaths = @(); "
+                    "if ($partition.AccessPaths) { $accessPaths = @($partition.AccessPaths) } "
+                    "if ($partition.DriveLetter) { $accessPaths += ($partition.DriveLetter + ':\\') } "
+                    "$accessPaths = $accessPaths | Select-Object -Unique; "
+                    "foreach ($path in $accessPaths) { "
+                    "  Remove-PartitionAccessPath -DiskNumber $partition.DiskNumber -PartitionNumber $partition.PartitionNumber -AccessPath $path -ErrorAction Stop "
+                    "} "
+                    "$after = Get-Partition -DiskNumber $partition.DiskNumber -PartitionNumber $partition.PartitionNumber -ErrorAction Stop; "
+                    "$remaining = @(); if ($after.AccessPaths) { $remaining = @($after.AccessPaths) } "
+                    "$proof = [ordered]@{ drive=$drive; accessPath=($drive + ':\\'); diskNumber=$partition.DiskNumber; diskUniqueId=$disk.UniqueId; isOffline=[bool]$disk.IsOffline; offlineEquivalent=$true; setDiskOfflineSupported=$false; pathReachable=(Test-Path ($drive + ':\\')); removedAccessPaths=$accessPaths; currentDriveLetters=@($after.DriveLetter) | Where-Object { $_ }; remainingAccessPaths=$remaining; method='Unauthorized removable-media drive letter/access path removed' }; "
+                    "Write-Output ('LOCKFIX_STORAGE_STATE=' + ($proof | ConvertTo-Json -Compress)); "
+                    "Write-Output 'Unauthorized removable-media online state was reblocked by removing access paths'"
+                ),
+            ], timeout=30)
+            self.persist_storage_state(slot, fallback_output)
+            self.audit.write("disk.online.unauthorized.reblock.removable_fallback.start", slot_id=slot.slot_id, drive_letter=drive, reason=reason)
+            self.audit.write("disk.online.unauthorized.reblock.removable_fallback", slot_id=slot.slot_id, drive_letter=drive, reason=reason, output=fallback_output)
+            output = fallback_output
         self.audit.write("disk.online.unauthorized.reblock", slot_id=slot.slot_id, drive_letter=drive, reason=reason, output=output)
         return True
-
-    def removable_reblock_offline_equivalent(self, slot: SlotConfig, drive: str, reason: str, original_error: str) -> str:
-        storage_state = self.read_storage_state(slot)
-        disk_number = str(storage_state.get("diskNumber", "")).strip()
-        partition_number = str(storage_state.get("partitionNumber", "")).strip()
-        disk_unique_id = str(storage_state.get("diskUniqueId", "")).strip()
-        access_path = str(storage_state.get("accessPath") or f"{drive}:\\").strip()
-        self.audit.write(
-            "disk.online.unauthorized.reblock.removable_fallback.start",
-            slot_id=slot.slot_id,
-            drive_letter=drive,
-            reason=reason,
-            disk_number=disk_number,
-            partition_number=partition_number,
-            access_path=access_path,
-            original_error=original_error,
-        )
-        output = self.storage_run([
-            "powershell",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            (
-                f"$drive = '{drive}'; "
-                f"$accessPath = '{self.ps_single_quote(access_path)}'; "
-                f"$storedDiskNumber = '{disk_number}'; "
-                f"$storedPartitionNumber = '{partition_number}'; "
-                f"$storedDiskUniqueId = '{self.ps_single_quote(disk_unique_id)}'; "
-                f"$originalError = '{self.ps_single_quote(original_error)}'; "
-                f"$reason = '{self.ps_single_quote(reason)}'; "
-                "Update-HostStorageCache -ErrorAction SilentlyContinue; "
-                "$disk = $null; "
-                "if ($storedDiskNumber) { $disk = Get-Disk -Number ([UInt32]$storedDiskNumber) -ErrorAction SilentlyContinue }; "
-                "if (-not $disk -and $storedDiskUniqueId) { $disk = Get-Disk -ErrorAction SilentlyContinue | Where-Object { [string]$_.UniqueId -eq $storedDiskUniqueId } | Select-Object -First 1 }; "
-                "if (-not $disk) { throw 'Cannot reblock removable media because the target disk identity was not found.' }; "
-                "if ($disk.IsBoot -or $disk.IsSystem) { throw 'Protected Windows OS disk cannot be used by LOCK-FIX' }; "
-                "$targetPartitions = @(Get-Partition -DiskNumber $disk.Number -ErrorAction Stop | Where-Object { $_.Type -notin @('Reserved','System') }); "
-                "$removedAccessPaths = @(); "
-                "foreach ($targetPartition in $targetPartitions) { "
-                "$candidateAccessPaths = @(); "
-                "if ($targetPartition.DriveLetter) { $candidateAccessPaths += (\"$($targetPartition.DriveLetter):\\\") }; "
-                "foreach ($candidateAccessPath in @($targetPartition.AccessPaths)) { "
-                "if ($candidateAccessPath -and -not ([string]$candidateAccessPath).StartsWith('\\\\?\\Volume{')) { "
-                "$candidateAccessPaths += [string]$candidateAccessPath "
-                "} "
-                "}; "
-                "foreach ($candidateAccessPath in @($candidateAccessPaths | Select-Object -Unique)) { "
-                "if (-not $candidateAccessPath) { continue }; "
-                "try { "
-                "Remove-PartitionAccessPath -DiskNumber $targetPartition.DiskNumber -PartitionNumber $targetPartition.PartitionNumber -AccessPath $candidateAccessPath -ErrorAction Stop; "
-                "$removedAccessPaths += $candidateAccessPath "
-                "} catch { "
-                "if (Test-Path $candidateAccessPath) { throw } "
-                "} "
-                "} "
-                "}; "
-                "Update-HostStorageCache -ErrorAction SilentlyContinue; "
-                "$targetPartitions = @(Get-Partition -DiskNumber $disk.Number -ErrorAction Stop | Where-Object { $_.Type -notin @('Reserved','System') }); "
-                "$currentDriveLetters = @(); "
-                "$remainingAccessPaths = @(); "
-                "foreach ($targetPartition in $targetPartitions) { "
-                "if ($targetPartition.DriveLetter) { $currentDriveLetters += (\"$($targetPartition.DriveLetter):\\\") }; "
-                "foreach ($candidateAccessPath in @($targetPartition.AccessPaths)) { "
-                "if ($candidateAccessPath -and -not ([string]$candidateAccessPath).StartsWith('\\\\?\\Volume{')) { "
-                "$remainingAccessPaths += [string]$candidateAccessPath "
-                "} "
-                "} "
-                "}; "
-                "$currentDriveLetters = @($currentDriveLetters | Select-Object -Unique); "
-                "$remainingAccessPaths = @($remainingAccessPaths | Select-Object -Unique); "
-                "$pathReachable = Test-Path $accessPath; "
-                "foreach ($candidateAccessPath in $remainingAccessPaths) { "
-                "if (Test-Path $candidateAccessPath) { $pathReachable = $true } "
-                "}; "
-                "if ($currentDriveLetters.Count -gt 0 -or $remainingAccessPaths.Count -gt 0) { "
-                "throw \"Unauthorized removable-media access paths remain: $($remainingAccessPaths -join ', ') $($currentDriveLetters -join ', ')\" "
-                "}; "
-                "if ($pathReachable) { throw \"Drive access path $accessPath is still reachable after unauthorized reblock\" }; "
-                "$proof = [ordered]@{ "
-                "drive=$drive; "
-                "diskNumber=$disk.Number; "
-                "diskUniqueId=$disk.UniqueId; "
-                "isOffline=[bool]$disk.IsOffline; "
-                "offlineEquivalent=$true; "
-                "setDiskOfflineSupported=$false; "
-                "pathReachable=[bool]$pathReachable; "
-                "accessPath=$accessPath; "
-                "removedAccessPaths=$removedAccessPaths; "
-                "currentDriveLetters=$currentDriveLetters; "
-                "remainingAccessPaths=$remainingAccessPaths; "
-                "method='Unauthorized removable-media drive letter/access path removed'; "
-                "reason=$reason; "
-                "originalError=$originalError "
-                "}; "
-                "Write-Output ('LOCKFIX_STORAGE_STATE=' + ($proof | ConvertTo-Json -Compress)); "
-                "Write-Output \"Unauthorized removable-media online state was reblocked by removing access paths\""
-            ),
-        ], timeout=30)
-        self.audit.write(
-            "disk.online.unauthorized.reblock.removable_fallback",
-            slot_id=slot.slot_id,
-            drive_letter=drive,
-            access_path=access_path,
-            output=output,
-        )
-        return output
 
     def volume_safety_preflight(self, slot: SlotConfig, drive: str, operation: str) -> None:
         self.assert_not_protected_os_volume(slot)
@@ -1563,17 +1314,6 @@ class DiskOperator:
                 "not found",
                 "does not exist",
                 "driveletter",
-            )
-        )
-
-    def is_removable_offline_unsupported_error(self, message: str) -> bool:
-        normalized = str(message or "").lower()
-        return (
-            "set-disk" in normalized
-            and (
-                "removable media cannot be set to offline" in normalized
-                or ("removable" in normalized and "offline" in normalized)
-                or ("not supported" in normalized and "offline" in normalized)
             )
         )
 

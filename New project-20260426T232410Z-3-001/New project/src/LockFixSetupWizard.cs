@@ -172,7 +172,7 @@ namespace LockFix
             authType.Items.AddRange(new object[] { "Windows Authentication", "API Token", "Basic Account" });
             authType.SelectedIndex = 0;
             veeamUser.Text = "DESKTOP-I3DF527\\OAM";
-            veeamPassword.Text = "";
+            veeamPassword.Text = "backup@1234";
             veeamPassword.PasswordChar = '*';
             veeamPasswordToggle.Text = "표시";
             veeamPasswordToggle.Click += delegate { ToggleVeeamPasswordVisibility(); };

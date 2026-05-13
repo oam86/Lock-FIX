@@ -51,6 +51,19 @@ class LockFixController:
             self.set_state(slot_id, LockFixState.DISK_OFFLINING)
             self.disk.offline(slot)
             offline_proof = self.disk.read_storage_state(slot)
+            if not self.config.dry_run and not bool(offline_proof.get("isOffline", False)):
+                error = "True Disk Offline proof was not obtained after Veeam backup completion."
+                self.audit.write(
+                    "disk.offline.strict.error",
+                    slot_id=slot_id,
+                    disk_number=offline_proof.get("diskNumber", ""),
+                    disk_unique_id=offline_proof.get("diskUniqueId", ""),
+                    drive_letter=offline_proof.get("drive", ""),
+                    is_offline=offline_proof.get("isOffline", False),
+                    path_reachable=offline_proof.get("pathReachable", True),
+                    error=error,
+                )
+                raise RuntimeError(error)
             self.audit.write(
                 "power.mock.status",
                 slot_id=slot_id,

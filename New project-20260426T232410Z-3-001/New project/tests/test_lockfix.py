@@ -1189,6 +1189,91 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("disk.mount_rw", audit_text)
         self.assertIn("emergency.reconnect.complete", audit_text)
 
+    def test_windows_disk_offline_requires_strict_offline_verification(self) -> None:
+        tmp_path = self.make_workspace()
+        config = load_config(write_config(tmp_path))
+        base_slot = config.slot("BAY-01")
+        slot = type(base_slot)(
+            slot_id=base_slot.slot_id,
+            device="D:\\",
+            mount_point=Path("D:\\"),
+            expected_uid=base_slot.expected_uid,
+            identity=base_slot.identity,
+            manifest_path=base_slot.manifest_path,
+            power=base_slot.power,
+        )
+        audit_path = tmp_path / "offline-strict-audit.jsonl"
+
+        class OfflineRunner(CommandRunner):
+            def __init__(self) -> None:
+                super().__init__(dry_run=False)
+
+            def run(self, args: list[str], timeout: int = 120) -> str:
+                command = " ".join(args)
+                if "Set-Disk -Number $disk.Number -IsOffline $true" in command:
+                    return (
+                        'LOCKFIX_STORAGE_STATE={"drive":"D","accessPath":"D:\\\\","diskNumber":3,'
+                        '"diskUniqueId":"TEST-DISK","isOffline":true,"method":"Set-Disk -IsOffline true"}\n'
+                        "Disk 3: offline isolation completed for D:"
+                    )
+                if "Get-Disk -Number $diskNumber" in command:
+                    return (
+                        '{"drive":"D","diskNumber":3,"diskUniqueId":"TEST-DISK",'
+                        '"isOffline":true,"pathReachable":false,'
+                        '"accessPath":"D:\\\\","method":"Get-Disk + Test-Path strict offline verification"}'
+                    )
+                raise AssertionError(f"unexpected command: {command}")
+
+        disk = DiskOperator(OfflineRunner(), AuditLogger(audit_path))
+
+        disk.offline(slot)
+
+        audit_text = audit_path.read_text(encoding="utf-8")
+        self.assertIn("disk.offline.verify.start", audit_text)
+        self.assertIn("disk.offline.verify", audit_text)
+        self.assertIn('"is_offline": true', audit_text)
+        self.assertIn('"path_reachable": false', audit_text)
+
+    def test_windows_disk_offline_fails_when_disk_remains_online(self) -> None:
+        tmp_path = self.make_workspace()
+        config = load_config(write_config(tmp_path))
+        base_slot = config.slot("BAY-01")
+        slot = type(base_slot)(
+            slot_id=base_slot.slot_id,
+            device="D:\\",
+            mount_point=Path("D:\\"),
+            expected_uid=base_slot.expected_uid,
+            identity=base_slot.identity,
+            manifest_path=base_slot.manifest_path,
+            power=base_slot.power,
+        )
+        audit_path = tmp_path / "offline-online-failure-audit.jsonl"
+
+        class OnlineRunner(CommandRunner):
+            def __init__(self) -> None:
+                super().__init__(dry_run=False)
+
+            def run(self, args: list[str], timeout: int = 120) -> str:
+                command = " ".join(args)
+                if "Set-Disk -Number $disk.Number -IsOffline $true" in command:
+                    return (
+                        'LOCKFIX_STORAGE_STATE={"drive":"D","accessPath":"D:\\\\","diskNumber":3,'
+                        '"diskUniqueId":"TEST-DISK","isOffline":true,"method":"Set-Disk -IsOffline true"}\n'
+                        "Disk 3: offline isolation completed for D:"
+                    )
+                if "Get-Disk -Number $diskNumber" in command:
+                    raise CommandError("Disk 3 is still Online; Veeam-completed isolation requires IsOffline=True")
+                raise AssertionError(f"unexpected command: {command}")
+
+        disk = DiskOperator(OnlineRunner(), AuditLogger(audit_path))
+
+        with self.assertRaises(CommandError):
+            disk.offline(slot)
+
+        audit_text = audit_path.read_text(encoding="utf-8")
+        self.assertIn("disk.offline.verify.error", audit_text)
+        self.assertIn("still Online", audit_text)
+
     def test_airgap_summary_exposes_emergency_volume_access_state(self) -> None:
         tmp_path = self.make_workspace()
         config_path = write_config(tmp_path)

@@ -225,10 +225,10 @@ http://127.0.0.1:8088
 Veeam 계정과 비밀번호를 환경변수로 설정한 뒤 실행합니다.
 
 ```powershell
-$env:LOCKFIX_VEEAM_BASE_URL = "https://<TARGET_SERVER_IP>:9419"
+$env:LOCKFIX_VEEAM_BASE_URL = "https://192.168.219.165:9419"
 $env:LOCKFIX_VEEAM_EM_BASE_URL = "https://127.0.0.1:9398"
-$env:LOCKFIX_VEEAM_USER = "<VEEAM_USER>"
-$env:LOCKFIX_VEEAM_PASSWORD = "<VEEAM_PASSWORD>"
+$env:LOCKFIX_VEEAM_USER = "DESKTOP-I3DF527\OAM"
+$env:LOCKFIX_VEEAM_PASSWORD = "backup@1234"
 powershell -ExecutionPolicy Bypass -File .\tools\veeam_preflight.ps1
 ```
 
@@ -264,9 +264,9 @@ PowerShell/curl 실패는 Windows Schannel 진단 이슈일 수 있으므로 실
 PowerShell 7 또는 Windows `curl.exe`만 실패하고 LOCK-FIX Python 검증은 성공하는 경우, Windows Schannel/TLS 경로를 별도로 진단합니다.
 
 ```powershell
-$env:LOCKFIX_VEEAM_BASE_URL = "https://<TARGET_SERVER_IP>:9419"
-$env:LOCKFIX_VEEAM_USER = "<VEEAM_USER>"
-$env:LOCKFIX_VEEAM_PASSWORD = "<VEEAM_PASSWORD>"
+$env:LOCKFIX_VEEAM_BASE_URL = "https://192.168.219.165:9419"
+$env:LOCKFIX_VEEAM_USER = "DESKTOP-I3DF527\OAM"
+$env:LOCKFIX_VEEAM_PASSWORD = "backup@1234"
 powershell -ExecutionPolicy Bypass -File .\tools\veeam_schannel_diagnostics.ps1 -TestCurl
 ```
 
