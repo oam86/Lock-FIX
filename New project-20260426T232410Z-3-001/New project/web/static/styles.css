@@ -1477,6 +1477,11 @@ button {
   padding-top: 14px;
 }
 
+.ops-events-head {
+  position: relative;
+  padding-right: 72px;
+}
+
 .ops-events-head strong {
   display: block;
   color: #0b1f37;
@@ -1489,9 +1494,41 @@ button {
   font-weight: 700;
 }
 
+.ops-events-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  border: 1px solid #c9d8ea;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffffff 0%, #f2f7fd 100%);
+  color: #1f4dd8;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(31, 77, 216, 0.08);
+}
+
+.ops-events-toggle:hover {
+  background: linear-gradient(180deg, #f8fbff 0%, #eaf2ff 100%);
+}
+
 .ops-event-list {
   display: grid;
   gap: 8px;
+}
+
+.ops-events-hidden .ops-event-list {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ops-events-visible .ops-event-list {
+  max-height: none;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .ops-event {

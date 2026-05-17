@@ -34,6 +34,7 @@ const monitoringSummaryStrip = document.querySelector("#monitoringSummaryStrip")
 const opsClock = document.querySelector("#opsClock");
 const opsSummaryGrid = document.querySelector("#opsSummaryGrid");
 const opsEventList = document.querySelector("#opsEventList");
+const opsEventsToggle = document.querySelector("#opsEventsToggle");
 const chartMenuButton = document.querySelector("#chartMenuButton");
 const chartZoomInButton = document.querySelector("#chartZoomInButton");
 const chartZoomOutButton = document.querySelector("#chartZoomOutButton");
@@ -66,6 +67,7 @@ const dashboardKpiSizeKey = "lockfix.dashboard.kpiSize.v1";
 const dashboardEditModeKey = "lockfix.dashboard.editMode.v1";
 const dashboardEventsKey = "lockfix.dashboard.eventsVisible.v1";
 const dashboardAlertsKey = "lockfix.dashboard.alertsVisible.v1";
+const opsEventsVisibleKey = "lockfix.ops.eventsVisible.v1";
 let dashboardKpiInteractionBound = false;
 const reportOverallStatus = document.querySelector("#reportOverallStatus");
 const reportAnalysis = document.querySelector("#reportAnalysis");
@@ -2004,6 +2006,32 @@ function saveDashboardAlertsVisible(visible) {
     localStorage.setItem(dashboardAlertsKey, visible ? "1" : "0");
   } catch {
     // Ignore storage failures in locked-down browser contexts.
+  }
+}
+
+function loadOpsEventsVisible() {
+  try {
+    return localStorage.getItem(opsEventsVisibleKey) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveOpsEventsVisible(visible) {
+  try {
+    localStorage.setItem(opsEventsVisibleKey, visible ? "1" : "0");
+  } catch {
+    // Ignore storage failures in locked-down browser contexts.
+  }
+}
+
+function updateOpsEventsVisibility(visible = loadOpsEventsVisible()) {
+  const root = opsEventList?.closest(".ops-events");
+  root?.classList.toggle("ops-events-visible", visible);
+  root?.classList.toggle("ops-events-hidden", !visible);
+  if (opsEventsToggle) {
+    opsEventsToggle.textContent = visible ? "Hide" : "Show";
+    opsEventsToggle.setAttribute("aria-expanded", String(visible));
   }
 }
 
@@ -4189,6 +4217,7 @@ function renderOperationsOverview() {
       <p>${escapeHtml(event.text)}</p>
     </article>
   `).join("");
+  updateOpsEventsVisibility();
 }
 
 function monitoringUrl() {
@@ -7295,6 +7324,11 @@ applySidebarState();
 applyUiSettings();
 setupNetworkCardDragDrop();
 setupReportSignatures();
+opsEventsToggle?.addEventListener("click", () => {
+  const visible = !opsEventList?.closest(".ops-events")?.classList.contains("ops-events-visible");
+  saveOpsEventsVisible(visible);
+  updateOpsEventsVisibility(visible);
+});
 checkSession();
 updateOpsClock();
 renderOperationsOverview();

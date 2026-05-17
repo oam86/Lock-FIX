@@ -94,10 +94,11 @@
             <time id="opsClock">-</time>
           </div>
           <div class="ops-summary-grid" id="opsSummaryGrid" aria-live="polite"></div>
-          <div class="ops-events">
+          <div class="ops-events ops-events-hidden">
             <div class="ops-events-head">
               <strong>최근 경고 및 이벤트</strong>
               <span>Veeam, Air-Gap, 로그 이력을 기준으로 표시됩니다.</span>
+              <button type="button" class="ops-events-toggle" id="opsEventsToggle">Show</button>
             </div>
             <div class="ops-event-list" id="opsEventList"></div>
           </div>
