@@ -1963,9 +1963,9 @@ function saveDashboardKpiSizes(sizes) {
 
 function loadDashboardEditMode() {
   try {
-    return localStorage.getItem(dashboardEditModeKey) === "1";
+    return localStorage.getItem(dashboardEditModeKey) !== "0";
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -2071,6 +2071,7 @@ function enableDashboardKpiDrag(board) {
 
   board.addEventListener("dragstart", (event) => {
     if (!isEditMode()) return;
+    if (event.target.closest?.(".dashboard-kpi-resize-handle")) return;
     const card = getCard(event.target);
     if (!card) return;
     dragging = card;
@@ -2357,7 +2358,7 @@ function renderDashboard(data) {
     <div class="security-kpi-grid ${dashboardEditMode ? "dashboard-kpi-edit-mode" : ""}" id="dashboardKpiBoard" aria-label="Dashboard summary cards">
       ${orderedKpis.map(({ icon, label, value, tone, meta, key }) => `
         <article class="security-kpi security-kpi-${icon}" data-dashboard-kpi="${escapeHtml(key)}" data-cols="${escapeHtml(String(kpiSizes[key]?.cols || 1))}" data-rows="${escapeHtml(String(kpiSizes[key]?.rows || 1))}" draggable="${dashboardEditMode ? "true" : "false"}">
-          <span class="dashboard-kpi-grip" aria-hidden="true" title="Drag to reorder"></span>
+          <span class="dashboard-kpi-grip" draggable="${dashboardEditMode ? "true" : "false"}" aria-hidden="true" title="Drag to reorder"></span>
           <span class="dashboard-kpi-resize-handle" aria-hidden="true" title="Resize card"></span>
           <i class="security-icon security-icon-${icon} security-tone-${tone}" ${meta ? `title="${escapeHtml(meta)}" aria-label="${escapeHtml(meta)}"` : 'aria-hidden="true"'}></i>
           <div><span>${escapeHtml(label || "-")}</span><strong class="security-value-${tone}">${escapeHtml(value || "-")}</strong></div>
@@ -2465,6 +2466,7 @@ function renderDashboard(data) {
     board.classList.toggle("dashboard-kpi-edit-mode", enabled);
     board.querySelectorAll("[data-dashboard-kpi]").forEach((card) => {
       card.setAttribute("draggable", enabled ? "true" : "false");
+      card.querySelector(".dashboard-kpi-grip")?.setAttribute("draggable", enabled ? "true" : "false");
     });
     dashboardEditToggle.textContent = enabled ? "편집 잠금" : "편집 열기";
     saveDashboardEditMode(enabled);
@@ -4744,7 +4746,7 @@ function renderApprovals(data, errorMessage = "") {
     const reviewType = reviewTypeForRole(currentSession.role);
     const pendingDepartmentReviews = pendingDepartmentReviewsForSession(request);
     const departmentButtons = pendingDepartmentReviews.length
-      ? `<button type="button" class="rbac-action-button rbac-confirm-action" data-department-confirm-request-id="${escapeHtml(request.id)}" data-department-confirm-review-ids="${escapeHtml(pendingDepartmentReviews.map((review) => review.id).join(","))}">확인</button>`
+      ? `<button type="button" class="rbac-action-button rbac-confirm-action" data-department-confirm-request-id="${escapeHtml(request.id)}" data-department-confirm-review-ids="${escapeHtml(pendingDepartmentReviews.map((review) => review.id).join(","))}" data-review-action="mark-reviewed">확인</button>`
       : "";
     const reviewButton = !departmentButtons && canShowReviewButton(request)
       ? `<button type="button" class="rbac-action-button rbac-confirm-action" data-review-id="${escapeHtml(request.id)}" data-review-type="${escapeHtml(reviewType)}">확인</button>`
@@ -6661,56 +6663,6 @@ async function runAction(action, slotId) {
   }
 }
 
-function requestEmergencyApprovalPassword() {
-  return new Promise((resolve) => {
-    const overlay = document.createElement("div");
-    overlay.className = "emergency-approval-modal";
-    overlay.innerHTML = `
-      <form class="emergency-approval-card">
-        <h2>긴급 재접속 승인</h2>
-        <p>관리자 계정 비밀번호를 한 번 더 입력해야 긴급 재접속이 시작됩니다.</p>
-        <label>
-          <span>승인 비밀번호</span>
-          <input type="password" autocomplete="current-password" autofocus>
-        </label>
-        <em class="emergency-approval-error" aria-live="polite"></em>
-        <div class="emergency-approval-actions">
-          <button type="button" data-approval-cancel="true">취소</button>
-          <button type="submit">승인</button>
-        </div>
-      </form>
-    `;
-    const form = overlay.querySelector("form");
-    const input = overlay.querySelector("input");
-    const error = overlay.querySelector(".emergency-approval-error");
-    const close = (value) => {
-      document.removeEventListener("keydown", onKey);
-      overlay.remove();
-      resolve(value);
-    };
-    function onKey(event) {
-      if (event.key === "Escape") close("");
-    }
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      const value = input.value;
-      if (value !== "1") {
-        error.textContent = "승인 비밀번호가 일치하지 않습니다.";
-        input.select();
-        return;
-      }
-      close(value);
-    });
-    overlay.querySelector("[data-approval-cancel]").addEventListener("click", () => close(""));
-    overlay.addEventListener("click", (event) => {
-      if (event.target === overlay) close("");
-    });
-    document.addEventListener("keydown", onKey);
-    document.body.appendChild(overlay);
-    setTimeout(() => input.focus(), 0);
-  });
-}
-
 function showEmergencyReconnectApprovalRequired(error, slotId, volumePath = "") {
   return new Promise((resolve) => {
     const payload = error?.payload || {};
@@ -6785,15 +6737,6 @@ function showEmergencyReconnectApprovalRequired(error, slotId, volumePath = "") 
 }
 
 async function runEmergencyReconnect(slotId, volumePath = "") {
-  const approvalPassword = await requestEmergencyApprovalPassword();
-  if (!approvalPassword) {
-    emergencyReconnectDetailSlot = slotId || "-";
-    emergencyReconnectDetailLogs = [];
-    emergencyActionStatus = "긴급 재접속 승인이 취소되어 작업을 시작하지 않았습니다.";
-    appendEmergencyReconnectDetail("approval canceled; emergency reconnect was not submitted to the service");
-    renderSources(latestSourcesData || { air_gap: fallbackAirGapSummary(true) });
-    return;
-  }
   emergencyReconnectRunning = true;
   emergencyReconnectInitialState = String((latestSourcesData?.air_gap?.emergency_access?.slot?.state) || "").toUpperCase();
   emergencyReconnectDetailSlot = slotId || "-";
@@ -6807,7 +6750,7 @@ async function runEmergencyReconnect(slotId, volumePath = "") {
     const result = await requestJson(`/api/emergency-reconnect?slot=${encodeURIComponent(slotId)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ repository_path: volumePath, approval_password: approvalPassword }),
+      body: JSON.stringify({ repository_path: volumePath }),
     });
     emergencyActionStatus = result.message || "긴급 접속 작업이 백그라운드에서 진행 중입니다.";
     emergencyReconnectJobId = result.job_id || "";
@@ -6940,8 +6883,8 @@ approvalRequestsTable?.addEventListener("click", async (event) => {
     if (!confirmed) return;
     deleteExpiredButton.disabled = true;
     try {
-      await requestJson(`/api/approvals/${encodeURIComponent(deleteExpiredButton.dataset.deleteExpiredId)}`, {
-        method: "DELETE",
+      await requestJson(`/api/approvals/${encodeURIComponent(deleteExpiredButton.dataset.deleteExpiredId)}/expired-delete`, {
+        method: "POST",
       });
       await reloadApprovals();
     } catch (error) {
@@ -7082,7 +7025,7 @@ approvalRequestsTable?.addEventListener("click", async (event) => {
     } catch (error) {
     if (/not pending:\s*EXPIRED|EXPIRED/i.test(error.message || "") && window.confirm("이미 만료된 승인 요청입니다. 이 요청을 삭제하시겠습니까?")) {
       try {
-        await requestJson(`/api/approvals/${encodeURIComponent(button.dataset.approvalId)}`, { method: "DELETE" });
+        await requestJson(`/api/approvals/${encodeURIComponent(button.dataset.approvalId)}/expired-delete`, { method: "POST" });
         await reloadApprovals();
         return;
       } catch (deleteError) {

@@ -9465,7 +9465,9 @@ td {
   font-weight: 900;
   letter-spacing: 0.06em;
   opacity: 0;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: grab;
+  user-select: none;
 }
 
 .dashboard-kpi-grip::before {

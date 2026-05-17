@@ -2048,9 +2048,9 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("재접속 작업이 현재 서비스에 등록되어 있지 않습니다", source)
         self.assertIn("로그인 세션이 만료되어 긴급 재접속 요청이 서비스에 전달되지 않았습니다", source)
         self.assertIn('credentials: "same-origin"', source)
-        self.assertIn("requestEmergencyApprovalPassword", source)
-        self.assertIn("승인 비밀번호", source)
-        self.assertIn("approval_password", source)
+        self.assertNotIn("requestEmergencyApprovalPassword", source)
+        self.assertNotIn("승인 비밀번호", source)
+        self.assertNotIn("approval_password", source)
         self.assertIn(".emergency-approval-modal", css)
         self.assertIn(".emergency-approval-card", css)
         self.assertIn("인증 해시값 전체를 입력하세요", source)
@@ -2071,12 +2071,14 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("os.startfile", source)
         self.assertIn("local access only", source)
 
-    def test_webui_requires_emergency_reconnect_approval_password(self) -> None:
+    def test_webui_requires_emergency_reconnect_workflow_approval_without_password(self) -> None:
         source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")
 
-        self.assertIn("approval_password", source)
-        self.assertIn("approval_password_failed", source)
-        self.assertIn("긴급 재접속 승인 비밀번호가 일치하지 않습니다.", source)
+        self.assertIn('self.context.controller.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)', source)
+        self.assertIn('self.context.controller.approvals.require_approved("DISK_ONLINE", slot_id)', source)
+        self.assertIn("approval_password.legacy_ignored", source)
+        self.assertNotIn("approval_password_failed", source)
+        self.assertNotIn("긴급 재접속 승인 비밀번호가 일치하지 않습니다.", source)
 
     def test_login_success_shows_two_second_loading_splash(self) -> None:
         app_source = (Path.cwd() / "web" / "static" / "app.js").read_text(encoding="utf-8")

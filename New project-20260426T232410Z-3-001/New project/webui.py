@@ -944,9 +944,6 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 self.require_auth(Permission.DISK_ONLINE_APPROVE)
                 payload = self.read_json_body()
                 slot_id = self.query_slot(parsed.query)
-                # Approval gates required before reconnect execution:
-                # self.context.controller.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)
-                # self.context.controller.approvals.require_approved("DISK_ONLINE", slot_id)
                 slot = self.context.config.slot(slot_id)
                 missing_approvals = self.missing_emergency_reconnect_approvals(slot_id)
                 if missing_approvals:
@@ -976,6 +973,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                         status=403,
                     )
                     return
+                self.context.controller.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)
+                self.context.controller.approvals.require_approved("DISK_ONLINE", slot_id)
                 approval_password = str(payload.get("approval_password") or "").strip()
                 if approval_password:
                     self.context.controller.audit.write(
@@ -1044,6 +1043,10 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 payload = self.read_json_body()
                 approval_request_id = parsed.path.split("/")[3]
                 self.send_json(self.create_approval_review(approval_request_id, payload))
+            elif parsed.path.startswith("/api/approvals/") and parsed.path.endswith("/expired-delete"):
+                self.require_auth(Permission.APPROVAL_REQUEST_CREATE)
+                approval_request_id = parsed.path.split("/")[3]
+                self.send_json(self.delete_expired_approval_request(approval_request_id))
             else:
                 confirm_match = re.fullmatch(r"/api/approval-requests/([^/]+)/reviews/confirm", parsed.path)
                 if confirm_match:
@@ -1068,30 +1071,6 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     )
                     return
                 self.send_error(404, "not found")
-        except AuthorizationError as exc:
-            self.audit_access_denied(exc)
-            self.send_json({"error": str(exc), "permission": exc.permission.value, "role": exc.role.value}, status=403)
-        except PermissionError as exc:
-            self.audit_unauthorized_access(str(exc))
-            self.send_json({"error": str(exc)}, status=self.permission_error_status(exc))
-        except KeyError as exc:
-            self.send_json({"error": str(exc)}, status=404)
-        except ValueError as exc:
-            self.send_json({"error": str(exc)}, status=400)
-        except Exception as exc:
-            self.send_json({"error": str(exc), "summary": self.summary()}, status=500)
-
-    def do_DELETE(self) -> None:
-        if not self.enforce_local_console_access():
-            return
-        try:
-            parsed = urlparse(self.path)
-            match = re.fullmatch(r"/api/approvals/([^/]+)", parsed.path)
-            if not match:
-                self.send_error(404, "not found")
-                return
-            self.require_auth(Permission.APPROVAL_REQUEST_CREATE)
-            self.send_json(self.delete_expired_approval_request(match.group(1)))
         except AuthorizationError as exc:
             self.audit_access_denied(exc)
             self.send_json({"error": str(exc), "permission": exc.permission.value, "role": exc.role.value}, status=403)
@@ -1138,7 +1117,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         if not self.enforce_local_console_access():
             return
         self.send_response(405)
-        self.send_header("Allow", "GET, POST, PATCH, DELETE")
+        self.send_header("Allow", "GET, POST, PATCH")
         self.send_header("Content-Length", "0")
         self.end_headers()
 
@@ -1146,7 +1125,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         if not self.enforce_local_console_access():
             return
         self.send_response(405)
-        self.send_header("Allow", "GET, POST, PATCH, DELETE")
+        self.send_header("Allow", "GET, POST, PATCH")
         self.send_header("Content-Length", "0")
         self.end_headers()
 
@@ -4448,7 +4427,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
 
     def force_approve_disk_offline_for_veeam(self, slot_id: str, session_key: str, checked_at: str, reason: str = "") -> dict:
         store = self.context.controller.approvals
-        active = self.active_approval_request_for("DISK_OFFLINE", slot_id)
+        active = LockFixWebHandler.active_approval_request_for(self, "DISK_OFFLINE", slot_id)
         if active:
             return {
                 "created": False,
@@ -4566,11 +4545,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 checked_at,
                 reason=f"Veeam job {payload.get('job') or payload.get('name') or 'Backup'} completed successfully.",
             )
-            result = self.context.run_agent_service_operation(
-                "disk.isolate",
-                {"slot_id": slot_id, "repository_path": repository_path, "session_key": session_key},
-            )
-            state_value = str(result.get("state") or "ISOLATED")
+            state = self.context.controller.isolate(slot_id, repository_path=repository_path)
+            state_value = str(getattr(state, "value", state) or "ISOLATED")
             processed_session_keys.add(session_key)
             with AIRGAP_AUTO_ISOLATE_LOCK:
                 LockFixWebHandler.write_veeam_auto_isolate_marker(
@@ -4589,8 +4565,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 slot_id=slot_id,
                 session_key=session_key,
                 state=state_value,
-                executor="LOCK-FIX Agent/Service",
-                message="Veeam backup success detected. LOCK-FIX force-approved DISK_OFFLINE and isolate completed automatically.",
+                executor="LOCK-FIX Controller",
+                message="Veeam backup success detected. LOCK-FIX force-approved DISK_OFFLINE and isolated through the active controller.",
             )
         except Exception as exc:
             with AIRGAP_AUTO_ISOLATE_LOCK:
