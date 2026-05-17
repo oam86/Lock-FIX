@@ -4388,9 +4388,16 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
 
     def force_approve_disk_offline_for_veeam(self, slot_id: str, session_key: str, checked_at: str, reason: str = "") -> dict:
         store = self.context.controller.approvals
+        active = self.active_approval_request_for("DISK_OFFLINE", slot_id)
+        if active:
+            return {
+                "created": False,
+                "request": active,
+                "message": "Existing DISK_OFFLINE approval request is already active.",
+            }
+
         approved = store.approved_request_for("DISK_OFFLINE", slot_id)
-        approved_session_key = str((approved.get("metadata") or {}).get("sessionKey") or "") if approved else ""
-        if approved and approved_session_key == str(session_key or ""):
+        if approved:
             return {"created": False, "request": approved, "message": "Existing DISK_OFFLINE approval is active."}
 
         request = store.create_request(
