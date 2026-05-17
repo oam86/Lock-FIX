@@ -10364,6 +10364,36 @@ td {
   min-height: 230px;
 }
 
+.event-panel-hidden .dashboard-event-body {
+  filter: blur(5px);
+  opacity: 0.16;
+  pointer-events: none;
+  user-select: none;
+}
+
+.event-panel-visible .dashboard-event-body {
+  filter: none;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.dashboard-reveal-button {
+  border: 1px solid #c9d8ea;
+  background: linear-gradient(180deg, #ffffff 0%, #f2f7fd 100%);
+  color: #1f4dd8;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(31, 77, 216, 0.08);
+}
+
+.dashboard-reveal-button:hover {
+  background: linear-gradient(180deg, #f8fbff 0%, #eaf2ff 100%);
+}
+
 .event-row {
   grid-template-columns: 98px 1fr;
   min-height: 36px;

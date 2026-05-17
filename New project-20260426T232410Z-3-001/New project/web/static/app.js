@@ -62,6 +62,7 @@ const dashboardNotificationTable = document.querySelector("#dashboardNotificatio
 const dashboardLogsTable = document.querySelector("#dashboardLogsTable");
 const dashboardTotalLogs = document.querySelector("#dashboardTotalLogs");
 const dashboardKpiOrderKey = "lockfix.dashboard.kpiOrder.v1";
+const dashboardEventsKey = "lockfix.dashboard.eventsVisible.v1";
 const reportOverallStatus = document.querySelector("#reportOverallStatus");
 const reportAnalysis = document.querySelector("#reportAnalysis");
 const reportGeneratedAt = document.querySelector("#reportGeneratedAt");
@@ -1935,6 +1936,22 @@ function saveDashboardKpiOrder(order) {
   }
 }
 
+function loadDashboardEventsVisible() {
+  try {
+    return localStorage.getItem(dashboardEventsKey) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveDashboardEventsVisible(visible) {
+  try {
+    localStorage.setItem(dashboardEventsKey, visible ? "1" : "0");
+  } catch {
+    // Ignore storage failures in locked-down browser contexts.
+  }
+}
+
 function reorderDashboardKpis(cards) {
   const order = loadDashboardKpiOrder();
   if (!order.length) return cards;
@@ -2171,6 +2188,7 @@ function renderDashboard(data) {
   const threat = data.threat_detection || {};
   const threatStatus = String(threat.status || "정상");
   const threatDanger = threatTone(threatStatus) === "danger";
+  const dashboardEventsVisible = loadDashboardEventsVisible();
   dashboardView.innerHTML = `
     ${threatDanger ? `
       <section class="dashboard-threat-banner">
@@ -2228,9 +2246,12 @@ function renderDashboard(data) {
         </div>
       </section>
 
-      <section class="security-panel event-panel">
-        <header><h2><i class="panel-title-icon event-title-icon" aria-hidden="true"></i>${copy.event}</h2></header>
-        <div class="panel-body">
+      <section class="security-panel event-panel ${dashboardEventsVisible ? "event-panel-visible" : "event-panel-hidden"}">
+        <header>
+          <h2><i class="panel-title-icon event-title-icon" aria-hidden="true"></i>${copy.event}</h2>
+          <button type="button" class="dashboard-reveal-button" id="dashboardEventsToggle">${dashboardEventsVisible ? "Hide" : "Show"}</button>
+        </header>
+        <div class="panel-body dashboard-event-body">
         ${events.map((event) => `<div class="event-row"><span><i class="event-clock" aria-hidden="true"></i>${escapeHtml(event.date || "-")}</span><strong>${escapeHtml(event.content || "-")}</strong></div>`).join("")}
         <a>${copy.detail} ›</a>
         </div>
@@ -2492,6 +2513,15 @@ function renderDetectFallback(message = "탐지 내역을 불러오는 중입니
       </section>
     </div>
   `;
+  const dashboardEventsToggle = document.querySelector("#dashboardEventsToggle");
+  const eventPanel = document.querySelector(".event-panel");
+  dashboardEventsToggle?.addEventListener("click", () => {
+    const visible = !eventPanel?.classList.contains("event-panel-visible");
+    eventPanel?.classList.toggle("event-panel-visible", visible);
+    eventPanel?.classList.toggle("event-panel-hidden", !visible);
+    dashboardEventsToggle.textContent = visible ? "Hide" : "Show";
+    saveDashboardEventsVisible(visible);
+  });
 }
 
 function renderDetect(data) {
