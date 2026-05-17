@@ -2599,6 +2599,31 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 for item in (LockFixWebHandler.format_reconnect_audit_record(self, record) for record in reconnect_older_records)
                 if item
             ]
+            approved_request = self.context.controller.approvals.approved_request_for("DISK_OFFLINE", slot_id)
+            approval_progress = 0
+            approval_required = 0
+            approval_status = "NONE"
+            approval_mode = ""
+            approval_request_id = ""
+            approval_requester = ""
+            approval_created_at = ""
+            approval_updated_at = ""
+            if approved_request:
+                approval_request_id = str(approved_request.get("id") or "")
+                approval_requester = str(approved_request.get("requesterUserId") or "")
+                approval_created_at = str(approved_request.get("createdAt") or "")
+                approval_updated_at = str(approved_request.get("updatedAt") or "")
+                approval_status = str(approved_request.get("status") or "APPROVED").upper()
+                approval_mode = str((approved_request.get("metadata") or {}).get("forceApprovalMode") or "AUTO_POLICY")
+                approval_required = max(1, int(approved_request.get("requiredApprovals") or 1))
+                approval_data = self.context.controller.approvals.load()
+                approval_progress = sum(
+                    1
+                    for decision in approval_data.get("decisions", [])
+                    if str(decision.get("approvalRequestId") or "") == approval_request_id
+                    and str(decision.get("decision") or "").upper() == "APPROVED"
+                )
+                approval_progress = min(approval_required, approval_progress)
             last_reconnect_record = reconnect_all_recent_records[-1] if reconnect_all_recent_records else None
             last_reconnect = LockFixWebHandler.format_audit_timestamp(self, last_reconnect_record.get("ts")) if last_reconnect_record else "-"
             normalized_device = str(slot.device).strip().replace("/", "\\").rstrip("\\").lower()
@@ -2676,6 +2701,18 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     "reconnect_history": reconnect_history[-80:],
                     "reconnect_history_more": reconnect_history_more[-120:],
                     "reconnect_history_more_count": len(reconnect_history_more),
+                    "auto_approval": {
+                        "available": bool(approved_request),
+                        "status": approval_status,
+                        "mode": approval_mode,
+                        "approval_request_id": approval_request_id,
+                        "requester_user_id": approval_requester,
+                        "created_at": approval_created_at,
+                        "updated_at": approval_updated_at,
+                        "approved_count": approval_progress,
+                        "required_count": approval_required,
+                        "summary": "자동 승인 검증 완료" if approved_request and approval_progress >= approval_required else "자동 승인 대기",
+                    },
                     "storage_api_capability": storage_capability,
                 }
             )
