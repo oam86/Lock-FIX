@@ -63,6 +63,7 @@ const dashboardLogsTable = document.querySelector("#dashboardLogsTable");
 const dashboardTotalLogs = document.querySelector("#dashboardTotalLogs");
 const dashboardKpiOrderKey = "lockfix.dashboard.kpiOrder.v1";
 const dashboardKpiSizeKey = "lockfix.dashboard.kpiSize.v1";
+const dashboardEditModeKey = "lockfix.dashboard.editMode.v1";
 const dashboardEventsKey = "lockfix.dashboard.eventsVisible.v1";
 let dashboardKpiInteractionBound = false;
 const reportOverallStatus = document.querySelector("#reportOverallStatus");
@@ -1957,6 +1958,22 @@ function saveDashboardKpiSizes(sizes) {
   }
 }
 
+function loadDashboardEditMode() {
+  try {
+    return localStorage.getItem(dashboardEditModeKey) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveDashboardEditMode(enabled) {
+  try {
+    localStorage.setItem(dashboardEditModeKey, enabled ? "1" : "0");
+  } catch {
+    // Ignore storage failures in locked-down browser contexts.
+  }
+}
+
 function loadDashboardEventsVisible() {
   try {
     return localStorage.getItem(dashboardEventsKey) === "1";
@@ -1990,6 +2007,7 @@ function enableDashboardKpiDrag(board) {
   let dragging = null;
   let resizing = null;
   const sizes = loadDashboardKpiSizes();
+  const isEditMode = () => board.classList.contains("dashboard-kpi-edit-mode");
 
   const syncOrder = () => {
     const order = [...board.querySelectorAll("[data-dashboard-kpi]")].map((item) => item.dataset.dashboardKpi || "").filter(Boolean);
@@ -2007,6 +2025,7 @@ function enableDashboardKpiDrag(board) {
   const getCard = (target) => target?.closest?.("[data-dashboard-kpi]");
 
   board.addEventListener("dragstart", (event) => {
+    if (!isEditMode()) return;
     const card = getCard(event.target);
     if (!card) return;
     dragging = card;
@@ -2023,6 +2042,7 @@ function enableDashboardKpiDrag(board) {
   });
 
   board.addEventListener("dragover", (event) => {
+    if (!isEditMode()) return;
     if (!dragging) return;
     event.preventDefault();
     const card = getCard(event.target);
@@ -2039,6 +2059,7 @@ function enableDashboardKpiDrag(board) {
   });
 
   board.addEventListener("drop", (event) => {
+    if (!isEditMode()) return;
     if (!dragging) return;
     event.preventDefault();
     syncOrder();
@@ -2050,6 +2071,7 @@ function enableDashboardKpiDrag(board) {
 
   if (!dashboardKpiInteractionBound) {
     board.addEventListener("mousedown", (event) => {
+      if (!isEditMode()) return;
       const handle = event.target.closest?.(".dashboard-kpi-resize-handle");
       if (!handle) return;
       const card = handle.closest("[data-dashboard-kpi]");
@@ -2066,6 +2088,7 @@ function enableDashboardKpiDrag(board) {
     });
 
     window.addEventListener("mousemove", (event) => {
+      if (!isEditMode()) return;
       if (!resizing) return;
       const dx = event.clientX - resizing.startX;
       const dy = event.clientY - resizing.startY;
@@ -2078,6 +2101,7 @@ function enableDashboardKpiDrag(board) {
     });
 
     window.addEventListener("mouseup", () => {
+      if (!isEditMode()) return;
       if (!resizing) return;
       const sizes = loadDashboardKpiSizes();
       board.querySelectorAll("[data-dashboard-kpi]").forEach((card) => {
@@ -2271,6 +2295,7 @@ function renderDashboard(data) {
   const threatStatus = String(threat.status || "정상");
   const threatDanger = threatTone(threatStatus) === "danger";
   const dashboardEventsVisible = loadDashboardEventsVisible();
+  const dashboardEditMode = loadDashboardEditMode();
   dashboardView.innerHTML = `
     ${threatDanger ? `
       <section class="dashboard-threat-banner">
@@ -2280,11 +2305,12 @@ function renderDashboard(data) {
     ` : ""}
     <div class="dashboard-edit-hint">
       <strong>대시보드 편집</strong>
-      <span>카드는 드래그로 순서를 바꾸고, 우측 하단 핸들로 크기를 조절할 수 있습니다.</span>
+      <span>편집 모드에서만 카드 순서 변경과 크기 조절이 가능합니다.</span>
+      <button type="button" class="dashboard-edit-button" id="dashboardEditToggle">${dashboardEditMode ? "편집 잠금" : "편집 열기"}</button>
     </div>
-    <div class="security-kpi-grid" id="dashboardKpiBoard" aria-label="Dashboard summary cards">
+    <div class="security-kpi-grid ${dashboardEditMode ? "dashboard-kpi-edit-mode" : ""}" id="dashboardKpiBoard" aria-label="Dashboard summary cards">
       ${orderedKpis.map(({ icon, label, value, tone, meta, key }) => `
-        <article class="security-kpi security-kpi-${icon}" data-dashboard-kpi="${escapeHtml(key)}" data-cols="${escapeHtml(String(kpiSizes[key]?.cols || 1))}" data-rows="${escapeHtml(String(kpiSizes[key]?.rows || 1))}" draggable="true">
+        <article class="security-kpi security-kpi-${icon}" data-dashboard-kpi="${escapeHtml(key)}" data-cols="${escapeHtml(String(kpiSizes[key]?.cols || 1))}" data-rows="${escapeHtml(String(kpiSizes[key]?.rows || 1))}" draggable="${dashboardEditMode ? "true" : "false"}">
           <span class="dashboard-kpi-grip" aria-hidden="true" title="Drag to reorder"></span>
           <span class="dashboard-kpi-resize-handle" aria-hidden="true" title="Resize card"></span>
           <i class="security-icon security-icon-${icon} security-tone-${tone}" ${meta ? `title="${escapeHtml(meta)}" aria-label="${escapeHtml(meta)}"` : 'aria-hidden="true"'}></i>
@@ -2373,6 +2399,18 @@ function renderDashboard(data) {
 
   </div>
   `;
+  const dashboardEditToggle = document.querySelector("#dashboardEditToggle");
+  dashboardEditToggle?.addEventListener("click", () => {
+    const enabled = !document.querySelector("#dashboardKpiBoard")?.classList.contains("dashboard-kpi-edit-mode");
+    const board = document.querySelector("#dashboardKpiBoard");
+    if (!board) return;
+    board.classList.toggle("dashboard-kpi-edit-mode", enabled);
+    board.querySelectorAll("[data-dashboard-kpi]").forEach((card) => {
+      card.setAttribute("draggable", enabled ? "true" : "false");
+    });
+    dashboardEditToggle.textContent = enabled ? "편집 잠금" : "편집 열기";
+    saveDashboardEditMode(enabled);
+  });
   enableDashboardKpiDrag(document.querySelector("#dashboardKpiBoard"));
 }
 

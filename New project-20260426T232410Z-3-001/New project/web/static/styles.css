@@ -9426,6 +9426,7 @@ td {
   font-size: 9px;
   font-weight: 900;
   letter-spacing: 0.06em;
+  opacity: 0;
   pointer-events: none;
 }
 
@@ -9443,6 +9444,7 @@ td {
   border: 1px solid #c9d8ea;
   background: linear-gradient(135deg, #f9fbfe 0%, #eef4ff 100%);
   cursor: se-resize;
+  opacity: 0;
   box-shadow: 0 3px 10px rgba(31, 77, 216, 0.08);
 }
 
@@ -9463,6 +9465,15 @@ td {
   cursor: se-resize;
 }
 
+.dashboard-kpi-edit-mode .dashboard-kpi-grip,
+.dashboard-kpi-edit-mode .dashboard-kpi-resize-handle {
+  opacity: 1;
+}
+
+.dashboard-kpi-edit-mode .security-kpi[draggable="true"] {
+  cursor: grab;
+}
+
 .dashboard-edit-hint {
   display: flex;
   align-items: center;
@@ -9480,6 +9491,22 @@ td {
 .dashboard-edit-hint strong {
   color: #163a73;
   font-weight: 900;
+}
+
+.dashboard-edit-button {
+  margin-left: auto;
+  border: 1px solid #bfd1ea;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffffff 0%, #edf4ff 100%);
+  color: #1f4dd8;
+  padding: 7px 13px;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.dashboard-edit-button:hover {
+  background: linear-gradient(180deg, #f8fbff 0%, #e0ebff 100%);
 }
 
 .dashboard-content-grid {
