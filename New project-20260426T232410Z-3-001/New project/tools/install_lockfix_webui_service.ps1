@@ -2,7 +2,7 @@ param(
     [string]$InstallRoot = "",
     [string]$ServiceName = "LOCKFIXWebUI",
     [int]$WebUiPort = 8088,
-    [int[]]$FirewallPorts = @(8088, 8099),
+    [int[]]$FirewallPorts = @(),
     [switch]$Uninstall
 )
 
@@ -106,9 +106,9 @@ foreach ($port in $FirewallPorts) {
 
 $binPath = '"' + $serviceExe + '"'
 & sc.exe create $ServiceName binPath= $binPath start= auto obj= LocalSystem DisplayName= "LOCK-FIX Web UI" | Out-Null
-& sc.exe description $ServiceName "Keeps LOCK-FIX Web UI listening on http://0.0.0.0:$WebUiPort using the bundled offline Python runtime." | Out-Null
+& sc.exe description $ServiceName "Keeps LOCK-FIX Web UI listening on local-only http://127.0.0.1:$WebUiPort using the bundled offline Python runtime." | Out-Null
 Start-Service -Name $ServiceName
 Write-Host "LOCK-FIX Web UI service registered and started: $ServiceName"
 Write-Host "Service account: LocalSystem"
-Write-Host "Web UI: http://0.0.0.0:$WebUiPort"
+Write-Host "Web UI: http://127.0.0.1:$WebUiPort"
 Test-WebUiEndpoint -Port $WebUiPort

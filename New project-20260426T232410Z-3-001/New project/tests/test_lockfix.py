@@ -287,6 +287,46 @@ class LockFixTests(unittest.TestCase):
         self.assertIn('"permission": "DISK_OFFLINE_EXECUTE"', audit_text)
         self.assertIn('"result": "FAILED"', audit_text)
 
+    def test_webui_remote_console_attempt_is_blocked_and_audited(self) -> None:
+        tmp_path = self.make_workspace()
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(write_config(tmp_path))
+        handler.headers = {
+            "Host": "192.168.219.230:8088",
+            "User-Agent": "unit-test",
+            "X-Forwarded-For": "127.0.0.1",
+        }
+        handler.path = "/"
+        handler.command = "GET"
+        handler.client_address = ("192.168.219.55", 54321)
+        response = {}
+        handler.send_json = lambda payload, status=200, headers=None: response.update({"payload": payload, "status": status})
+
+        self.assertFalse(handler.enforce_local_console_access())
+
+        self.assertEqual(response["status"], 403)
+        self.assertIn("local-only", response["payload"]["error"])
+        audit_text = (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
+        self.assertIn('"event": "security.remote_console_access.blocked"', audit_text)
+        self.assertIn('"resourceType": "WEB_CONSOLE"', audit_text)
+        self.assertIn('"resourceId": "/"', audit_text)
+        self.assertIn('"ipAddress": "192.168.219.55"', audit_text)
+        self.assertIn('"host_header": "192.168.219.230:8088"', audit_text)
+        self.assertIn('"forwarded_for": "127.0.0.1"', audit_text)
+        self.assertIn('"result": "BLOCKED"', audit_text)
+
+    def test_webui_local_console_policy_uses_socket_peer_not_forwarded_header(self) -> None:
+        self.assertTrue(webui.LockFixWebHandler.is_loopback_ip("127.0.0.1"))
+        self.assertTrue(webui.LockFixWebHandler.is_loopback_ip("::1"))
+        self.assertTrue(webui.LockFixWebHandler.is_loopback_ip("::ffff:127.0.0.1"))
+        self.assertFalse(webui.LockFixWebHandler.is_loopback_ip("192.168.219.55"))
+
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.headers = {"X-Forwarded-For": "127.0.0.1"}
+        handler.client_address = ("192.168.219.55", 54321)
+
+        self.assertFalse(handler.is_local_console_request())
+
     def test_rbac_allows_super_admin_existing_session_format(self) -> None:
         tmp_path = self.make_workspace()
         handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)

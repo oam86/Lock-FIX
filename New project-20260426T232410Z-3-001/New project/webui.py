@@ -4,6 +4,7 @@ import json
 import base64
 import binascii
 import io
+import ipaddress
 import mimetypes
 import os
 import platform
@@ -532,6 +533,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         print("[webui] " + format % args)
 
     def do_GET(self) -> None:
+        if not self.enforce_local_console_access():
+            return
         try:
             parsed = urlparse(self.path)
             if parsed.path == "/":
@@ -698,6 +701,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             self.send_json({"error": str(exc)}, status=500)
 
     def do_POST(self) -> None:
+        if not self.enforce_local_console_access():
+            return
         try:
             parsed = urlparse(self.path)
             if parsed.path == "/api/login":
@@ -1077,6 +1082,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             self.send_json({"error": str(exc), "summary": self.summary()}, status=500)
 
     def do_DELETE(self) -> None:
+        if not self.enforce_local_console_access():
+            return
         try:
             parsed = urlparse(self.path)
             match = re.fullmatch(r"/api/approvals/([^/]+)", parsed.path)
@@ -1099,6 +1106,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             self.send_json({"error": str(exc), "summary": self.summary()}, status=500)
 
     def do_PATCH(self) -> None:
+        if not self.enforce_local_console_access():
+            return
         try:
             parsed = urlparse(self.path)
             match = re.fullmatch(r"/api/admin/users/([^/]+)(/disable)?", parsed.path)
@@ -1125,6 +1134,22 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             self.send_json({"error": str(exc), "summary": self.summary()}, status=500)
 
+    def do_HEAD(self) -> None:
+        if not self.enforce_local_console_access():
+            return
+        self.send_response(405)
+        self.send_header("Allow", "GET, POST, PATCH, DELETE")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def do_OPTIONS(self) -> None:
+        if not self.enforce_local_console_access():
+            return
+        self.send_response(405)
+        self.send_header("Allow", "GET, POST, PATCH, DELETE")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def query_slot(self, query: str) -> str:
         values = parse_qs(query)
         slot_id = values.get("slot", [""])[0] or values.get("slot_id", [""])[0]
@@ -1144,6 +1169,51 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         if forwarded:
             return forwarded
         return str(self.client_address[0]) if self.client_address else "unknown"
+
+    def peer_ip(self) -> str:
+        return str(self.client_address[0]) if self.client_address else "unknown"
+
+    @staticmethod
+    def is_loopback_ip(value: str) -> bool:
+        try:
+            address = ipaddress.ip_address(str(value or "").strip())
+        except ValueError:
+            return str(value or "").strip().lower() == "localhost"
+        if address.is_loopback:
+            return True
+        mapped = getattr(address, "ipv4_mapped", None)
+        return bool(mapped and mapped.is_loopback)
+
+    def is_local_console_request(self) -> bool:
+        return self.is_loopback_ip(self.peer_ip())
+
+    def enforce_local_console_access(self) -> bool:
+        if self.is_local_console_request():
+            return True
+        self.audit_remote_console_access_blocked()
+        self.send_json(
+            {
+                "error": "LOCK-FIX Web Console is local-only. Remote console access is blocked and audited.",
+                "client_ip": self.peer_ip(),
+            },
+            status=403,
+        )
+        return False
+
+    def audit_remote_console_access_blocked(self) -> None:
+        self.context.controller.audit.write(
+            "security.remote_console_access.blocked",
+            actorUserId="unknown",
+            resourceType="WEB_CONSOLE",
+            resourceId=self.path,
+            ipAddress=self.peer_ip(),
+            userAgent=str(self.headers.get("User-Agent") or ""),
+            result="BLOCKED",
+            method=str(getattr(self, "command", "") or ""),
+            host_header=str(self.headers.get("Host") or ""),
+            forwarded_for=str(self.headers.get("X-Forwarded-For") or ""),
+            message="Remote LOCK-FIX Web Console access attempt was blocked by local-only policy.",
+        )
 
     def default_notification_settings(self) -> dict:
         return {
@@ -6640,7 +6710,7 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             return
 
 
-def run(host: str = "0.0.0.0", port: int = 8088, config_path: Path = DEFAULT_CONFIG) -> None:
+def run(host: str = "127.0.0.1", port: int = 8088, config_path: Path = DEFAULT_CONFIG) -> None:
     LockFixWebHandler.context = WebContext(config_path)
     server = ThreadingHTTPServer((host, port), LockFixWebHandler)
     print(f"LOCK-FIX PoC UI: http://{host}:{port}")
@@ -6652,7 +6722,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8088)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     args = parser.parse_args()
