@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LOCK-FIX PoC</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260517-ops-show-inline" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260517-user-select-options" />
   </head>
   <body>
     <section class="login-screen" id="loginScreen">
@@ -822,7 +822,7 @@
           <article class="rbac-panel user-management-form-panel">
             <div class="rbac-panel-head">
               <h2 id="userManagementFormTitle" data-i18n="userManagement.newUser">New User</h2>
-              <span id="userManagementDepartmentCount">0 departments</span>
+              <span id="userManagementDepartmentCount">7 departments</span>
             </div>
             <form class="user-management-form" id="userManagementForm">
               <input type="hidden" id="userManagementUserId" />
@@ -836,11 +836,27 @@
               </label>
               <label>
                 <span data-i18n="userManagement.department">Department</span>
-                <select id="userManagementDepartment" required></select>
+                <select id="userManagementDepartment" required>
+                  <option value="management">Management</option>
+                  <option value="security">Security</option>
+                  <option value="backup-operation">Backup Operation</option>
+                  <option value="hardware-control">Hardware Control</option>
+                  <option value="audit">Audit</option>
+                  <option value="development">Development</option>
+                  <option value="web-design">Web Design</option>
+                </select>
               </label>
               <label>
                 <span data-i18n="userManagement.role">Role</span>
-                <select id="userManagementRole" required></select>
+                <select id="userManagementRole" required>
+                  <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                  <option value="SECURITY_ADMIN">SECURITY_ADMIN</option>
+                  <option value="BACKUP_OPERATOR">BACKUP_OPERATOR</option>
+                  <option value="HARDWARE_ADMIN">HARDWARE_ADMIN</option>
+                  <option value="AUDITOR">AUDITOR</option>
+                  <option value="UI_DESIGNER">UI_DESIGNER</option>
+                  <option value="DEVELOPER">DEVELOPER</option>
+                </select>
               </label>
               <label class="user-management-checkbox">
                 <input id="userManagementDisabled" type="checkbox" />
@@ -862,7 +878,15 @@
               <strong data-i18n="userManagement.windowsChecking">Checking</strong>
               <span data-i18n="userManagement.windowsStatusDesc">Windows administrator status is displayed and audited, but does not grant LOCK-FIX roles.</span>
             </div>
-            <div class="rbac-chip-list" id="userManagementDepartments"></div>
+            <div class="rbac-chip-list" id="userManagementDepartments">
+              <span>Management</span>
+              <span>Security</span>
+              <span>Backup Operation</span>
+              <span>Hardware Control</span>
+              <span>Audit</span>
+              <span>Development</span>
+              <span>Web Design</span>
+            </div>
           </article>
         </section>
         <section class="rbac-panel user-management-users-panel">
@@ -1201,7 +1225,7 @@
       </div>
     </template>
 
-    <script src="/static/app.js?v=20260517-ops-show-inline"></script>
+    <script src="/static/app.js?v=20260517-user-select-options"></script>
   </body>
 </html>
 
