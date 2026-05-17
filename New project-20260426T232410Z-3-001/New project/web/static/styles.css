@@ -1474,11 +1474,12 @@ button {
   gap: 12px;
   align-items: stretch;
   border-top: 1px solid #e2eaf0;
-  padding-top: 14px;
+  padding-top: 10px;
 }
 
 .ops-events-head {
   position: relative;
+  min-height: 34px;
   padding-right: 72px;
 }
 
@@ -1489,28 +1490,36 @@ button {
   font-weight: 900;
 }
 
-.ops-events-head span {
+.ops-events-description {
+  display: block;
   margin-top: 6px;
   font-weight: 700;
+  transition: opacity 160ms ease, max-height 160ms ease;
 }
 
 .ops-events-toggle {
   position: absolute;
   top: 0;
   right: 0;
-  border: 1px solid #c9d8ea;
+  border: 1px solid rgba(144, 170, 205, 0.45);
   border-radius: 999px;
-  background: linear-gradient(180deg, #ffffff 0%, #f2f7fd 100%);
-  color: #1f4dd8;
-  padding: 7px 14px;
+  background: rgba(247, 251, 255, 0.52);
+  color: rgba(31, 77, 216, 0.64);
+  padding: 6px 13px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 400;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(31, 77, 216, 0.08);
+  box-shadow: none;
+  opacity: 0.58;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
 }
 
 .ops-events-toggle:hover {
-  background: linear-gradient(180deg, #f8fbff 0%, #eaf2ff 100%);
+  border-color: rgba(31, 77, 216, 0.54);
+  background: linear-gradient(180deg, #ffffff 0%, #edf5ff 100%);
+  color: #1f4dd8;
+  box-shadow: 0 5px 14px rgba(31, 77, 216, 0.11);
+  opacity: 1;
 }
 
 .ops-event-list {
@@ -1518,13 +1527,17 @@ button {
   gap: 8px;
 }
 
+.ops-events-hidden .ops-events-description,
 .ops-events-hidden .ops-event-list {
   max-height: 0;
   overflow: hidden;
   opacity: 0;
   pointer-events: none;
+  margin-top: 0;
+  user-select: none;
 }
 
+.ops-events-visible .ops-events-description,
 .ops-events-visible .ops-event-list {
   max-height: none;
   opacity: 1;

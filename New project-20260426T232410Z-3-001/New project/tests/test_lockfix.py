@@ -2094,6 +2094,16 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("animation: splashProgress 2000ms", css_source)
         self.assertIn("@keyframes splashBreath", css_source)
 
+    def test_ops_events_description_is_hidden_until_show(self) -> None:
+        html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        css_source = (Path.cwd() / "web" / "static" / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('class="ops-events-description"', html_source)
+        self.assertIn(".ops-events-hidden .ops-events-description", css_source)
+        self.assertIn(".ops-events-visible .ops-events-description", css_source)
+        self.assertIn("font-weight: 400", css_source)
+        self.assertIn("opacity: 0.58", css_source)
+
     def test_admin_update_script_can_apply_live_operation_mode(self) -> None:
         source = (Path.cwd() / "tools" / "apply_latest_webui_update_admin.ps1").read_text(encoding="utf-8")
 
