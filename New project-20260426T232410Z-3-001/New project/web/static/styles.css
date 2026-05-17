@@ -12523,8 +12523,9 @@ body,
 
 .user-management-grid {
   display: grid;
-  grid-template-columns: minmax(320px, 0.9fr) minmax(360px, 1.1fr);
+  grid-template-columns: minmax(360px, 0.85fr) minmax(420px, 1.15fr);
   gap: 16px;
+  align-items: start;
 }
 
 .user-management-form {
@@ -12646,6 +12647,10 @@ body,
   color: #047857;
 }
 
+.user-management-windows-status .status-neutral {
+  color: #475569;
+}
+
 .user-management-status.status-warning,
 .user-management-windows-status .status-warning {
   color: #b45309;
@@ -12664,6 +12669,28 @@ body,
   color: #071c3d;
   font-size: 20px;
   font-weight: 900;
+}
+
+.user-management-security-panel {
+  align-content: start;
+}
+
+.user-management-department-list {
+  align-items: flex-start;
+  align-content: flex-start;
+  gap: 7px;
+}
+
+.user-management-department-list span {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  line-height: 1;
+  border: 1px solid #dfe9f5;
+  background: #f4f8fd;
+  color: #243b53;
+  white-space: nowrap;
 }
 
 .rbac-table td strong,
@@ -12715,6 +12742,8 @@ body,
 .rbac-chip-list {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-start;
+  align-content: flex-start;
   gap: 8px;
 }
 

@@ -551,9 +551,14 @@ const translations = {
     "userManagement.statusOnly": "Status only",
     "userManagement.windowsChecking": "Checking",
     "userManagement.windowsStatusDesc": "Windows administrator status is displayed and audited, but does not grant LOCK-FIX roles.",
+    "userManagement.windowsUnavailable": "Status check delayed",
+    "userManagement.windowsUnavailableDesc": "The Windows privilege check did not finish. User and role management can continue.",
     "userManagement.windowsAdmin": "Administrator",
     "userManagement.windowsStandard": "Standard privileges",
     "userManagement.windowsAudit": "Checked at {time}. RBAC remains the permission source.",
+    "userManagement.errorDuplicateEmail": "This email is already registered. Edit the existing user or enter another email.",
+    "userManagement.errorDepartmentRequired": "Select a department before saving the user.",
+    "userManagement.errorGeneric": "User management request failed. Check the input and try again.",
     "account.newPasswordPrompt": "A new password is required. Enter a new password with at least 8 characters.",
     "account.confirmPasswordPrompt": "Confirm the new password.",
     "account.passwordMismatch": "Passwords do not match.",
@@ -747,7 +752,7 @@ const translations = {
     "settings.applied": "설정이 적용되었습니다.",
     "settings.notificationSaved": "Security Notification Gateway 설정이 저장되었습니다.",
     "userManagement.title": "사용자/권한 관리",
-    "userManagement.subtitle": "Super Admin 기준으로 사용자, 부서, 역할, 임시 비밀번호, 소프트 삭제 상태를 관리합니다.",
+    "userManagement.subtitle": "최고 관리자 기준으로 사용자, 부서, 역할, 임시 비밀번호, 소프트 삭제 상태를 관리합니다.",
     "userManagement.backToSettings": "설정으로 돌아가기",
     "userManagement.newUser": "신규 사용자",
     "userManagement.editUser": "사용자 편집",
@@ -781,9 +786,14 @@ const translations = {
     "userManagement.statusOnly": "상태 확인 전용",
     "userManagement.windowsChecking": "확인 중",
     "userManagement.windowsStatusDesc": "Windows 관리자 권한 상태는 표시 및 감사 기록만 하며 LOCK-FIX 역할을 자동 부여하지 않습니다.",
+    "userManagement.windowsUnavailable": "상태 확인 지연",
+    "userManagement.windowsUnavailableDesc": "Windows 권한 확인이 지연되었습니다. 사용자/권한 관리는 계속 사용할 수 있습니다.",
     "userManagement.windowsAdmin": "관리자 권한",
     "userManagement.windowsStandard": "일반 권한",
     "userManagement.windowsAudit": "{time}에 확인됨. 권한 기준은 LOCK-FIX RBAC입니다.",
+    "userManagement.errorDuplicateEmail": "이미 등록된 이메일입니다. 기존 사용자를 편집하거나 다른 이메일을 입력하세요.",
+    "userManagement.errorDepartmentRequired": "사용자 저장 전에 부서를 선택하세요.",
+    "userManagement.errorGeneric": "사용자 관리 요청을 완료하지 못했습니다. 입력값을 확인한 뒤 다시 시도하세요.",
     "account.newPasswordPrompt": "새 비밀번호가 필요합니다. 8자 이상 새 비밀번호를 입력하세요.",
     "account.confirmPasswordPrompt": "새 비밀번호를 다시 입력하세요.",
     "account.passwordMismatch": "비밀번호가 일치하지 않습니다.",
@@ -5266,10 +5276,7 @@ function resetUserManagementForm() {
   if (userManagementUserId) userManagementUserId.value = "";
   if (userManagementFormTitle) userManagementFormTitle.textContent = t("userManagement.newUser");
   if (userManagementSubmitButton) userManagementSubmitButton.textContent = t("userManagement.create");
-  if (userManagementStatus) {
-    userManagementStatus.textContent = "";
-    userManagementStatus.className = "user-management-status";
-  }
+  setUserManagementStatus();
 }
 
 function userManagementStatusText(user) {
@@ -5278,12 +5285,35 @@ function userManagementStatusText(user) {
   return t("userManagement.active");
 }
 
+function userManagementErrorMessage(error) {
+  const message = String(error?.message || "");
+  if (/user email already exists/i.test(message)) return t("userManagement.errorDuplicateEmail");
+  if (/departmentId is required/i.test(message)) return t("userManagement.errorDepartmentRequired");
+  if (/department not found/i.test(message)) return t("userManagement.errorDepartmentRequired");
+  return message || t("userManagement.errorGeneric");
+}
+
+function setUserManagementStatus(message = "", tone = "") {
+  if (!userManagementStatus) return;
+  userManagementStatus.textContent = message;
+  userManagementStatus.className = `user-management-status${tone ? ` status-${tone}` : ""}`;
+}
+
+function hasUserManagementDuplicateEmail(email, currentUserId = "") {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (!normalizedEmail) return false;
+  return latestUserManagementData.users.some((user) => (
+    String(user.email || "").trim().toLowerCase() === normalizedEmail
+    && String(user.id || "") !== String(currentUserId || "")
+  ));
+}
+
 function renderWindowsAdminStatus(status) {
   if (!userManagementWindowsStatus) return;
   if (status?.error) {
     userManagementWindowsStatus.innerHTML = `
-      <strong class="status-warning">${escapeHtml(t("userManagement.windowsStandard"))}</strong>
-      <span>${escapeHtml(status.error)}</span>
+      <strong class="status-neutral">${escapeHtml(t("userManagement.windowsUnavailable"))}</strong>
+      <span>${escapeHtml(t("userManagement.windowsUnavailableDesc"))}</span>
       <em>${escapeHtml(t("userManagement.windowsStatusDesc"))}</em>
     `;
     return;
@@ -5382,11 +5412,13 @@ async function submitUserManagementForm(event) {
     role: userManagementRole?.value || "AUDITOR",
     disabled: Boolean(userManagementDisabled?.checked),
   };
-  if (userManagementSubmitButton) userManagementSubmitButton.disabled = true;
-  if (userManagementStatus) {
-    userManagementStatus.textContent = userId ? t("userManagement.save") : t("userManagement.create");
-    userManagementStatus.className = "user-management-status status-pending";
+  if (hasUserManagementDuplicateEmail(payload.email, userId)) {
+    setUserManagementStatus(t("userManagement.errorDuplicateEmail"), "error");
+    userManagementEmail?.focus();
+    return;
   }
+  if (userManagementSubmitButton) userManagementSubmitButton.disabled = true;
+  setUserManagementStatus(userId ? t("userManagement.save") : t("userManagement.create"), "pending");
   try {
     const response = await requestJson(userId ? `/api/admin/users/${encodeURIComponent(userId)}` : "/api/admin/users", {
       method: userId ? "PATCH" : "POST",
@@ -5398,18 +5430,12 @@ async function submitUserManagementForm(event) {
       : templateText("userManagement.created", {
         password: response.temporaryPassword || "-",
         expires: response.temporaryPasswordExpiresAt || "-",
-      });
+    });
     resetUserManagementForm();
-    if (userManagementStatus) {
-      userManagementStatus.textContent = message;
-      userManagementStatus.className = "user-management-status status-success";
-    }
+    setUserManagementStatus(message, "success");
     await reloadUserManagement();
   } catch (error) {
-    if (userManagementStatus) {
-      userManagementStatus.textContent = error.message || "User management request failed.";
-      userManagementStatus.className = "user-management-status status-error";
-    }
+    setUserManagementStatus(userManagementErrorMessage(error), "error");
   } finally {
     if (userManagementSubmitButton) userManagementSubmitButton.disabled = false;
   }
@@ -5426,28 +5452,23 @@ function editUserManagementUser(userId) {
   if (userManagementDisabled) userManagementDisabled.checked = Boolean(user.disabled);
   if (userManagementFormTitle) userManagementFormTitle.textContent = t("userManagement.editUser");
   if (userManagementSubmitButton) userManagementSubmitButton.textContent = t("userManagement.save");
+  setUserManagementStatus();
   userManagementEmail?.focus();
 }
 
 async function archiveUserManagementUser(userId) {
   if (!window.confirm(t("userManagement.confirmArchive"))) return;
   const response = await requestJson(`/api/admin/users/${encodeURIComponent(userId)}/archive`, { method: "POST" });
-  if (userManagementStatus) {
-    userManagementStatus.textContent = response.ok ? t("userManagement.archived") : "Archive failed.";
-    userManagementStatus.className = response.ok ? "user-management-status status-success" : "user-management-status status-error";
-  }
+  setUserManagementStatus(response.ok ? t("userManagement.archived") : t("userManagement.errorGeneric"), response.ok ? "success" : "error");
   await reloadUserManagement();
 }
 
 async function issueUserManagementTemporaryPassword(userId) {
   const response = await requestJson(`/api/admin/users/${encodeURIComponent(userId)}/temporary-password`, { method: "POST" });
-  if (userManagementStatus) {
-    userManagementStatus.textContent = templateText("userManagement.tempIssued", {
-      password: response.temporaryPassword || "-",
-      expires: response.temporaryPasswordExpiresAt || "-",
-    });
-    userManagementStatus.className = "user-management-status status-success";
-  }
+  setUserManagementStatus(templateText("userManagement.tempIssued", {
+    password: response.temporaryPassword || "-",
+    expires: response.temporaryPasswordExpiresAt || "-",
+  }), "success");
   await reloadUserManagement();
 }
 
@@ -5468,10 +5489,7 @@ async function handleUserManagementTableClick(event) {
       await issueUserManagementTemporaryPassword(tempButton.dataset.userTemp);
     }
   } catch (error) {
-    if (userManagementStatus) {
-      userManagementStatus.textContent = error.message || "User management action failed.";
-      userManagementStatus.className = "user-management-status status-error";
-    }
+    setUserManagementStatus(userManagementErrorMessage(error), "error");
   }
 }
 
@@ -7906,6 +7924,8 @@ userManagementForm?.addEventListener("submit", submitUserManagementForm);
 userManagementTable?.addEventListener("click", handleUserManagementTableClick);
 userManagementCancelButton?.addEventListener("click", resetUserManagementForm);
 userManagementBackButton?.addEventListener("click", () => showView("settings"));
+[userManagementEmail, userManagementName].forEach((field) => field?.addEventListener("input", () => setUserManagementStatus()));
+[userManagementDepartment, userManagementRole, userManagementDisabled].forEach((field) => field?.addEventListener("change", () => setUserManagementStatus()));
 applySidebarState();
 applyUiSettings();
 setupNetworkCardDragDrop();

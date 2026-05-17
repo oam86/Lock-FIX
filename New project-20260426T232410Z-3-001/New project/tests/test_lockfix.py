@@ -672,13 +672,15 @@ class LockFixTests(unittest.TestCase):
         root = Path.cwd()
         html = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
         app = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
+        css = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
 
         for token in [
             'data-i18n="userManagement.title"',
             'id="userManagementForm"',
             'id="userManagementBackButton"',
             'data-i18n="userManagement.actions"',
-            'v=20260518-sidebar-user-borderless',
+            'v=20260518-user-management-polish',
+            'class="rbac-chip-list user-management-department-list"',
             '<option value="backup-operation">Backup Operation</option>',
             '<option value="SECURITY_ADMIN">SECURITY_ADMIN</option>',
             '<span>Hardware Control</span>',
@@ -694,8 +696,21 @@ class LockFixTests(unittest.TestCase):
             'data-user-archive',
             '"userManagement.title": "사용자/권한 관리"',
             '"userManagement.title": "User & Role Management"',
+            '"userManagement.windowsUnavailable": "상태 확인 지연"',
+            '"userManagement.errorDuplicateEmail": "이미 등록된 이메일입니다.',
+            "function userManagementErrorMessage",
+            "function hasUserManagementDuplicateEmail",
+            "setUserManagementStatus(t(\"userManagement.errorDuplicateEmail\"), \"error\")",
         ]:
             self.assertIn(token, app)
+        for token in [
+            ".user-management-department-list",
+            "align-items: flex-start;",
+            "align-content: flex-start;",
+            "white-space: nowrap;",
+            ".user-management-windows-status .status-neutral",
+        ]:
+            self.assertIn(token, css)
 
     def test_audit_log_model_normalizes_existing_jsonl_records(self) -> None:
         tmp_path = self.make_workspace()
@@ -1546,7 +1561,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("border: 0;", css_source)
         self.assertNotIn("border: 1px solid rgba(196, 211, 225, 0.72);", css_source)
         self.assertNotIn("border: 1px solid rgba(121, 158, 206, 0.48);", css_source)
-        self.assertIn("20260518-sidebar-user-borderless", index_source)
+        self.assertIn("20260518-user-management-polish", index_source)
 
     def test_isolate_reaches_isolated(self) -> None:
         tmp_path = self.make_workspace()
@@ -2269,7 +2284,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("content: none !important;", css_source)
         self.assertIn("font-weight: 400 !important;", css_source)
         self.assertIn("opacity: 0.6 !important;", css_source)
-        self.assertIn("20260518-sidebar-user-borderless", html_source)
+        self.assertIn("20260518-user-management-polish", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -2288,7 +2303,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260518-sidebar-user-borderless", html_source)
+        self.assertIn("20260518-user-management-polish", html_source)
 
     def test_monitoring_header_copy_is_hidden_while_polling_remains(self) -> None:
         root = Path.cwd()
@@ -2411,7 +2426,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("min-height: 46px;", css_source)
         self.assertIn("opacity: 0.66;", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260518-sidebar-user-borderless", html_source)
+        self.assertIn("20260518-user-management-polish", html_source)
 
     def test_dashboard_route_does_not_show_legacy_notification_markup(self) -> None:
         root = Path.cwd()
@@ -2429,7 +2444,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260518-sidebar-user-borderless", html_source)
+        self.assertIn("20260518-user-management-polish", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()
