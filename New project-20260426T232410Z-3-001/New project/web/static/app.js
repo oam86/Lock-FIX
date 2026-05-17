@@ -61,6 +61,7 @@ const dashboardCards = document.querySelector("#dashboardCards");
 const dashboardNotificationTable = document.querySelector("#dashboardNotificationTable");
 const dashboardLogsTable = document.querySelector("#dashboardLogsTable");
 const dashboardTotalLogs = document.querySelector("#dashboardTotalLogs");
+const dashboardKpiOrderKey = "lockfix.dashboard.kpiOrder.v1";
 const reportOverallStatus = document.querySelector("#reportOverallStatus");
 const reportAnalysis = document.querySelector("#reportAnalysis");
 const reportGeneratedAt = document.querySelector("#reportGeneratedAt");
@@ -1915,6 +1916,87 @@ function stateClass(state) {
   return `state-${state}`.replaceAll(" ", "_");
 }
 
+function loadDashboardKpiOrder() {
+  try {
+    const raw = localStorage.getItem(dashboardKpiOrderKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map((item) => String(item || "")).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveDashboardKpiOrder(order) {
+  try {
+    localStorage.setItem(dashboardKpiOrderKey, JSON.stringify(order));
+  } catch {
+    // Ignore storage failures in locked-down browser contexts.
+  }
+}
+
+function reorderDashboardKpis(cards) {
+  const order = loadDashboardKpiOrder();
+  if (!order.length) return cards;
+  const index = new Map(order.map((key, position) => [key, position]));
+  return [...cards].sort((left, right) => {
+    const leftIndex = index.has(left.key) ? index.get(left.key) : Number.POSITIVE_INFINITY;
+    const rightIndex = index.has(right.key) ? index.get(right.key) : Number.POSITIVE_INFINITY;
+    return leftIndex - rightIndex;
+  });
+}
+
+function enableDashboardKpiDrag(board) {
+  if (!board || board.dataset.dragReady === "true") return;
+  board.dataset.dragReady = "true";
+  let dragging = null;
+
+  const syncOrder = () => {
+    const order = [...board.querySelectorAll("[data-dashboard-kpi]")].map((item) => item.dataset.dashboardKpi || "").filter(Boolean);
+    saveDashboardKpiOrder(order);
+  };
+
+  const getCard = (target) => target?.closest?.("[data-dashboard-kpi]");
+
+  board.addEventListener("dragstart", (event) => {
+    const card = getCard(event.target);
+    if (!card) return;
+    dragging = card;
+    card.classList.add("dashboard-kpi-dragging");
+    event.dataTransfer?.setData("text/plain", card.dataset.dashboardKpi || "");
+    event.dataTransfer?.setDragImage(card, Math.min(80, card.clientWidth / 2), Math.min(40, card.clientHeight / 2));
+  });
+
+  board.addEventListener("dragend", () => {
+    if (dragging) dragging.classList.remove("dashboard-kpi-dragging");
+    dragging = null;
+    board.querySelectorAll(".dashboard-kpi-drop-target").forEach((node) => node.classList.remove("dashboard-kpi-drop-target"));
+    syncOrder();
+  });
+
+  board.addEventListener("dragover", (event) => {
+    if (!dragging) return;
+    event.preventDefault();
+    const card = getCard(event.target);
+    if (!card || card === dragging) return;
+    const rect = card.getBoundingClientRect();
+    const insertBefore = event.clientX < rect.left + rect.width / 2 || event.clientY < rect.top + rect.height / 2;
+    board.querySelectorAll(".dashboard-kpi-drop-target").forEach((node) => node.classList.remove("dashboard-kpi-drop-target"));
+    card.classList.add("dashboard-kpi-drop-target");
+    if (insertBefore) {
+      board.insertBefore(dragging, card);
+    } else {
+      board.insertBefore(dragging, card.nextSibling);
+    }
+  });
+
+  board.addEventListener("drop", (event) => {
+    if (!dragging) return;
+    event.preventDefault();
+    syncOrder();
+  });
+}
+
 function renderMount(node, slot) {
   const mount = slot.mount || {};
   const usage = mount.usage;
@@ -2070,6 +2152,10 @@ function renderDashboard(data) {
       { icon: "veeam-backup-completed", label: copy.lastBackup, value: copy.success, tone: "green", meta: "2026-04-25 18:25" },
       { icon: "integrity-logo", label: copy.integrity, value: copy.normal, tone: "green", meta: `${copy.latest} 2026-04-25 17:40` },
     ];
+  const orderedKpis = reorderDashboardKpis(securityKpis.map((item, index) => ({
+    ...item,
+    key: item.key || item.id || item.label || `kpi-${index}`,
+  })));
   const flowItems = Array.isArray(data.flow) && data.flow.length
     ? data.flow
     : [
@@ -2092,9 +2178,10 @@ function renderDashboard(data) {
         <span>Repository 재연결이 차단되었으며 관리자 승인이 필요합니다.</span>
       </section>
     ` : ""}
-    <div class="security-kpi-grid">
-      ${securityKpis.map(({ icon, label, value, tone, meta }) => `
-        <article class="security-kpi security-kpi-${icon}">
+    <div class="security-kpi-grid" id="dashboardKpiBoard" aria-label="Dashboard summary cards">
+      ${orderedKpis.map(({ icon, label, value, tone, meta, key }) => `
+        <article class="security-kpi security-kpi-${icon}" data-dashboard-kpi="${escapeHtml(key)}" draggable="true">
+          <span class="dashboard-kpi-grip" aria-hidden="true" title="Drag to reorder"></span>
           <i class="security-icon security-icon-${icon} security-tone-${tone}" ${meta ? `title="${escapeHtml(meta)}" aria-label="${escapeHtml(meta)}"` : 'aria-hidden="true"'}></i>
           <div><span>${escapeHtml(label || "-")}</span><strong class="security-value-${tone}">${escapeHtml(value || "-")}</strong></div>
         </article>
@@ -2176,8 +2263,9 @@ function renderDashboard(data) {
         </div>
       </section>
 
-    </div>
+  </div>
   `;
+  enableDashboardKpiDrag(document.querySelector("#dashboardKpiBoard"));
 }
 
 function renderReport(data) {
