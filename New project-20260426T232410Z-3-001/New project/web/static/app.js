@@ -2278,6 +2278,10 @@ function renderDashboard(data) {
         <span>Repository 재연결이 차단되었으며 관리자 승인이 필요합니다.</span>
       </section>
     ` : ""}
+    <div class="dashboard-edit-hint">
+      <strong>대시보드 편집</strong>
+      <span>카드는 드래그로 순서를 바꾸고, 우측 하단 핸들로 크기를 조절할 수 있습니다.</span>
+    </div>
     <div class="security-kpi-grid" id="dashboardKpiBoard" aria-label="Dashboard summary cards">
       ${orderedKpis.map(({ icon, label, value, tone, meta, key }) => `
         <article class="security-kpi security-kpi-${icon}" data-dashboard-kpi="${escapeHtml(key)}" data-cols="${escapeHtml(String(kpiSizes[key]?.cols || 1))}" data-rows="${escapeHtml(String(kpiSizes[key]?.rows || 1))}" draggable="true">
@@ -2289,7 +2293,7 @@ function renderDashboard(data) {
       `).join("")}
     </div>
 
-    <div class="security-dashboard-grid">
+    <div class="security-dashboard-grid dashboard-content-grid">
       <section class="security-panel security-flow-panel">
         <header><h2><i class="panel-title-icon protection-title-icon" aria-hidden="true"></i>${copy.liveProtection}</h2><span>ⓘ</span></header>
         <div class="panel-body">

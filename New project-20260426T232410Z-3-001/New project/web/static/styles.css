@@ -9367,7 +9367,8 @@ td {
   grid-template-columns: repeat(12, minmax(0, 1fr));
   grid-auto-rows: minmax(88px, auto);
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
+  padding: 4px 0 2px;
 }
 
 .security-kpi,
@@ -9433,6 +9434,37 @@ td {
 
 .dashboard-kpi-board-resizing {
   cursor: se-resize;
+}
+
+.dashboard-edit-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 12px;
+  padding: 10px 14px;
+  border: 1px solid #dbe5f0;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f4f8fc 100%);
+  color: #415164;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dashboard-edit-hint strong {
+  color: #163a73;
+  font-weight: 900;
+}
+
+.dashboard-content-grid {
+  align-items: start;
+}
+
+.security-dashboard-grid.dashboard-content-grid .security-panel {
+  border-radius: 14px;
+}
+
+.security-dashboard-grid.dashboard-content-grid .panel-body {
+  padding-bottom: 16px;
 }
 
 .security-kpi span,
