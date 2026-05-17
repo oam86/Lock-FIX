@@ -2127,7 +2127,26 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("content: none !important;", css_source)
         self.assertIn("font-weight: 400 !important;", css_source)
         self.assertIn("opacity: 0.6 !important;", css_source)
-        self.assertIn("20260517-network-show-buttons", html_source)
+        self.assertIn("20260517-settings-wide-grid", html_source)
+
+    def test_settings_view_uses_full_width_balanced_grid(self) -> None:
+        root = Path.cwd()
+        html_source = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        css_source = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('settings-card settings-language-card', html_source)
+        self.assertIn('settings-card settings-theme-card', html_source)
+        self.assertIn('settings-card settings-log-retention-card', html_source)
+        self.assertIn("max-width: none;", css_source)
+        self.assertIn("grid-template-columns: repeat(12, minmax(0, 1fr));", css_source)
+        self.assertIn(".settings-notification-card", css_source)
+        self.assertIn("grid-column: span 7;", css_source)
+        self.assertIn(".settings-navigation-card", css_source)
+        self.assertIn("grid-column: span 5;", css_source)
+        self.assertIn(".settings-actions", css_source)
+        self.assertIn("grid-column: 1 / -1;", css_source)
+        self.assertIn("@media (max-width: 1280px)", css_source)
+        self.assertIn("20260517-settings-wide-grid", html_source)
 
     def test_dashboard_cards_drag_resize_without_edit_button(self) -> None:
         root = Path.cwd()
@@ -2155,7 +2174,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".dashboard-panel-resize-handle", css_source)
         self.assertIn(".dashboard-panel-drop-target", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260517-network-show-buttons", html_source)
+        self.assertIn("20260517-settings-wide-grid", html_source)
 
     def test_dashboard_route_does_not_show_legacy_notification_markup(self) -> None:
         root = Path.cwd()
@@ -2173,7 +2192,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260517-network-show-buttons", html_source)
+        self.assertIn("20260517-settings-wide-grid", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()
