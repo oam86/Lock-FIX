@@ -678,7 +678,7 @@ class LockFixTests(unittest.TestCase):
             'id="userManagementForm"',
             'id="userManagementBackButton"',
             'data-i18n="userManagement.actions"',
-            'v=20260517-user-department-fallback',
+            'v=20260517-ops-show-inline',
         ]:
             self.assertIn(token, html)
         for token in [
@@ -2207,7 +2207,12 @@ class LockFixTests(unittest.TestCase):
         self.assertIn('class="ops-events-description"', html_source)
         self.assertIn(".ops-events-hidden .ops-events-description", css_source)
         self.assertIn(".ops-events-visible .ops-events-description", css_source)
-        self.assertIn("grid-template-columns: max-content auto;", css_source)
+        self.assertIn("display: flex;", css_source)
+        self.assertIn("flex-wrap: wrap;", css_source)
+        self.assertIn("order: 2;", css_source)
+        self.assertIn("flex: 0 0 100%;", css_source)
+        self.assertIn(".ops-events-hidden .ops-event-list", css_source)
+        self.assertIn("grid-template-columns: max-content;", css_source)
         self.assertIn("align-items: center;", css_source)
         self.assertIn("display: inline-flex;", css_source)
         self.assertIn("min-height: 30px;", css_source)
@@ -2238,7 +2243,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("content: none !important;", css_source)
         self.assertIn("font-weight: 400 !important;", css_source)
         self.assertIn("opacity: 0.6 !important;", css_source)
-        self.assertIn("20260517-user-department-fallback", html_source)
+        self.assertIn("20260517-ops-show-inline", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -2257,7 +2262,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260517-user-department-fallback", html_source)
+        self.assertIn("20260517-ops-show-inline", html_source)
 
     def test_monitoring_header_copy_is_hidden_while_polling_remains(self) -> None:
         root = Path.cwd()
@@ -2357,7 +2362,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".dashboard-panel-resize-handle", css_source)
         self.assertIn(".dashboard-panel-drop-target", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260517-user-department-fallback", html_source)
+        self.assertIn("20260517-ops-show-inline", html_source)
 
     def test_dashboard_route_does_not_show_legacy_notification_markup(self) -> None:
         root = Path.cwd()
@@ -2375,7 +2380,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260517-user-department-fallback", html_source)
+        self.assertIn("20260517-ops-show-inline", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()

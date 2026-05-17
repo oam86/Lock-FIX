@@ -1505,23 +1505,23 @@ button {
 
 .ops-events {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 12px;
-  align-items: stretch;
+  grid-template-columns: minmax(260px, max-content) minmax(0, 1fr);
+  gap: 16px 28px;
+  align-items: start;
   border-top: 1px solid #e2eaf0;
-  padding-top: 10px;
+  padding-top: 14px;
 }
 
 .ops-events-head {
-  display: grid;
-  grid-template-columns: max-content auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  column-gap: 12px;
-  row-gap: 6px;
+  gap: 8px 12px;
   min-height: 34px;
 }
 
 .ops-events-head strong {
+  order: 1;
   display: inline-flex;
   align-items: center;
   min-height: 30px;
@@ -1533,17 +1533,18 @@ button {
 
 .ops-events-description {
   display: block;
-  grid-column: 1 / -1;
-  margin-top: 6px;
+  order: 3;
+  flex: 0 0 100%;
+  margin-top: 2px;
   font-weight: 700;
   transition: opacity 160ms ease, max-height 160ms ease;
 }
 
 .ops-events-toggle {
+  order: 2;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  justify-self: start;
   min-height: 30px;
   border: 1px solid rgba(144, 170, 205, 0.45);
   border-radius: 999px;
@@ -1572,6 +1573,13 @@ button {
   gap: 8px;
 }
 
+.ops-events-hidden {
+  grid-template-columns: max-content;
+  gap: 0;
+  align-items: center;
+  padding-top: 10px;
+}
+
 .ops-events-hidden .ops-events-description,
 .ops-events-hidden .ops-event-list {
   max-height: 0;
@@ -1582,11 +1590,20 @@ button {
   user-select: none;
 }
 
+.ops-events-hidden .ops-event-list {
+  display: none;
+}
+
 .ops-events-visible .ops-events-description,
 .ops-events-visible .ops-event-list {
   max-height: none;
   opacity: 1;
   pointer-events: auto;
+}
+
+.ops-events-visible .ops-event-list {
+  display: grid;
+  margin-top: 2px;
 }
 
 .ops-event {
