@@ -971,23 +971,13 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                         status=403,
                     )
                     return
-                approval_password = str(payload.get("approval_password") or "")
-                if not secrets.compare_digest(approval_password, "1"):
+                approval_password = str(payload.get("approval_password") or "").strip()
+                if approval_password:
                     self.context.controller.audit.write(
-                        "emergency.reconnect.denied",
+                        "emergency.reconnect.approval_password.legacy_ignored",
                         slot_id=slot_id,
-                        reason="approval_password_failed",
-                        message="Emergency reconnect approval password was not verified.",
+                        message="Legacy approval password input was ignored because approval decisions already gate emergency reconnect.",
                     )
-                    self.send_json(
-                        {
-                            "slot_id": slot_id,
-                            "accepted": False,
-                            "error": "긴급 재접속 승인 비밀번호가 일치하지 않습니다.",
-                        },
-                        status=403,
-                    )
-                    return
                 repository_path = str(payload.get("repository_path") or self.context.veeam_backup_copy_repository_path() or slot.mount_point or slot.device or "").strip()
                 veeam_repository_path = self.context.veeam_backup_copy_repository_path()
                 if veeam_repository_path:
