@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import unittest
 import uuid
 from pathlib import Path
@@ -9,7 +10,8 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 
 import webui
-from lockfix.config import load_config
+from lockfix.agent_service import AgentServiceClient, AgentServiceUnavailable, AgentServiceWorker
+from lockfix.config import load_config, normalize_operation_mode
 from lockfix.controller import LockFixController, repository_volume_root
 from lockfix.disk import DiskOperator
 from lockfix.command import CommandError, CommandRunner
@@ -144,6 +146,47 @@ class LockFixTests(unittest.TestCase):
         config = load_config(config_path)
 
         self.assertEqual(config.slot("BAY-01").device, "D:\\")
+
+    def test_operation_mode_defaults_and_aliases(self) -> None:
+        self.assertEqual(normalize_operation_mode(None, False), "commercial")
+        self.assertEqual(normalize_operation_mode("live", False), "commercial")
+        self.assertEqual(normalize_operation_mode("production", False), "commercial")
+        self.assertEqual(normalize_operation_mode("poc", True), "poc")
+        self.assertEqual(normalize_operation_mode("dry_run", True), "poc")
+        self.assertEqual(normalize_operation_mode("delivery", False), "delivery")
+        self.assertEqual(normalize_operation_mode(None, True), "poc")
+
+    def test_agent_service_document_includes_delivery_permission_table(self) -> None:
+        text = Path("docs/agent_service_architecture.md").read_text(encoding="utf-8")
+
+        self.assertIn("권한 요구사항 / 제한 기능 / 해결 방법", text)
+        self.assertIn("Disk Offline", text)
+        self.assertIn("Veeam REST API", text)
+        self.assertIn("승인 워크플로우", text)
+
+    def test_webui_inline_fallback_is_poc_only(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        context = webui.WebContext(config_path)
+        self.assertEqual(context.operation_mode(), "poc")
+        self.assertTrue(context.agent_service.allow_inline_fallback)
+
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        raw["operation_mode"] = "commercial"
+        config_path.write_text(json.dumps(raw), encoding="utf-8")
+        context = webui.WebContext(config_path)
+        self.assertEqual(context.operation_mode(), "commercial")
+        self.assertFalse(context.agent_service.allow_inline_fallback)
+
+    def test_inline_fallback_audits_poc_admin_execution(self) -> None:
+        tmp_path = self.make_workspace()
+        context = webui.WebContext(write_config(tmp_path))
+
+        with patch("webui.run_veeam_diagnostics", return_value={"success": True}):
+            context.execute_inline_agent_operation("veeam.diagnostics", {})
+
+        audit_text = (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
+        self.assertIn('"event": "poc.admin_execution"', audit_text)
 
     def test_rbac_policy_has_required_roles_and_no_audit_delete_permission(self) -> None:
         policy = load_role_permissions(Path("config/rbac_policy.json"))
@@ -768,6 +811,38 @@ class LockFixTests(unittest.TestCase):
 
         self.assertFalse(config.dry_run)
 
+    def test_install_properties_override_stale_veeam_endpoint_in_loaded_config(self) -> None:
+        tmp_path = self.make_workspace()
+        source_config = write_config(tmp_path)
+        install_root = tmp_path / "install"
+        config_dir = install_root / "config"
+        runtime_dir = install_root / "runtime"
+        config_dir.mkdir(parents=True)
+        runtime_dir.mkdir()
+        config_path = config_dir / "lockfix.example.json"
+        raw = json.loads(source_config.read_text(encoding="utf-8"))
+        raw["veeam"] = {
+            "base_url": "https://192.168.219.165:9419",
+            "discovery_candidates": ["https://192.168.219.165:9419"],
+            "username": "old-user",
+            "api_version": "1.2-rev1",
+        }
+        config_path.write_text(json.dumps(raw), encoding="utf-8")
+        (runtime_dir / "install.properties").write_text(
+            "veeam_host=192.168.219.230\n"
+            "veeam_port=9419\n"
+            "veeam_base_url=https://192.168.219.230:9419\n"
+            "veeam_api_version=1.2-rev1\n"
+            "veeam_user=administrator\n",
+            encoding="utf-8",
+        )
+
+        config = load_config(config_path)
+
+        self.assertEqual(config.veeam.base_url, "https://192.168.219.230:9419")
+        self.assertEqual(config.veeam.discovery_candidates[0], "https://192.168.219.230:9419")
+        self.assertEqual(config.veeam.username, "administrator")
+
     def test_power_command_paths_are_resolved_from_install_root(self) -> None:
         tmp_path = self.make_workspace()
         source_config = write_config(tmp_path)
@@ -895,6 +970,26 @@ class LockFixTests(unittest.TestCase):
         self.assertIn('"target_volume": "F:\\\\"', audit_text)
         self.assertIn('"configured_slot_volume":', audit_text)
 
+    def test_controller_blocks_non_veeam_repository_volume_when_backup_copy_is_required(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        raw["veeam"] = {
+            "enabled": True,
+            "require_backup_copy": True,
+            "target_repository_path": "G:\\BackupCopy",
+        }
+        config_path.write_text(json.dumps(raw), encoding="utf-8")
+        controller = LockFixController(load_config(config_path))
+
+        with self.assertRaisesRegex(ValueError, "Veeam Backup Copy repository volume"):
+            controller.repository_slot(controller.config.slot("BAY-01"), "D:\\OldRepository")
+
+        audit_text = controller.config.audit_log_path.read_text(encoding="utf-8")
+        self.assertIn('"event": "veeam.repository.volume.mismatch"', audit_text)
+        self.assertIn('"configured_volume": "G:\\\\"', audit_text)
+        self.assertIn('"supplied_volume": "D:\\\\"', audit_text)
+
     def test_repository_volume_root_blocks_c_volume(self) -> None:
         self.assertEqual(repository_volume_root("F:\\Repository\\Copy"), "F:\\")
         tmp_path = self.make_workspace()
@@ -911,6 +1006,94 @@ class LockFixTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "protected Windows OS volume"):
             controller.isolate("BAY-01")
+
+    def test_agent_service_worker_executes_privileged_disk_operation_from_queue(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        controller = LockFixController(load_config(config_path))
+        self.approve_operation(controller, "DISK_OFFLINE")
+
+        queue_root = tmp_path / "agent_service"
+        client = AgentServiceClient(queue_root, timeout_seconds=1)
+        request_id = "request-disk-isolate"
+        request_path = queue_root / "requests" / f"{request_id}.json"
+        request_path.parent.mkdir(parents=True)
+        request_path.write_text(
+            json.dumps(
+                {
+                    "request_id": request_id,
+                    "operation": "disk.isolate",
+                    "payload": {"slot_id": "BAY-01"},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        processed = AgentServiceWorker(config_path, queue_root).process_once()
+        response = json.loads((queue_root / "responses" / f"{request_id}.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(processed, 1)
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["state"], "ISOLATED")
+        audit_text = load_config(config_path).audit_log_path.read_text(encoding="utf-8")
+        self.assertIn('"event": "agent.service.request.received"', audit_text)
+
+    def test_agent_service_preflight_reports_permission_shortage(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        raw["operation_mode"] = "commercial"
+        config_path.write_text(json.dumps(raw), encoding="utf-8")
+        controller = LockFixController(load_config(config_path))
+        worker = AgentServiceWorker(config_path, tmp_path / "agent_service")
+
+        with patch.object(
+            worker,
+            "current_identity",
+            return_value={
+                "account": "CUSTOMER\\lockfix-svc",
+                "is_local_system": False,
+                "is_local_admin": False,
+                "groups_probe_ok": True,
+                "recommended_accounts": ["LocalSystem", "lockfix-svc"],
+            },
+        ), patch.object(worker, "powershell_probe", return_value={"ok": False, "error": "Access is denied.", "output": ""}), patch(
+            "lockfix.agent_service.run_veeam_diagnostics",
+            return_value={"success": True},
+        ):
+            result = worker.service_preflight({"operation_mode": "commercial"}, controller)
+
+        self.assertFalse(result["ok"])
+        self.assertIn("Disk Offline", result["restricted_features"])
+        self.assertIn("Get-Disk 실행 불가", result["restricted_features"])
+        audit_text = load_config(config_path).audit_log_path.read_text(encoding="utf-8")
+        self.assertIn('"event": "service.permission.insufficient"', audit_text)
+
+    def test_webui_requires_agent_service_for_privileged_operation_when_not_dry_run(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        raw["dry_run"] = False
+        config_path.write_text(json.dumps(raw), encoding="utf-8")
+        context = webui.WebContext(config_path)
+        context.agent_service_queue_root = tmp_path / "missing_agent_service"
+
+        with self.assertRaises(AgentServiceUnavailable):
+            context.run_agent_service_operation("disk.isolate", {"slot_id": "BAY-01"}, timeout_seconds=0.1)
+
+    def test_webui_keeps_inline_fallback_only_for_dry_run_compatibility(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        controller = LockFixController(load_config(config_path))
+        self.approve_operation(controller, "DISK_OFFLINE")
+        context = webui.WebContext(config_path)
+        context.agent_service_queue_root = tmp_path / "missing_agent_service"
+
+        result = context.run_agent_service_operation("disk.isolate", {"slot_id": "BAY-01"}, timeout_seconds=0.1)
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["inline_fallback"])
+        self.assertEqual(result["state"], "ISOLATED")
 
     def test_lockfix_dry_run_environment_override_takes_precedence(self) -> None:
         tmp_path = self.make_workspace()
@@ -986,12 +1169,98 @@ class LockFixTests(unittest.TestCase):
         class Probe:
             context = webui.WebContext(config_path)
 
+            def emergency_access_summary(self):
+                return webui.LockFixWebHandler.emergency_access_summary(self)
+
+            def detect_veeam_repository_summary(self):
+                return webui.LockFixWebHandler.detect_veeam_repository_summary(self)
+
         summary = webui.LockFixWebHandler.detect_summary(Probe())
         parts = {part["key"]: part["value"] for part in summary["fingerprint"]["parts"]}
 
         self.assertEqual(parts["size"], "8 TB")
         self.assertEqual(parts["firmware"], "FW-WEB")
         self.assertIn("Disk Size", summary["fingerprint"]["formula"])
+
+    def test_webui_detect_summary_includes_veeam_repository_from_rest(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        raw["veeam"] = {
+            "enabled": True,
+            "base_url": "https://192.168.219.230:9419",
+            "job_name": "Backup Copy Job 1",
+            "target_repository_name": "DREPO",
+            "target_repository_path": "G:\\",
+        }
+        config_path.write_text(json.dumps(raw), encoding="utf-8")
+
+        class Probe:
+            context = webui.WebContext(config_path)
+
+            def emergency_access_summary(self):
+                return webui.LockFixWebHandler.emergency_access_summary(self)
+
+            def detect_veeam_repository_summary(self):
+                return webui.LockFixWebHandler.detect_veeam_repository_summary(self)
+
+            def run_veeam_diagnostics_limited(self, veeam_config, timeout_seconds=3.0):
+                return {
+                    "source": "python_veeam_client",
+                    "latest_configured_session": {
+                        "source": "python_veeam_client",
+                        "job_name": "Backup Copy Job 1",
+                        "repository_name": "DREPO",
+                        "repository_path": "G:\\",
+                    },
+                }
+
+        summary = webui.LockFixWebHandler.detect_summary(Probe())
+        repository = summary["veeam_repository"]
+
+        self.assertEqual(repository["repository_name"], "DREPO")
+        self.assertEqual(repository["repository_path"], "G:\\")
+        self.assertTrue(repository["api_synced"])
+
+    def test_webui_detect_summary_never_exposes_c_volume_as_veeam_repository(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        raw["veeam"] = {
+            "enabled": True,
+            "base_url": "https://192.168.219.230:9419",
+            "job_name": "Backup Copy Job 1",
+            "target_repository_name": "OS",
+            "target_repository_path": "C:\\",
+        }
+        config_path.write_text(json.dumps(raw), encoding="utf-8")
+
+        class Probe:
+            context = webui.WebContext(config_path)
+
+            def emergency_access_summary(self):
+                return webui.LockFixWebHandler.emergency_access_summary(self)
+
+            def detect_veeam_repository_summary(self):
+                return webui.LockFixWebHandler.detect_veeam_repository_summary(self)
+
+            def run_veeam_diagnostics_limited(self, veeam_config, timeout_seconds=3.0):
+                return {
+                    "source": "python_veeam_client",
+                    "latest_configured_session": {
+                        "source": "python_veeam_client",
+                        "job_name": "Backup Copy Job 1",
+                        "repository_name": "OS",
+                        "repository_path": "C:\\",
+                    },
+                }
+
+        summary = webui.LockFixWebHandler.detect_summary(Probe())
+        repository = summary["veeam_repository"]
+
+        self.assertEqual(repository["repository_path"], "-")
+        self.assertFalse(repository["eligible"])
+        self.assertNotIn("C:", json.dumps(repository))
 
     def test_detect_webui_uses_judgement_module_layout(self) -> None:
         root = Path.cwd()
@@ -1012,6 +1281,8 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("background: #ffffff;", css_source)
         self.assertIn("color: #16a34a", css_source)
         self.assertIn("color: #ef4444", css_source)
+        self.assertIn("VEEAM REPOSITORY", app_source)
+        self.assertIn("detect-veeam-repository-card", css_source)
 
     def test_customer_sidebar_uses_simplified_navigation_icons(self) -> None:
         root = Path.cwd()
@@ -2073,6 +2344,39 @@ class LockFixTests(unittest.TestCase):
         self.assertEqual(match["strategy"], "backup_job_id")
         self.assertEqual(summary["job_id"], "a61d20b5-2555-4635-ab65-86b6fc2bf449")
         self.assertEqual(summary["backup_match_strategy"], "backup_job_id")
+
+    def test_latest_backup_restore_point_auto_discovers_backup_copy_when_config_filter_is_stale(self) -> None:
+        client = VeeamClient(
+            VeeamSettings(
+                username="administrator",
+                password="secret",
+                job_name="Backup Copy Job 1",
+                target_repository_id="old-repo",
+                target_repository_name="G",
+                target_repository_path="G:\\",
+                require_backup_copy=True,
+            )
+        )
+        repositories = [
+            {"id": "repo-d", "name": "DREPO", "repository": {"path": "D:\\copy"}},
+        ]
+        backups = [
+            {"id": "copy-backup", "name": "Backup Copy Job 2", "repositoryId": "repo-d"},
+        ]
+        restore_points = [
+            {"id": "restore-point-1", "sessionId": "session-1", "creationTime": "2026-05-16T07:00:00+09:00"},
+        ]
+
+        with patch.object(client, "get_backups", return_value=backups):
+            with patch.object(client, "get_repositories", return_value=repositories):
+                with patch.object(client, "get_backup_objects", return_value=[{"id": "object-1", "name": "192.168.219.102"}]):
+                    with patch.object(client, "get_restore_points", return_value=restore_points):
+                        restore_point = client.latest_backup_restore_point()
+
+        self.assertIsNotNone(restore_point)
+        self.assertEqual(restore_point["_backup"]["id"], "copy-backup")
+        self.assertEqual(restore_point["_backup_match_strategy"], "auto_discovered_backup_copy")
+        summary = restore_point_summary(restore_point)
         self.assertEqual(summary["restore_point_scope"]["backup_id"], "copy-backup")
         self.assertEqual(summary["restore_point_scope"]["repository_id"], "repo-d")
 
@@ -2374,6 +2678,26 @@ class LockFixTests(unittest.TestCase):
             self.assertEqual(os.environ["LOCKFIX_TEST_VEEAM_PASSWORD"], "secret")
             self.assertEqual(os.environ["LOCKFIX_VEEAM_BASE_URL"], "https://192.168.219.230:9419")
 
+    def test_create_veeam_client_prefers_runtime_endpoint_over_stale_config(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "LOCKFIX_TEST_VEEAM_PASSWORD": "secret",
+                "LOCKFIX_VEEAM_BASE_URL": "https://192.168.219.230:9419",
+                "LOCKFIX_VEEAM_API_VERSION": "1.2-rev1",
+            },
+            clear=True,
+        ):
+            client = create_veeam_client(
+                {
+                    "base_url": "https://192.168.219.165:9419",
+                    "username": "administrator",
+                    "password_env": "LOCKFIX_TEST_VEEAM_PASSWORD",
+                }
+            )
+
+        self.assertEqual(client.settings.base_url, "https://192.168.219.230:9419")
+
     def test_webui_veeam_backup_returns_error_without_stale_success(self) -> None:
         tmp_path = self.make_workspace()
         config_path = write_config(tmp_path)
@@ -2515,6 +2839,13 @@ class LockFixTests(unittest.TestCase):
         }
         try:
             result = webui.LockFixWebHandler.auto_isolate_after_veeam_success(Probe(), payload, "Success", "2026-05-01 10:00:00")
+            final_marker = {}
+            for _ in range(60):
+                if marker_path.exists():
+                    final_marker = json.loads(marker_path.read_text(encoding="utf-8"))
+                    if final_marker.get("state") in {"ISOLATED", "FAILED"}:
+                        break
+                time.sleep(0.1)
         finally:
             if old_value is None:
                 marker_path.unlink(missing_ok=True)
@@ -2522,7 +2853,8 @@ class LockFixTests(unittest.TestCase):
                 marker_path.write_text(old_value, encoding="utf-8")
 
         self.assertTrue(result["triggered"])
-        self.assertEqual(result["state"], "ISOLATED")
+        self.assertEqual(result["state"], "IN_PROGRESS")
+        self.assertEqual(final_marker.get("state"), "ISOLATED")
 
     def test_webui_airgap_step2_appends_flush_audit_logs_after_veeam_logs(self) -> None:
         tmp_path = self.make_workspace()

@@ -65,6 +65,10 @@ def veeam_base_url_candidates(settings: "VeeamSettings") -> list[str]:
             urls.append(text)
 
     add(os.environ.get("LOCKFIX_VEEAM_BASE_URL", ""))
+    host = os.environ.get("LOCKFIX_VEEAM_HOST", "")
+    port = os.environ.get("LOCKFIX_VEEAM_PORT", "9419")
+    if host:
+        add(f"{host}:{port}")
     for item in (settings.discovery_candidates or []):
         add(item)
     for item in os.environ.get("LOCKFIX_VEEAM_CANDIDATES", "").split(","):
@@ -254,7 +258,10 @@ class VeeamClient:
         self.settings = settings
         self._access_token = ""
         self._token_expires_at = 0.0
-        self._ssl_context = ssl.create_default_context() if settings.verify_ssl else ssl._create_unverified_context()
+        try:
+            self._ssl_context = ssl.create_default_context() if settings.verify_ssl else ssl._create_unverified_context()
+        except ssl.SSLError:
+            self._ssl_context = None
         self.discovery_result: dict[str, Any] = {"enabled": settings.auto_discover, "selected": settings.base_url}
         self._discovery_done = False
 
@@ -390,6 +397,23 @@ class VeeamClient:
             eligible_repositories=eligible_repositories,
             require_backup_copy=self.settings.require_backup_copy,
         )
+        if not match["matches"] and self.settings.require_backup_copy:
+            relaxed_repositories = filter_target_repositories(
+                repositories,
+                exclude_os_repository=self.settings.exclude_os_repository,
+            )
+            relaxed_match = match_backups(
+                backups,
+                eligible_repositories=relaxed_repositories,
+                require_backup_copy=True,
+            )
+            if relaxed_match["matches"]:
+                match = {
+                    "matches": relaxed_match["matches"],
+                    "strategy": "auto_discovered_backup_copy",
+                    "candidates": relaxed_match["candidates"],
+                }
+                eligible_repositories = relaxed_repositories
         if not match["matches"]:
             return None
         restore_points: list[dict[str, Any]] = []
@@ -677,7 +701,10 @@ class VeeamEnterpriseManagerClient:
     def __init__(self, settings: VeeamSettings) -> None:
         self.settings = settings
         self._session_id = ""
-        self._ssl_context = ssl.create_default_context() if settings.verify_ssl else ssl._create_unverified_context()
+        try:
+            self._ssl_context = ssl.create_default_context() if settings.verify_ssl else ssl._create_unverified_context()
+        except ssl.SSLError:
+            self._ssl_context = None
 
     @property
     def api_base(self) -> str:

@@ -103,7 +103,8 @@ class LockFixController:
         self.approvals.require_approved("DISK_ONLINE", slot_id)
         base_slot = self.config.slot(slot_id)
         remembered_path = str(self.disk.read_storage_state(base_slot).get("accessPath") or "").strip()
-        slot = self.repository_slot(base_slot, repository_path or remembered_path)
+        reconnect_repository_path = str(repository_path or self.veeam_backup_copy_repository_path() or remembered_path).strip()
+        slot = self.repository_slot(base_slot, reconnect_repository_path)
         try:
             approved_until = self.grant_online_approval(slot_id, ttl_seconds=900, reason="admin_emergency_reconnect")
             self.audit.write(
@@ -122,7 +123,7 @@ class LockFixController:
                 slot_id=slot_id,
                 step=1,
                 message="관리자 승인 기반 제한 시간 Online 요청",
-                repository_path=str(repository_path or remembered_path or slot.mount_point or slot.device),
+                repository_path=str(reconnect_repository_path or slot.mount_point or slot.device),
                 approved_until=approved_until,
             )
             self.set_state(slot_id, LockFixState.DISK_ONLINING)
@@ -333,7 +334,7 @@ class LockFixController:
         slot = self.config.slot(slot_id)
         storage_state = self.disk.read_storage_state(slot)
         remembered_path = str(storage_state.get("accessPath") or "").strip()
-        reconnect_path = str(repository_path or remembered_path or slot.mount_point or slot.device or "").strip()
+        reconnect_path = str(repository_path or self.veeam_backup_copy_repository_path() or remembered_path or slot.mount_point or slot.device or "").strip()
         expected = self.emergency_access_hash(slot_id).strip()
         provided = str(verification_hash or "").strip()
         current_hash_hmac = self.secure_store.hash_hmac(expected) if expected else ""
@@ -466,7 +467,8 @@ class LockFixController:
         return result
 
     def repository_slot(self, slot: SlotConfig, repository_path: str = "") -> SlotConfig:
-        selected_path = (repository_path or self.config.veeam.target_repository_path or "").strip()
+        configured_repository_path = self.veeam_backup_copy_repository_path()
+        selected_path = (repository_path or configured_repository_path or "").strip()
         if not (self.config.veeam.enabled and self.config.veeam.require_backup_copy and selected_path):
             self.audit.write(
                 "veeam.repository.volume.target",
@@ -479,6 +481,23 @@ class LockFixController:
             return slot
 
         target_volume = repository_volume_root(selected_path)
+        if configured_repository_path and repository_path:
+            configured_volume = repository_volume_root(configured_repository_path)
+            if configured_volume.strip().replace("/", "\\").rstrip("\\").lower() != target_volume.strip().replace("/", "\\").rstrip("\\").lower():
+                self.audit.write(
+                    "veeam.repository.volume.mismatch",
+                    slot_id=slot.slot_id,
+                    supplied_repository_path=repository_path,
+                    configured_repository_path=configured_repository_path,
+                    supplied_volume=target_volume,
+                    configured_volume=configured_volume,
+                    reason="non_veeam_backup_copy_repository_volume_blocked",
+                    message="LOCK-FIX blocks reconnect/isolation unless the target is the configured Veeam Backup Copy repository volume.",
+                )
+                raise ValueError(
+                    "LOCK-FIX can reconnect/isolate only the Veeam Backup Copy repository volume "
+                    f"({configured_volume}); supplied path was {repository_path}"
+                )
         normalized = target_volume.strip().replace("/", "\\").rstrip("\\").lower()
         if normalized in {"", "\\", "c:"}:
             self.audit.write(
@@ -504,6 +523,11 @@ class LockFixController:
         if current == normalized:
             return slot
         return replace(slot, device=target_volume, mount_point=Path(target_volume))
+
+    def veeam_backup_copy_repository_path(self) -> str:
+        if self.config.veeam.enabled and self.config.veeam.require_backup_copy:
+            return str(self.config.veeam.target_repository_path or "").strip()
+        return ""
 
     def status(self) -> dict[str, str]:
         return self.state.read_all()

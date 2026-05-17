@@ -1,22 +1,22 @@
 {
   "dry_run": false,
-  "operation_mode": "live",
+  "operation_mode": "commercial",
   "state_path": "runtime/state.json",
   "audit_log_path": "runtime/audit.jsonl",
   "io_quiet_seconds": 30,
   "disk_wait_seconds": 60,
   "veeam": {
     "enabled": true,
-    "base_url": "https://192.168.219.165:9419",
+    "base_url": "https://192.168.219.230:9419",
     "enterprise_manager_url": "https://127.0.0.1:9398",
     "auto_discover": false,
     "discovery_candidates": [
-      "https://192.168.219.165:9419"
+      "https://192.168.219.230:9419"
     ],
     "discovery_scan_local_subnet": false,
     "discovery_timeout_seconds": 0.35,
     "api_version": "1.2-rev1",
-    "username": "DESKTOP-I3DF527\\OAM",
+    "username": "administrator",
     "username_env": "LOCKFIX_VEEAM_USER",
     "password_env": "LOCKFIX_VEEAM_PASSWORD",
     "verify_ssl": false,

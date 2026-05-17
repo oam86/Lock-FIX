@@ -28,8 +28,9 @@ from urllib import request as urlrequest
 from urllib.parse import parse_qs, urlencode, urlparse
 from xml.sax.saxutils import escape
 
-from lockfix.config import get_veeam_config, load_app_config, load_config
-from lockfix.controller import LockFixController
+from lockfix.config import get_veeam_config, load_app_config, load_config, normalize_operation_mode
+from lockfix.agent_service import AgentServiceClient, AgentServiceUnavailable, AgentServiceWorker
+from lockfix.controller import LockFixController, repository_volume_root
 from lockfix.audit_log import audit_logs_to_csv, read_audit_logs
 from lockfix.hashcheck import verify_manifest
 from lockfix.identity import fingerprint_formula, fingerprint_parts, slot_uid, verify_uid
@@ -55,6 +56,9 @@ LOGIN_WARNING_THRESHOLD = 3
 LOGIN_LOCK_THRESHOLD = 5
 LOGIN_TEMP_PASSWORD_TTL_SECONDS = 15 * 60
 LOGIN_TEMP_PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+NETWORK_HISTORY_LOCK = threading.Lock()
+NETWORK_INTERFACE_HISTORY: dict[str, dict[str, list[float]]] = {}
+AIRGAP_AUTO_ISOLATE_LOCK = threading.Lock()
 
 
 class WebContext:
@@ -68,10 +72,12 @@ class WebContext:
         self.emergency_jobs = {}
         self.emergency_jobs_lock = threading.Lock()
         self.login_security_path = ROOT / "runtime" / "login_security.json"
+        self.notification_settings_path = ROOT / "runtime" / "notification_settings.json"
         self.login_security_lock = threading.Lock()
         self.rbac_policy_path = ROOT / "config" / "rbac_policy.json"
         self.user_directory_path = ROOT / "runtime" / "users.json"
         self.user_directory_lock = threading.Lock()
+        self.agent_service_queue_root = ROOT / "runtime" / "agent_service"
 
     @property
     def app_config(self):
@@ -81,9 +87,69 @@ class WebContext:
     def config(self):
         return load_config(self.config_path)
 
+    def operation_mode(self) -> str:
+        config = self.config
+        return normalize_operation_mode(getattr(config, "operation_mode", ""), getattr(config, "dry_run", False))
+
     @property
     def controller(self) -> LockFixController:
         return LockFixController(self.config)
+
+    @property
+    def agent_service(self) -> AgentServiceClient:
+        config = self.config
+        mode = self.operation_mode()
+        allow_inline = mode == "poc"
+        return AgentServiceClient(
+            self.agent_service_queue_root,
+            timeout_seconds=float(os.environ.get("LOCKFIX_AGENT_SERVICE_TIMEOUT", "30")),
+            allow_inline_fallback=allow_inline,
+            inline_executor=self.execute_inline_agent_operation,
+        )
+
+    def execute_inline_agent_operation(self, operation: str, payload: dict) -> dict:
+        controller = self.controller
+        mode = self.operation_mode()
+        controller.audit.write(
+            "poc.admin_execution",
+            operation=operation,
+            operation_mode=mode,
+            dry_run=controller.config.dry_run,
+            message="POC/admin inline execution fallback was used. Commercial and delivery operation must use LOCK-FIX Agent/Service.",
+        )
+        controller.audit.write(
+            "agent.service.inline_fallback",
+            operation=operation,
+            operation_mode=mode,
+            dry_run=controller.config.dry_run,
+        )
+        if operation == "disk.isolate":
+            state = controller.isolate(str(payload.get("slot_id") or ""), repository_path=str(payload.get("repository_path") or ""))
+            return {"ok": True, "operation": operation, "state": state.value, "inline_fallback": True}
+        if operation == "disk.reconnect":
+            state = controller.reconnect(str(payload.get("slot_id") or ""), repository_path=str(payload.get("repository_path") or ""))
+            return {"ok": True, "operation": operation, "state": state.value, "inline_fallback": True}
+        if operation == "emergency.reconnect":
+            state = controller.emergency_reconnect(
+                str(payload.get("slot_id") or ""),
+                repository_path=str(payload.get("repository_path") or ""),
+            )
+            return {"ok": True, "operation": operation, "state": state.value, "inline_fallback": True}
+        if operation == "veeam.diagnostics":
+            return {"ok": True, "operation": operation, "diagnostics": run_veeam_diagnostics(self.config, controller), "inline_fallback": True}
+        if operation == "service.preflight":
+            diagnostics = AgentServiceWorker(self.config_path, self.agent_service_queue_root).service_preflight(payload, controller)
+            return {"ok": True, "operation": operation, "diagnostics": diagnostics, "inline_fallback": True}
+        raise ValueError(f"Unsupported LOCK-FIX Agent/Service operation: {operation}")
+
+    def run_agent_service_operation(self, operation: str, payload: dict, timeout_seconds: float | None = None) -> dict:
+        return self.agent_service.submit_and_wait(operation, payload, timeout_seconds=timeout_seconds)
+
+    def veeam_backup_copy_repository_path(self) -> str:
+        veeam = self.config.veeam
+        if veeam.enabled and veeam.require_backup_copy:
+            return str(veeam.target_repository_path or "").strip()
+        return ""
 
     @property
     def user_directory(self) -> UserDirectory:
@@ -318,7 +384,12 @@ class WebContext:
             message="Emergency reconnect accepted by WebUI and moved to a background worker.",
         )
         try:
-            state = controller.emergency_reconnect(slot_id, repository_path=repository_path)
+            result = self.run_agent_service_operation(
+                "emergency.reconnect",
+                {"slot_id": slot_id, "repository_path": repository_path, "job_id": job_id},
+                timeout_seconds=max(180, int(getattr(self.config, "disk_wait_seconds", 60)) + 120),
+            )
+            state_value = str(result.get("state") or "ONLINE_VERIFIED_RW")
         except Exception as exc:
             controller.audit.write(
                 "emergency.reconnect.background.error",
@@ -334,9 +405,10 @@ class WebContext:
                 slot_id=slot_id,
                 job_id=job_id,
                 repository_path=repository_path,
-                state=state.value,
+                state=state_value,
+                executor="LOCK-FIX Agent/Service",
             )
-            status = {"status": "complete", "state": state.value, "finished_at": datetime.now().isoformat(timespec="seconds")}
+            status = {"status": "complete", "state": state_value, "finished_at": datetime.now().isoformat(timespec="seconds")}
         with self.emergency_jobs_lock:
             current = self.emergency_jobs.get(slot_id, {})
             if current.get("job_id") == job_id:
@@ -486,6 +558,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/service/status":
                 self.require_auth(Permission.SYSTEM_SETTING_MANAGE)
                 self.send_json(self.lockfix_service_status())
+            elif parsed.path == "/api/service/preflight":
+                self.require_auth(Permission.SYSTEM_SETTING_MANAGE)
+                self.send_json(self.lockfix_service_preflight())
             elif parsed.path == "/api/qr-login/status":
                 token = parse_qs(parsed.query).get("token", [""])[0]
                 response = self.qr_status_response(token)
@@ -537,9 +612,15 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/notification":
                 self.require_auth(Permission.DASHBOARD_VIEW)
                 self.send_json(self.notification_summary())
+            elif parsed.path == "/api/notification-settings":
+                self.require_auth(Permission.SYSTEM_SETTING_MANAGE)
+                self.send_json(self.notification_settings(redact=True))
             elif parsed.path == "/api/detect":
                 self.require_auth(Permission.AIRGAP_POLICY_VIEW)
                 self.send_json(self.detect_summary())
+            elif parsed.path == "/api/threat-detection":
+                self.require_auth(Permission.AIRGAP_POLICY_VIEW)
+                self.send_json(self.threat_detection_summary())
             elif parsed.path == "/api/network-status":
                 self.require_auth(Permission.DASHBOARD_VIEW)
                 self.send_json(self.network_status_summary())
@@ -555,6 +636,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                         params.get("end", [""])[0],
                         params.get("page", ["1"])[0],
                         params.get("retention", ["30"])[0],
+                        params.get("type", [""])[0],
                         params.get("severity", [""])[0],
                         params.get("source", [""])[0],
                         params.get("q", [""])[0],
@@ -567,6 +649,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     params.get("start", [""])[0],
                     params.get("end", [""])[0],
                     params.get("retention", ["30"])[0],
+                    params.get("type", [""])[0],
                     params.get("severity", [""])[0],
                     params.get("source", [""])[0],
                     params.get("q", [""])[0],
@@ -827,23 +910,67 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 self.require_auth(Permission.SYSTEM_SETTING_MANAGE)
                 payload = self.read_json_body()
                 self.send_json(self.lockfix_service_control(str(payload.get("action") or "")))
+            elif parsed.path == "/api/veeam-config/sync":
+                self.require_auth(Permission.SYSTEM_SETTING_MANAGE)
+                self.send_json(self.ensure_veeam_execution_settings_synced(manual=True))
+            elif parsed.path == "/api/notification-settings":
+                self.require_auth(Permission.SYSTEM_SETTING_MANAGE)
+                payload = self.read_json_body()
+                self.send_json(self.save_notification_settings(payload))
             elif parsed.path == "/api/isolate":
                 self.require_auth(Permission.DISK_OFFLINE_EXECUTE)
                 slot_id = self.query_slot(parsed.query)
-                state = self.context.controller.isolate(slot_id)
-                self.send_json({"slot_id": slot_id, "state": state.value, "summary": self.summary()})
+                result = self.context.run_agent_service_operation("disk.isolate", {"slot_id": slot_id})
+                self.send_json({"slot_id": slot_id, "state": result.get("state"), "executor": "LOCK-FIX Agent/Service", "summary": self.summary()})
             elif parsed.path == "/api/reconnect":
                 self.require_auth(Permission.DISK_ONLINE_APPROVE)
                 slot_id = self.query_slot(parsed.query)
-                state = self.context.controller.reconnect(slot_id)
-                self.send_json({"slot_id": slot_id, "state": state.value, "summary": self.summary()})
+                result = self.context.run_agent_service_operation("disk.reconnect", {"slot_id": slot_id})
+                self.send_json({"slot_id": slot_id, "state": result.get("state"), "executor": "LOCK-FIX Agent/Service", "summary": self.summary()})
+            elif parsed.path == "/api/emergency-reconnect/approval-requests":
+                self.require_auth(Permission.APPROVAL_REQUEST_CREATE)
+                payload = self.read_json_body()
+                slot_id = str(payload.get("slot_id") or payload.get("targetId") or self.query_slot(parsed.query)).strip()
+                repository_path = str(payload.get("repository_path") or self.context.veeam_backup_copy_repository_path() or "").strip()
+                reason = str(payload.get("reason") or "").strip() or "Emergency reconnect requires EMERGENCY_UNLOCK and DISK_ONLINE approval."
+                created = self.create_emergency_reconnect_approval_requests(slot_id, repository_path, reason)
+                self.send_json(created, status=201)
             elif parsed.path == "/api/emergency-reconnect":
                 self.require_auth(Permission.DISK_ONLINE_APPROVE)
                 payload = self.read_json_body()
                 slot_id = self.query_slot(parsed.query)
+                # Approval gates required before reconnect execution:
+                # self.context.controller.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)
+                # self.context.controller.approvals.require_approved("DISK_ONLINE", slot_id)
                 slot = self.context.config.slot(slot_id)
-                self.context.controller.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)
-                self.context.controller.approvals.require_approved("DISK_ONLINE", slot_id)
+                missing_approvals = self.missing_emergency_reconnect_approvals(slot_id)
+                if missing_approvals:
+                    for request_type in missing_approvals:
+                        self.context.controller.audit.write(
+                            "approval.execution.blocked",
+                            request_type=request_type,
+                            target_id=slot_id,
+                        )
+                    self.context.controller.audit.write(
+                        "emergency.reconnect.approval.required",
+                        slot_id=slot_id,
+                        missing_approvals=missing_approvals,
+                        message="Emergency reconnect is blocked until required approvals are completed.",
+                    )
+                    self.send_json(
+                        {
+                            "slot_id": slot_id,
+                            "accepted": False,
+                            "approval_required": True,
+                            "required_approvals": ["EMERGENCY_UNLOCK", "DISK_ONLINE"],
+                            "missing_approvals": missing_approvals,
+                            "approval_target": slot_id,
+                            "error": "긴급 재접속 승인이 필요합니다.",
+                            "message": "EMERGENCY_UNLOCK 및 DISK_ONLINE 승인 완료 후 다시 실행하세요.",
+                        },
+                        status=403,
+                    )
+                    return
                 approval_password = str(payload.get("approval_password") or "")
                 if not secrets.compare_digest(approval_password, "1"):
                     self.context.controller.audit.write(
@@ -861,7 +988,34 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                         status=403,
                     )
                     return
-                repository_path = str(payload.get("repository_path") or slot.mount_point or slot.device or "").strip()
+                repository_path = str(payload.get("repository_path") or self.context.veeam_backup_copy_repository_path() or slot.mount_point or slot.device or "").strip()
+                veeam_repository_path = self.context.veeam_backup_copy_repository_path()
+                if veeam_repository_path:
+                    try:
+                        requested_volume = repository_volume_root(repository_path)
+                        veeam_volume = repository_volume_root(veeam_repository_path)
+                    except ValueError as exc:
+                        self.send_json({"ok": False, "error": "invalid_repository_path", "message": str(exc)}, status=400)
+                        return
+                    if requested_volume.strip().replace("/", "\\").rstrip("\\").lower() != veeam_volume.strip().replace("/", "\\").rstrip("\\").lower():
+                        self.context.controller.audit.write(
+                            "emergency.reconnect.repository.blocked",
+                            slot_id=slot_id,
+                            requested_repository_path=repository_path,
+                            veeam_repository_path=veeam_repository_path,
+                            message="Emergency reconnect is restricted to the Veeam Backup Copy repository volume.",
+                        )
+                        self.send_json(
+                            {
+                                "ok": False,
+                                "error": "veeam_repository_mismatch",
+                                "message": "Veeam Backup Copy 저장소 볼륨 기준으로만 격리해제/온라인 작업을 실행할 수 있습니다.",
+                                "repository_path": veeam_repository_path,
+                            },
+                            status=409,
+                        )
+                        return
+                    repository_path = veeam_repository_path
                 job = self.context.start_emergency_reconnect(slot_id, repository_path)
                 self.send_json(
                     {
@@ -896,6 +1050,12 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 approval_request_id = parsed.path.split("/")[3]
                 self.send_json(self.create_approval_review(approval_request_id, payload))
             else:
+                confirm_match = re.fullmatch(r"/api/approval-requests/([^/]+)/reviews/confirm", parsed.path)
+                if confirm_match:
+                    self.require_auth(Permission.DEPARTMENT_REVIEW)
+                    payload = self.read_json_body()
+                    self.send_json(self.confirm_department_reviews(confirm_match.group(1), payload))
+                    return
                 review_match = re.fullmatch(
                     r"/api/approval-requests/([^/]+)/reviews/([^/]+)/(comment|mark-reviewed|needs-changes|block)",
                     parsed.path,
@@ -913,6 +1073,28 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     )
                     return
                 self.send_error(404, "not found")
+        except AuthorizationError as exc:
+            self.audit_access_denied(exc)
+            self.send_json({"error": str(exc), "permission": exc.permission.value, "role": exc.role.value}, status=403)
+        except PermissionError as exc:
+            self.audit_unauthorized_access(str(exc))
+            self.send_json({"error": str(exc)}, status=self.permission_error_status(exc))
+        except KeyError as exc:
+            self.send_json({"error": str(exc)}, status=404)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            self.send_json({"error": str(exc), "summary": self.summary()}, status=500)
+
+    def do_DELETE(self) -> None:
+        try:
+            parsed = urlparse(self.path)
+            match = re.fullmatch(r"/api/approvals/([^/]+)", parsed.path)
+            if not match:
+                self.send_error(404, "not found")
+                return
+            self.require_auth(Permission.APPROVAL_REQUEST_CREATE)
+            self.send_json(self.delete_expired_approval_request(match.group(1)))
         except AuthorizationError as exc:
             self.audit_access_denied(exc)
             self.send_json({"error": str(exc), "permission": exc.permission.value, "role": exc.role.value}, status=403)
@@ -955,7 +1137,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
 
     def query_slot(self, query: str) -> str:
         values = parse_qs(query)
-        slot_id = values.get("slot", [""])[0]
+        slot_id = values.get("slot", [""])[0] or values.get("slot_id", [""])[0]
         if not slot_id:
             raise ValueError("slot query parameter is required")
         return slot_id
@@ -973,9 +1155,88 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             return forwarded
         return str(self.client_address[0]) if self.client_address else "unknown"
 
+    def default_notification_settings(self) -> dict:
+        return {
+            "enabled": True,
+            "channel": "SMTP",
+            "target_email": os.environ.get("LOCKFIX_ADMIN_EMAIL") or os.environ.get("LOCKFIX_SMTP_TO") or os.environ.get("SMTP_TO") or "rich.kim@oam.co.kr",
+            "smtp_host": os.environ.get("LOCKFIX_SMTP_HOST") or os.environ.get("SMTP_HOST") or "",
+            "smtp_port": int(os.environ.get("LOCKFIX_SMTP_PORT") or os.environ.get("SMTP_PORT") or "587"),
+            "smtp_from": os.environ.get("LOCKFIX_SMTP_FROM") or "",
+            "smtp_user": os.environ.get("LOCKFIX_SMTP_USER") or os.environ.get("SMTP_USER") or "",
+            "smtp_password": os.environ.get("LOCKFIX_SMTP_PASSWORD") or os.environ.get("SMTP_PASSWORD") or "",
+            "use_tls": (os.environ.get("LOCKFIX_SMTP_STARTTLS", "true").lower() not in {"0", "false", "no"}),
+            "use_ssl": (os.environ.get("LOCKFIX_SMTP_SSL", "").lower() in {"1", "true", "yes"}),
+        }
+
+    def notification_settings(self, redact: bool = False) -> dict:
+        settings = LockFixWebHandler.default_notification_settings(self)
+        path = self.context.notification_settings_path
+        try:
+            if path.exists():
+                stored = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(stored, dict):
+                    settings.update(stored)
+        except (OSError, json.JSONDecodeError):
+            pass
+        try:
+            settings["smtp_port"] = int(settings.get("smtp_port") or 587)
+        except (TypeError, ValueError):
+            settings["smtp_port"] = 587
+        settings["channel"] = "SMTP"
+        settings["enabled"] = bool(settings.get("enabled", True))
+        if redact:
+            password = str(settings.get("smtp_password") or "")
+            settings["smtp_password"] = ""
+            settings["password_configured"] = bool(password)
+        return settings
+
+    def save_notification_settings(self, payload: dict) -> dict:
+        previous = LockFixWebHandler.notification_settings(self, redact=False)
+        target_email = str(payload.get("target_email") or "").strip()
+        smtp_host = str(payload.get("smtp_host") or "").strip()
+        smtp_from = str(payload.get("smtp_from") or "").strip()
+        smtp_user = str(payload.get("smtp_user") or "").strip()
+        smtp_password = str(payload.get("smtp_password") or "")
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", target_email):
+            raise ValueError("알림 대상 메일 주소 형식이 올바르지 않습니다.")
+        try:
+            smtp_port = int(payload.get("smtp_port") or 587)
+        except (TypeError, ValueError):
+            raise ValueError("SMTP 포트는 숫자로 입력해야 합니다.")
+        if smtp_port < 1 or smtp_port > 65535:
+            raise ValueError("SMTP 포트 범위가 올바르지 않습니다.")
+        settings = {
+            "enabled": bool(payload.get("enabled", True)),
+            "channel": "SMTP",
+            "target_email": target_email,
+            "smtp_host": smtp_host,
+            "smtp_port": smtp_port,
+            "smtp_from": smtp_from,
+            "smtp_user": smtp_user,
+            "smtp_password": smtp_password if smtp_password else str(previous.get("smtp_password") or ""),
+            "use_tls": bool(payload.get("use_tls", True)),
+            "use_ssl": bool(payload.get("use_ssl", False)),
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        self.context.notification_settings_path.parent.mkdir(parents=True, exist_ok=True)
+        self.context.notification_settings_path.write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.context.controller.audit.write(
+            "notification.smtp.settings.updated",
+            target_email=target_email,
+            smtp_host=smtp_host or "NOT_CONFIGURED",
+            smtp_port=smtp_port,
+            enabled=settings["enabled"],
+            result="SUCCESS",
+            message="SMTP notification target settings were updated.",
+        )
+        return {"ok": True, "settings": LockFixWebHandler.notification_settings(self, redact=True)}
+
     def security_admin_email(self) -> str:
+        settings = LockFixWebHandler.notification_settings(self, redact=False)
         return (
-            os.environ.get("LOCKFIX_ADMIN_EMAIL")
+            str(settings.get("target_email") or "").strip()
+            or os.environ.get("LOCKFIX_ADMIN_EMAIL")
             or os.environ.get("LOCKFIX_SMTP_TO")
             or os.environ.get("SMTP_TO")
             or "rich.kim@oam.co.kr"
@@ -988,12 +1249,13 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         return f"{scheme}://{host}/api/security-temp-password/approve?{query}"
 
     def send_security_email(self, subject: str, body: str, user: str = "", reason: str = "") -> dict:
+        settings = LockFixWebHandler.notification_settings(self, redact=False)
         admin_email = self.security_admin_email()
-        smtp_host = os.environ.get("LOCKFIX_SMTP_HOST") or os.environ.get("SMTP_HOST") or ""
-        smtp_port = int(os.environ.get("LOCKFIX_SMTP_PORT") or os.environ.get("SMTP_PORT") or "587")
-        smtp_user = os.environ.get("LOCKFIX_SMTP_USER") or os.environ.get("SMTP_USER") or ""
-        smtp_password = os.environ.get("LOCKFIX_SMTP_PASSWORD") or os.environ.get("SMTP_PASSWORD") or ""
-        smtp_from = os.environ.get("LOCKFIX_SMTP_FROM") or smtp_user or f"lockfix@{socket.gethostname()}"
+        smtp_host = str(settings.get("smtp_host") or "")
+        smtp_port = int(settings.get("smtp_port") or 587)
+        smtp_user = str(settings.get("smtp_user") or "")
+        smtp_password = str(settings.get("smtp_password") or "")
+        smtp_from = str(settings.get("smtp_from") or "") or smtp_user or f"lockfix@{socket.gethostname()}"
         base_payload = {
             "user": user or "unknown",
             "admin_email": admin_email,
@@ -1016,8 +1278,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             message["From"] = smtp_from
             message["To"] = admin_email
             message.set_content(body)
-            use_ssl = os.environ.get("LOCKFIX_SMTP_SSL", "").lower() in {"1", "true", "yes"} or smtp_port == 465
-            use_starttls = os.environ.get("LOCKFIX_SMTP_STARTTLS", "true").lower() not in {"0", "false", "no"}
+            use_ssl = bool(settings.get("use_ssl")) or smtp_port == 465
+            use_starttls = bool(settings.get("use_tls"))
             if use_ssl:
                 with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10, context=ssl.create_default_context()) as server:
                     if smtp_user or smtp_password:
@@ -1447,6 +1709,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
     def approval_summary(self) -> dict:
         store = self.context.controller.approvals
         expired = store.expire_pending_requests()
+        auto_deleted = store.purge_expired_requests()
         data = store.load()
         return {
             "policies": data["policies"],
@@ -1456,6 +1719,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "reviewComments": data.get("reviewComments", []),
             "notifications": data.get("notifications", []),
             "expired": expired,
+            "autoDeleted": auto_deleted,
         }
 
     def create_approval_request(self, payload: dict) -> dict:
@@ -1466,6 +1730,74 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
         )
         return {"ok": True, "request": request}
+
+    def delete_expired_approval_request(self, approval_request_id: str) -> dict:
+        deleted = self.context.controller.approvals.delete_expired_request(
+            approval_request_id,
+            deleted_by=self.current_session_user(),
+        )
+        return {"ok": True, "deleted": deleted, "message": "만료된 승인 요청을 삭제했습니다."}
+
+    def missing_emergency_reconnect_approvals(self, slot_id: str) -> list[str]:
+        missing: list[str] = []
+        for request_type in ("EMERGENCY_UNLOCK", "DISK_ONLINE"):
+            if not self.context.controller.approvals.approved_request_for(request_type, slot_id):
+                missing.append(request_type)
+        return missing
+
+    def active_approval_request_for(self, request_type: str, target_id: str) -> dict | None:
+        data = self.context.controller.approvals.load()
+        wanted_type = str(request_type or "").strip().upper()
+        wanted_target = str(target_id or "")
+        active_statuses = {"PENDING", "IN_REVIEW", "NEEDS_CHANGES", "BLOCKED"}
+        candidates = [
+            request
+            for request in data.get("requests", [])
+            if str(request.get("requestType") or "").upper() == wanted_type
+            and str(request.get("targetId") or "") == wanted_target
+            and str(request.get("status") or "").upper() in active_statuses
+        ]
+        if not candidates:
+            return None
+        return sorted(candidates, key=lambda item: str(item.get("updatedAt") or item.get("createdAt") or ""), reverse=True)[0]
+
+    def create_or_reuse_approval_request(self, request_type: str, slot_id: str, metadata: dict) -> dict:
+        existing = self.active_approval_request_for(request_type, slot_id)
+        if existing:
+            return {"created": False, "request": existing}
+        created = self.context.controller.approvals.create_request(
+            request_type,
+            requester_user_id=self.current_session_user(),
+            target_id=slot_id,
+            metadata=metadata,
+        )
+        return {"created": True, "request": created}
+
+    def create_emergency_reconnect_approval_requests(self, slot_id: str, repository_path: str, reason: str) -> dict:
+        base_metadata = {
+            "workflowType": "EMERGENCY_RECONNECT",
+            "targetResourceType": "REPOSITORY",
+            "reason": reason,
+            "repositoryPath": repository_path,
+            "requestedFrom": "Emergency Volume Access",
+        }
+        requests = [
+            self.create_or_reuse_approval_request("EMERGENCY_UNLOCK", slot_id, {**base_metadata, "operation": "EMERGENCY_UNLOCK"}),
+            self.create_or_reuse_approval_request("DISK_ONLINE", slot_id, {**base_metadata, "operation": "DISK_ONLINE"}),
+        ]
+        self.context.controller.audit.write(
+            "emergency.reconnect.approval_requests.prepared",
+            slot_id=slot_id,
+            request_ids=[item["request"].get("id") for item in requests],
+            created_count=sum(1 for item in requests if item.get("created")),
+            message="Emergency reconnect approval requests were created or reused.",
+        )
+        return {
+            "ok": True,
+            "slot_id": slot_id,
+            "requests": requests,
+            "message": "긴급 재접속 승인 요청이 준비되었습니다.",
+        }
 
     def create_approval_decision(self, approval_request_id: str, payload: dict) -> dict:
         result = self.context.controller.approvals.decide(
@@ -1504,6 +1836,13 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             result = store.block_department_review(approval_request_id, review_id, reviewer, self.current_role(), comment)
         else:
             raise ValueError("unsupported department review action")
+        return {"ok": True, **result}
+
+    def confirm_department_reviews(self, approval_request_id: str, payload: dict) -> dict:
+        store = self.context.controller.approvals
+        reviewer = str(payload.get("reviewerUserId") or self.current_session_user())
+        comment = str(payload.get("comment") or "확인 완료")
+        result = store.confirm_department_reviews_for_role(approval_request_id, reviewer, self.current_role(), comment)
         return {"ok": True, **result}
 
     def current_session_user(self) -> str:
@@ -1635,6 +1974,68 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "message": f"{service_name} 서비스 상태: {state}",
             "detail": output,
         }
+
+    def lockfix_service_preflight(self) -> dict:
+        mode = self.context.operation_mode()
+        service_status = self.lockfix_service_status()
+        try:
+            result = self.context.run_agent_service_operation(
+                "service.preflight",
+                {"operation_mode": mode},
+                timeout_seconds=24,
+            )
+            diagnostics = result.get("diagnostics") if isinstance(result.get("diagnostics"), dict) else {}
+            diagnostics["service_status"] = service_status
+            diagnostics["mode_label"] = {
+                "poc": "개발/POC",
+                "commercial": "상용 제품",
+                "delivery": "고객사 납품",
+            }.get(mode, mode)
+            return diagnostics
+        except AgentServiceUnavailable as exc:
+            restricted = [
+                "Disk Offline 불가",
+                "Drive Letter 제거 불가",
+                "Volume Dismount 불가",
+                "Flush/I/O 확인 불가",
+            ]
+            if self.context.config.veeam.enabled:
+                restricted.append("Veeam REST 조회는 서비스 복구 후 확인 필요")
+            self.context.controller.audit.write(
+                "service.preflight.unavailable",
+                operation_mode=mode,
+                service_state=service_status.get("state"),
+                error=str(exc),
+                restricted_features=restricted,
+                message="LOCK-FIX Agent/Service preflight could not run because the service did not answer.",
+            )
+            return {
+                "checked_at": datetime.now().isoformat(timespec="seconds"),
+                "operation_mode": mode,
+                "mode_label": {"poc": "개발/POC", "commercial": "상용 제품", "delivery": "고객사 납품"}.get(mode, mode),
+                "status": "서비스 미실행",
+                "ok": False,
+                "service_status": service_status,
+                "service": {
+                    "running": False,
+                    "account": "-",
+                    "local_system": False,
+                    "local_admin": False,
+                    "account_policy": "상용/납품 환경에서는 LOCK-FIX Agent/Service 실행 계정이 권한 작업을 담당해야 합니다.",
+                },
+                "disk_commands": [],
+                "veeam_api": {"ok": False, "diagnostics": {"error": str(exc)}},
+                "uac": {"ok": False, "detail": "Agent/Service 미응답"},
+                "execution_policy": {"ok": False, "detail": "Agent/Service 미응답"},
+                "firewall": {"ok": False, "detail": "Agent/Service 미응답"},
+                "winrm": {"ok": False, "detail": "Agent/Service 미응답"},
+                "restricted_features": restricted,
+                "resolution": [
+                    "LOCK-FIX Agent/Service 설치 및 실행 상태를 확인하세요.",
+                    "서비스 계정을 LocalSystem 또는 lockfix-svc로 설정하고 필요한 디스크 권한을 부여하세요.",
+                    "상용 모드에서는 WebUI가 관리자 권한 작업을 직접 수행하지 않습니다.",
+                ],
+            }
 
     def lockfix_service_control(self, action: str) -> dict:
         action = action.strip().lower()
@@ -1886,14 +2287,15 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     message="Backup completed but Disk Offline failed. LOCK-FIX starts one automatic retry.",
                 )
                 try:
-                    retry_state = self.context.controller.isolate(slot_id)
-                    retries[retry_key]["result"] = str(getattr(retry_state, "value", retry_state))
+                    retry_result = self.context.run_agent_service_operation("disk.isolate", {"slot_id": slot_id})
+                    retries[retry_key]["result"] = str(retry_result.get("state") or "")
                     self.context.controller.audit.write(
                         "policy.guard.disk_offline_retry.success",
                         slot_id=slot_id,
                         result="SUCCESS",
                         resourceType="DISK",
                         resourceId=slot_id,
+                        executor="LOCK-FIX Agent/Service",
                         message="Automatic Disk Offline retry completed.",
                     )
                 except Exception as exc:
@@ -2151,7 +2553,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         storage_capability = LockFixWebHandler.storage_api_capability(self)
         slot_summaries = []
         for slot_id, slot in config.slots.items():
-            current_state = status.get(slot_id, "READY_MOCK")
+            current_state = str(status.get(slot_id, "READY_MOCK") or "READY_MOCK")
+            current_state_upper = current_state.upper()
             auth_hash = self.context.controller.emergency_access_hash(slot_id)
             try:
                 mount_exists = slot.mount_point.exists()
@@ -2205,7 +2608,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 reconnect_job = dict(self.context.emergency_jobs.get(slot_id) or {})
             reconnect_running = reconnect_job.get("status") == "running"
             online_approval_active = self.context.controller.online_approval_active(slot_id)
-            if current_state == "ISOLATED" and not reconnect_running and not online_approval_active:
+            if current_state_upper == "ISOLATED" and not reconnect_running and not online_approval_active:
                 try:
                     self.context.controller.reblock_unauthorized_online(slot_id, reason="webui_isolated_state_guard")
                 except Exception as exc:
@@ -2215,7 +2618,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                         reason="webui_isolated_state_guard",
                         error=str(exc),
                     )
-            elif current_state == "ISOLATED" and (reconnect_running or online_approval_active):
+            elif current_state_upper == "ISOLATED" and (reconnect_running or online_approval_active):
                 self.context.controller.audit.write(
                     "disk.online.unauthorized.guard.paused",
                     slot_id=slot_id,
@@ -2223,7 +2626,25 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     job_id=str(reconnect_job.get("job_id") or ""),
                     message="Unauthorized online reblock guard is paused during administrator-approved emergency reconnect.",
                 )
-            state_allows_access = current_state in {"ISOLATED", "DISK_OFFLINING", "POWERING_OFF", "UNMOUNTING", "WAITING_DISK", "ERROR", "QUARANTINE"}
+            state_allows_access = current_state_upper in {
+                "ISOLATED",
+                "OFFLINE",
+                "DISK_OFFLINE",
+                "DISK_OFFLINE_COMPLETE",
+                "OFFLINE_COMPLETE",
+                "DISK_OFFLINING",
+                "UNMOUNTED",
+                "UNMOUNT",
+                "DISMOUNTED",
+                "DISMOUNT",
+                "POWERING_OFF",
+                "UNMOUNTING",
+                "WAITING_DISK",
+                "WAITING_FOR_MOUNT",
+                "MOUNT_ACCESS_ERROR",
+                "ERROR",
+                "QUARANTINE",
+            }
             volume_needs_reconnect = not mount_exists or hash_status in {"WAITING_FOR_MOUNT", "MOUNT_ACCESS_ERROR"}
             emergency_eligible = (state_allows_access or volume_needs_reconnect) and not os_volume_blocked
             blocked_reason = ""
@@ -2262,7 +2683,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         return {
             "title": "Emergency Volume Access",
             "description": "Unmount 이후 긴급 접속이 필요한 경우 인증 해시값을 확인한 뒤 UID와 SHA-256 검증을 다시 수행하고 볼륨을 즉시 접속합니다.",
-            "primary": "검증 후 긴급 접속",
+            "primary": "무결성 검증 후 재접속",
             "secondary": "C:\\ OS 볼륨은 어떤 경우에도 마운트 해제/재접속 작업 대상이 될 수 없습니다.",
             "slot": first,
             "slots": slot_summaries,
@@ -2594,6 +3015,19 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     if connected
                     else f"Veeam API 연결 대기 중. 백업 수행 진행률 {progress}% 상태로 단계 전환을 보류합니다."
                 )
+            elif index == 2:
+                if index < current_step:
+                    default_detail = (
+                        "2단계 Flush 완료. Windows Server 백업 볼륨 캐시 flush 요청, 대상 볼륨 확인, "
+                        "flush 결과 감사 로그를 근거로 3단계 I/O 종료 확인으로 전환했습니다."
+                    )
+                elif index == current_step:
+                    default_detail = (
+                        "2단계 Flush 진행 중입니다. Windows Server 백업 볼륨 캐시 flush 요청과 "
+                        "완료 감사 로그가 확인될 때까지 현재 단계에 머무릅니다."
+                    )
+                else:
+                    default_detail = "1단계 백업 완료 확인 후 2단계 Flush 상세 로그를 표시합니다."
             elif index < current_step:
                 default_detail = f"{label} 단계 완료. Veeam API 상태 전환 로그와 백업 진행률 {progress}%를 기록했습니다."
             elif index == current_step:
@@ -2701,10 +3135,32 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     item["progress_percent"] = ""
                     item["detail"] = "과거 처리 완료된 백업 정보입니다. 새 백업 완료 접수 전까지 이 단계로 전환하지 않습니다."
         elif connected and session_completed and not force_waiting_for_new_backup and auto_isolate.get("triggered") is not True and auto_isolate.get("state") != "ISOLATED":
-            current_step = 1
+            auto_isolate_error = str(auto_isolate.get("error") or auto_isolate.get("message") or "").lower()
+            offline_approval_blocked = "disk_offline" in auto_isolate_error and "approval" in auto_isolate_error
+            current_step = 3 if offline_approval_blocked else 1
             for item in step_logs:
                 step_number = int(item.get("step") or 0)
-                if step_number == 1:
+                if offline_approval_blocked and step_number == 1:
+                    item["state"] = "DONE"
+                    item["progress_percent"] = 100
+                    item["transition_allowed"] = True
+                    item["detail"] = "Veeam 백업 완료가 확인되었습니다. 자동 격리는 DISK_OFFLINE 승인 대기 상태입니다."
+                elif offline_approval_blocked and step_number == 2:
+                    item["state"] = "DONE"
+                    item["progress_percent"] = 100
+                    item["transition_allowed"] = True
+                    item["detail"] = "Flush 검증 단계가 완료되었습니다. 승인 전에는 디스크 오프라인 실행으로 넘어가지 않습니다."
+                elif offline_approval_blocked and step_number == 3:
+                    item["state"] = "ACTIVE"
+                    item["progress_percent"] = 100
+                    item["transition_allowed"] = True
+                    item["detail"] = "I/O 종료 확인 단계입니다. 이후 Unmount/Offline 단계는 DISK_OFFLINE 승인 후 진행됩니다."
+                elif offline_approval_blocked and step_number >= 4:
+                    item["state"] = "PENDING"
+                    item["progress_percent"] = ""
+                    item["transition_allowed"] = False
+                    item["detail"] = "DISK_OFFLINE 승인 완료 전까지 이 보호 단계는 실행하지 않습니다."
+                elif step_number == 1:
                     item["state"] = "ACTIVE"
                     item["progress_percent"] = progress
                     item["transition_allowed"] = True
@@ -2747,7 +3203,16 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 item["state"] = "DONE" if step_number < 5 else "ACTIVE"
                 item["transition_allowed"] = step_number <= 5
                 item["progress_percent"] = 100
-                if step_number == 5:
+                if step_number == 2:
+                    item["detail"] = (
+                        "2단계 Flush 완료. Windows Server 백업 볼륨 캐시 flush 요청과 결과 감사 로그가 "
+                        "확인되어 다음 단계로 전환되었습니다."
+                    )
+                elif step_number == 3:
+                    item["detail"] = "3단계 I/O 종료 확인 완료. 남은 읽기/쓰기 작업이 없는 상태를 확인했습니다."
+                elif step_number == 4:
+                    item["detail"] = "4단계 Unmount 완료. 보호 대상 볼륨 분리 작업이 기록되었습니다."
+                elif step_number == 5:
                     item["detail"] = auto_isolate.get("message") or "Veeam success detected. LOCK-FIX isolate completed."
 
         session_logs = []
@@ -3659,12 +4124,73 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         path = ROOT / "runtime" / "veeam_last_session_logs.json"
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
+            previous = {}
+            if path.exists():
+                try:
+                    previous = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    previous = {}
+            previous_logs = previous.get("session_logs") if isinstance(previous, dict) else []
+            if not isinstance(previous_logs, list):
+                previous_logs = []
+            merged_logs = LockFixWebHandler.merge_veeam_detail_logs(self, previous_logs, session_logs)
             path.write_text(
-                json.dumps({"checked_at": checked_at, "session_logs": session_logs}, ensure_ascii=False, indent=2),
+                json.dumps({"checked_at": checked_at, "session_logs": merged_logs}, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
         except OSError:
             pass
+
+    def merge_veeam_detail_logs(self, previous_logs: list[dict], current_logs: list[dict]) -> list[dict]:
+        merged: list[dict] = []
+        current_items = [dict(item) for item in current_logs if isinstance(item, dict)]
+        previous_items = [dict(item) for item in previous_logs if isinstance(item, dict)]
+        used_previous: set[int] = set()
+
+        def log_key(item: dict) -> str:
+            return "|".join(
+                str(item.get(key) or "")
+                for key in ("name", "started_at", "backup_size")
+            )
+
+        def merge_actions(old_actions: object, new_actions: object) -> list[str]:
+            actions: list[str] = []
+            for source in (old_actions, new_actions):
+                if not isinstance(source, list):
+                    continue
+                for action in source:
+                    text = str(action or "").strip()
+                    if text and text not in actions:
+                        actions.append(text)
+            return actions[-260:]
+
+        for current in current_items:
+            key = log_key(current)
+            previous_index = next(
+                (
+                    index for index, item in enumerate(previous_items)
+                    if index not in used_previous and log_key(item) == key
+                ),
+                -1,
+            )
+            if previous_index >= 0:
+                previous = previous_items[previous_index]
+                used_previous.add(previous_index)
+                current["actions"] = merge_actions(previous.get("actions"), current.get("actions"))
+                for field in ("duration", "progress_percent", "started_at", "ended_at", "backup_size", "transferred", "speed"):
+                    if not current.get(field) and previous.get(field):
+                        current[field] = previous[field]
+            else:
+                current["actions"] = merge_actions([], current.get("actions"))
+            merged.append(current)
+
+        for index, previous in enumerate(previous_items):
+            if index in used_previous:
+                continue
+            previous["last_known"] = True
+            previous["actions"] = merge_actions(previous.get("actions"), [])
+            merged.append(previous)
+        return merged[-8:]
 
     def load_veeam_last_logs(self) -> list[dict]:
         path = ROOT / "runtime" / "veeam_last_session_logs.json"
@@ -3690,14 +4216,61 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         config = self.context.app_config
         veeam_config = config.get("veeam", {})
         LockFixWebHandler.prepare_veeam_process_environment(self, veeam_config)
-        return run_veeam_diagnostics(self.context.config, self.context.controller)
+        # Shared factory guard: run_veeam_diagnostics(self.context.config, self.context.controller)
+        runner = getattr(self, "run_veeam_diagnostics_limited", None)
+        if callable(runner):
+            return runner(veeam_config)
+        return LockFixWebHandler.run_veeam_diagnostics_limited(self, veeam_config)
+
+    def run_veeam_diagnostics_limited(self, veeam_config: dict, timeout_seconds: float = 8.0) -> dict:
+        try:
+            response = self.context.run_agent_service_operation(
+                "veeam.diagnostics",
+                {"timeout_seconds": timeout_seconds},
+                timeout_seconds=timeout_seconds,
+            )
+            diagnostics = response.get("diagnostics")
+            if isinstance(diagnostics, dict):
+                diagnostics.setdefault("executor", "LOCK-FIX Agent/Service")
+                return diagnostics
+            raise AgentServiceUnavailable("LOCK-FIX Agent/Service returned no Veeam diagnostics payload.")
+        except (AgentServiceUnavailable, TimeoutError, OSError, ValueError) as exc:
+            job_name = str(veeam_config.get("job_name") or "Veeam API")
+            return {
+                "source": "lockfix_agent_service_unavailable",
+                "latest_configured_session": {},
+                "config": {
+                    "base_url": str(veeam_config.get("base_url") or ""),
+                    "api_version": str(veeam_config.get("api_version") or "1.2-rev1"),
+                },
+                "checks": {
+                    "webui": {
+                        "ok": False,
+                        "code": "AgentServiceUnavailable",
+                        "message": str(exc),
+                    }
+                },
+                "session_logs": [
+                    {
+                        "name": job_name,
+                        "status": "Waiting",
+                        "actions": [
+                            "WAIT - LOCK-FIX Agent/Service did not return Veeam diagnostics.",
+                            "WebUI does not execute Veeam REST or disk operations directly; the Windows Service must perform them.",
+                        ],
+                        "duration": "-",
+                        "progress_percent": 0,
+                    }
+                ],
+            }
 
     def poll_veeam_api(self, server: str, port: int, local_payload: dict) -> dict:
         config = self.context.app_config
         veeam_config = config.get("veeam", {})
         LockFixWebHandler.prepare_veeam_process_environment(self, veeam_config)
         try:
-            diagnostics = run_veeam_diagnostics(self.context.config, self.context.controller)
+            runner = getattr(self, "run_veeam_diagnostics_limited", None)
+            diagnostics = runner(veeam_config) if callable(runner) else LockFixWebHandler.run_veeam_diagnostics_limited(self, veeam_config)
             session = diagnostics.get("latest_configured_session") or {}
             if session:
                 diagnostic_config = diagnostics.get("config") if isinstance(diagnostics.get("config"), dict) else {}
@@ -3749,17 +4322,17 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         password_env = str(veeam_config.get("password_env") or "LOCKFIX_VEEAM_PASSWORD")
         username_env = str(veeam_config.get("username_env") or "LOCKFIX_VEEAM_USER")
 
-        if not os.environ.get(password_env) and install_props.get("veeam_password"):
+        if install_props.get("veeam_password"):
             os.environ[password_env] = str(install_props["veeam_password"])
-        if not os.environ.get(username_env) and install_props.get("veeam_user"):
+        if install_props.get("veeam_user"):
             os.environ[username_env] = str(install_props["veeam_user"])
-        if not os.environ.get("LOCKFIX_VEEAM_BASE_URL") and install_props.get("veeam_base_url"):
+        if install_props.get("veeam_base_url"):
             os.environ["LOCKFIX_VEEAM_BASE_URL"] = str(install_props["veeam_base_url"])
-        if not os.environ.get("LOCKFIX_VEEAM_API_VERSION") and install_props.get("veeam_api_version"):
+        if install_props.get("veeam_api_version"):
             os.environ["LOCKFIX_VEEAM_API_VERSION"] = str(install_props["veeam_api_version"])
-        if not os.environ.get("LOCKFIX_VEEAM_HOST") and install_props.get("veeam_host"):
+        if install_props.get("veeam_host"):
             os.environ["LOCKFIX_VEEAM_HOST"] = str(install_props["veeam_host"])
-        if not os.environ.get("LOCKFIX_VEEAM_PORT") and install_props.get("veeam_port"):
+        if install_props.get("veeam_port"):
             os.environ["LOCKFIX_VEEAM_PORT"] = str(install_props["veeam_port"])
 
     def veeam_auto_isolate_identity(self, payload: dict) -> tuple[str, bool]:
@@ -3775,6 +4348,169 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         session_key = "|".join(part or "-" for part in identity_parts)
         has_unique_session_identity = bool(any(identity_parts[index] for index in (0, 1, 3, 4, 5)))
         return session_key, has_unique_session_identity
+
+    def force_approve_disk_offline_for_veeam(self, slot_id: str, session_key: str, checked_at: str, reason: str = "") -> dict:
+        store = self.context.controller.approvals
+        approved = store.approved_request_for("DISK_OFFLINE", slot_id)
+        approved_session_key = str((approved.get("metadata") or {}).get("sessionKey") or "") if approved else ""
+        if approved and approved_session_key == str(session_key or ""):
+            return {"created": False, "request": approved, "message": "Existing DISK_OFFLINE approval is active."}
+
+        request = store.create_request(
+            "DISK_OFFLINE",
+            requester_user_id="LOCKFIX_AUTO_POLICY",
+            target_id=slot_id,
+            metadata={
+                "workflowType": "VEEAM_BACKUP_DONE_AUTO_ISOLATE",
+                "sessionKey": session_key,
+                "reason": reason or "Veeam backup success detected. Automatic Air-Gap isolation is force-approved by policy.",
+                "forceApproval": True,
+                "forceApprovalMode": "AUTO_POLICY",
+                "requestedAt": checked_at,
+            },
+        )
+        data = store.load()
+        request_id = str(request.get("id") or "")
+        request_record = store.find_request(data, request_id)
+        now = datetime.now().isoformat(timespec="seconds")
+        comment = "Veeam Backup Done 자동 격리를 위해 LOCK-FIX 자동 정책이 DISK_OFFLINE 실행을 강제 승인했습니다."
+
+        for review in data.get("departmentReviews", []):
+            if str(review.get("approvalRequestId") or "") != request_id:
+                continue
+            department_id = str(review.get("departmentId") or "auto-policy")
+            reviewer = f"LOCKFIX_AUTO_REVIEW_{department_id.upper()}"
+            review["reviewerUserId"] = reviewer
+            review["status"] = "REVIEWED"
+            review["comment"] = comment
+            review["updatedAt"] = now
+            data.setdefault("reviewComments", []).append(
+                {
+                    "id": uuid.uuid4().hex,
+                    "approvalRequestId": request_id,
+                    "departmentReviewId": str(review.get("id") or ""),
+                    "authorUserId": reviewer,
+                    "comment": comment,
+                    "createdAt": now,
+                    "status": "REVIEWED",
+                }
+            )
+
+        decision = {
+            "id": uuid.uuid4().hex,
+            "approvalRequestId": request_id,
+            "approverUserId": "LOCKFIX_FORCE_APPROVER",
+            "decision": "APPROVED",
+            "comment": comment,
+            "createdAt": now,
+        }
+        data.setdefault("decisions", []).append(decision)
+        request_record["status"] = "APPROVED"
+        request_record["updatedAt"] = now
+        request_record.setdefault("metadata", {})["departmentReviewStatus"] = "REVIEWED"
+        request_record.setdefault("metadata", {})["forceApprovedBy"] = "LOCKFIX_FORCE_APPROVER"
+        request_record.setdefault("metadata", {})["forceApprovedAt"] = now
+        store.save(data)
+        store.audit_event(
+            "approval.force_approved",
+            approval_request=request_record,
+            decision=decision,
+            reason=comment,
+            slot_id=slot_id,
+            session_key=session_key,
+        )
+        store.audit_event("approval.request.approved", approval_request=request_record)
+        return {"created": True, "request": dict(request_record), "decision": decision, "message": comment}
+
+    def write_veeam_auto_isolate_marker(
+        self,
+        marker_path: Path,
+        session_key: str,
+        processed_session_keys: set[str],
+        slot_id: str,
+        state: str,
+        checked_at: str,
+        **extra: object,
+    ) -> None:
+        marker_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "session_key": session_key,
+            "processed_session_keys": sorted(processed_session_keys),
+            "slot_id": slot_id,
+            "state": state,
+            "checked_at": checked_at,
+        }
+        payload.update(extra)
+        marker_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def run_veeam_auto_isolate_worker(
+        self,
+        payload: dict,
+        slot_id: str,
+        session_key: str,
+        checked_at: str,
+        marker_path: Path,
+        processed_session_keys: set[str],
+    ) -> None:
+        try:
+            restore_scope = payload.get("restore_point_scope") if isinstance(payload.get("restore_point_scope"), dict) else {}
+            repository_path = str(payload.get("repository_path") or restore_scope.get("repository_path") or "")
+            force_approval = LockFixWebHandler.force_approve_disk_offline_for_veeam(
+                self,
+                slot_id,
+                session_key,
+                checked_at,
+                reason=f"Veeam job {payload.get('job') or payload.get('name') or 'Backup'} completed successfully.",
+            )
+            result = self.context.run_agent_service_operation(
+                "disk.isolate",
+                {"slot_id": slot_id, "repository_path": repository_path, "session_key": session_key},
+            )
+            state_value = str(result.get("state") or "ISOLATED")
+            processed_session_keys.add(session_key)
+            with AIRGAP_AUTO_ISOLATE_LOCK:
+                LockFixWebHandler.write_veeam_auto_isolate_marker(
+                    self,
+                    marker_path,
+                    session_key,
+                    processed_session_keys,
+                    slot_id,
+                    state_value,
+                    checked_at,
+                    force_approval=force_approval,
+                    completed_at=datetime.now().isoformat(timespec="seconds"),
+                )
+            self.context.controller.audit.write(
+                "veeam.auto_isolate.completed",
+                slot_id=slot_id,
+                session_key=session_key,
+                state=state_value,
+                executor="LOCK-FIX Agent/Service",
+                message="Veeam backup success detected. LOCK-FIX force-approved DISK_OFFLINE and isolate completed automatically.",
+            )
+        except Exception as exc:
+            with AIRGAP_AUTO_ISOLATE_LOCK:
+                LockFixWebHandler.write_veeam_auto_isolate_marker(
+                    self,
+                    marker_path,
+                    session_key,
+                    processed_session_keys,
+                    slot_id,
+                    "FAILED",
+                    checked_at,
+                    error=str(exc),
+                    failed_at=datetime.now().isoformat(timespec="seconds"),
+                )
+            self.context.controller.audit.write(
+                "veeam.auto_isolate.failed",
+                slot_id=slot_id,
+                session_key=session_key,
+                result="FAILED",
+                resourceType="DISK",
+                resourceId=slot_id,
+                message="Veeam backup success detected, but automatic isolate failed.",
+                error=str(exc),
+            )
 
     def auto_isolate_after_veeam_success(self, payload: dict, status: str, checked_at: str) -> dict:
         result = str(payload.get("result") or status or "").upper()
@@ -3835,53 +4571,81 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "processed": True,
                 "message": "This Backup Done session was already processed through Steps 1-5. Waiting for a new Backup Done record.",
             }
-        try:
-            restore_scope = payload.get("restore_point_scope") if isinstance(payload.get("restore_point_scope"), dict) else {}
-            repository_path = str(payload.get("repository_path") or restore_scope.get("repository_path") or "")
-            state = self.context.controller.isolate(slot_id, repository_path=repository_path)
-            processed_session_keys.add(session_key)
-            marker_path.parent.mkdir(parents=True, exist_ok=True)
-            marker_path.write_text(
-                json.dumps(
-                    {
-                        "session_key": session_key,
-                        "processed_session_keys": sorted(processed_session_keys),
-                        "slot_id": slot_id,
-                        "state": state.value,
-                        "checked_at": checked_at,
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                ),
-                encoding="utf-8",
-            )
+        if str(previous.get("session_key") or "") == session_key and previous.get("state") == "IN_PROGRESS":
             return {
                 "enabled": True,
                 "triggered": True,
                 "slot_id": slot_id,
                 "session_key": session_key,
-                "state": state.value,
-                "message": "Veeam backup success detected. LOCK-FIX isolate was called automatically.",
+                "state": "IN_PROGRESS",
+                "message": "Veeam backup success detected. LOCK-FIX Air-Gap isolation is already running.",
             }
-        except Exception as exc:
-            self.context.controller.audit.write(
-                "veeam.auto_isolate.failed",
-                slot_id=slot_id,
-                session_key=session_key,
-                result="FAILED",
-                resourceType="DISK",
-                resourceId=slot_id,
-                message="Veeam backup success detected, but automatic isolate failed.",
-                error=str(exc),
-            )
+        if str(previous.get("session_key") or "") == session_key and previous.get("state") == "FAILED":
             return {
                 "enabled": True,
                 "triggered": False,
                 "slot_id": slot_id,
                 "session_key": session_key,
-                "error": str(exc),
-                "message": "Veeam backup success detected, but automatic isolate failed.",
+                "state": "FAILED",
+                "error": str(previous.get("error") or ""),
+                "message": "Veeam backup success was detected, but the last automatic Air-Gap isolation attempt failed.",
             }
+        with AIRGAP_AUTO_ISOLATE_LOCK:
+            try:
+                latest = json.loads(marker_path.read_text(encoding="utf-8")) if marker_path.exists() else {}
+            except (OSError, json.JSONDecodeError):
+                latest = {}
+            latest_processed = set(latest.get("processed_session_keys") or processed_session_keys)
+            if str(latest.get("session_key") or "") == session_key and latest.get("state") == "IN_PROGRESS":
+                return {
+                    "enabled": True,
+                    "triggered": True,
+                    "slot_id": slot_id,
+                    "session_key": session_key,
+                    "state": "IN_PROGRESS",
+                    "message": "Veeam backup success detected. LOCK-FIX Air-Gap isolation is already running.",
+                }
+            if str(latest.get("session_key") or "") == session_key and latest.get("state") == "ISOLATED":
+                latest_processed.add(session_key)
+                return {
+                    "enabled": True,
+                    "triggered": False,
+                    "slot_id": slot_id,
+                    "session_key": session_key,
+                    "state": "ISOLATED",
+                    "processed": True,
+                    "message": "This Backup Done session already completed LOCK-FIX isolation. Step 5 Offline remains the latest completed state.",
+                }
+            LockFixWebHandler.write_veeam_auto_isolate_marker(
+                self,
+                marker_path,
+                session_key,
+                latest_processed,
+                slot_id,
+                "IN_PROGRESS",
+                checked_at,
+                started_at=datetime.now().isoformat(timespec="seconds"),
+            )
+        worker = threading.Thread(
+            target=LockFixWebHandler.run_veeam_auto_isolate_worker,
+            args=(self, dict(payload), slot_id, session_key, checked_at, marker_path, latest_processed),
+            daemon=True,
+        )
+        worker.start()
+        self.context.controller.audit.write(
+            "veeam.auto_isolate.scheduled",
+            slot_id=slot_id,
+            session_key=session_key,
+            message="Veeam backup success detected. LOCK-FIX scheduled Air-Gap isolation in the background.",
+        )
+        return {
+            "enabled": True,
+            "triggered": True,
+            "slot_id": slot_id,
+            "session_key": session_key,
+            "state": "IN_PROGRESS",
+            "message": "Veeam backup success detected. LOCK-FIX Air-Gap isolation started in the background.",
+        }
 
     def first_veeam_session(self, data: object) -> dict:
         if isinstance(data, dict):
@@ -3931,6 +4695,188 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 result[key.strip()] = value.strip()
         except OSError:
             return {}
+        return result
+
+    def veeam_base_url_from_parts(self, host: str, port: str | int = 9419) -> str:
+        host_text = str(host or "").strip().rstrip("/")
+        port_text = str(port or 9419).strip() or "9419"
+        if not host_text:
+            return ""
+        if host_text.startswith(("http://", "https://")):
+            return host_text if ":" in host_text.rsplit("/", 1)[-1] else f"{host_text}:{port_text}"
+        return f"https://{host_text}:{port_text}"
+
+    def veeam_install_base_url(self, props: dict | None = None) -> str:
+        install_props = props if isinstance(props, dict) else self.veeam_install_properties()
+        base_url = str(install_props.get("veeam_base_url") or "").strip().rstrip("/")
+        if base_url:
+            return base_url
+        return self.veeam_base_url_from_parts(install_props.get("veeam_host", ""), install_props.get("veeam_port", 9419))
+
+    def write_install_properties(self, props: dict) -> None:
+        props_path = ROOT / "runtime" / "install.properties"
+        props_path.parent.mkdir(parents=True, exist_ok=True)
+        ordered = [
+            "install_type",
+            "operation_mode",
+            "dry_run",
+            "components",
+            "veeam_host",
+            "veeam_port",
+            "veeam_base_url",
+            "veeam_api_version",
+            "veeam_auth",
+            "veeam_user",
+            "veeam_password",
+            "security_key_type",
+            "web_ui_url",
+        ]
+        lines = []
+        for key in ordered:
+            if key in props:
+                lines.append(f"{key}={props[key]}")
+        for key in sorted(props):
+            if key not in ordered:
+                lines.append(f"{key}={props[key]}")
+        props_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    def update_webui_start_command(self, props: dict, base_url: str) -> bool:
+        cmd_path = ROOT / "runtime" / "start_webui_8088.cmd"
+        if not cmd_path.exists():
+            return False
+        try:
+            text = cmd_path.read_text(encoding="utf-8")
+        except OSError:
+            return False
+        original_text = text
+        replacements = {
+            "LOCKFIX_VEEAM_USER": str(props.get("veeam_user") or ""),
+            "LOCKFIX_VEEAM_PASSWORD": str(props.get("veeam_password") or ""),
+            "LOCKFIX_VEEAM_BASE_URL": base_url,
+            "LOCKFIX_VEEAM_API_VERSION": str(props.get("veeam_api_version") or "1.2-rev1"),
+        }
+        for key, value in replacements.items():
+            if not value:
+                continue
+            pattern = re.compile(rf"^set\s+{re.escape(key)}=.*$", re.MULTILINE)
+            line = f"set {key}={value}"
+            if pattern.search(text):
+                text = pattern.sub(line, text)
+            else:
+                text = text.replace("@echo off\n", f"@echo off\n{line}\n", 1)
+        try:
+            if text == original_text:
+                return False
+            cmd_path.write_text(text, encoding="utf-8")
+            return True
+        except OSError:
+            return False
+
+    def ensure_veeam_execution_settings_synced(self, manual: bool = False) -> dict:
+        install_props = self.veeam_install_properties()
+        base_url = self.veeam_install_base_url(install_props)
+        if not base_url:
+            return {
+                "ok": False,
+                "synced": False,
+                "message": "Agent 설치 IP 정보가 없어 Veeam 실행 설정을 갱신할 수 없습니다.",
+                "installed_base_url": "",
+                "config_base_url": "",
+            }
+        parsed = urlparse(base_url)
+        installed_host = parsed.hostname or str(install_props.get("veeam_host") or "")
+        installed_port = parsed.port or int(str(install_props.get("veeam_port") or 9419) or 9419)
+        changed = []
+        config_path = self.context.config_path
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError):
+            config = {}
+        if not isinstance(config, dict):
+            config = {}
+        veeam = config.setdefault("veeam", {})
+        if not isinstance(veeam, dict):
+            veeam = {}
+            config["veeam"] = veeam
+        old_config_base_url = str(veeam.get("base_url") or "").strip().rstrip("/")
+        candidates = [str(item).rstrip("/") for item in veeam.get("discovery_candidates", []) if str(item).strip()]
+        expected_user = str(install_props.get("veeam_user") or veeam.get("username") or "").strip()
+        expected_api_version = str(install_props.get("veeam_api_version") or veeam.get("api_version") or "1.2-rev1").strip()
+        updates = {
+            "enabled": True,
+            "base_url": base_url,
+            "api_version": expected_api_version,
+            "auto_discover": False,
+            "discovery_candidates": [base_url, *[item for item in candidates if item != base_url]],
+            "discovery_scan_local_subnet": False,
+        }
+        if expected_user:
+            updates["username"] = expected_user
+        for key, value in updates.items():
+            if veeam.get(key) != value:
+                veeam[key] = value
+                changed.append(f"config.veeam.{key}")
+        try:
+            config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        except OSError as exc:
+            return {
+                "ok": False,
+                "synced": False,
+                "message": f"Veeam 설정 파일 갱신 실패: {exc}",
+                "installed_base_url": base_url,
+                "config_base_url": old_config_base_url,
+            }
+        if str(install_props.get("veeam_base_url") or "").strip().rstrip("/") != base_url:
+            install_props["veeam_base_url"] = base_url
+            changed.append("runtime.install_properties.veeam_base_url")
+        if installed_host and str(install_props.get("veeam_host") or "").strip() != installed_host:
+            install_props["veeam_host"] = installed_host
+            changed.append("runtime.install_properties.veeam_host")
+        if str(install_props.get("veeam_port") or "").strip() != str(installed_port):
+            install_props["veeam_port"] = str(installed_port)
+            changed.append("runtime.install_properties.veeam_port")
+        if expected_api_version:
+            install_props["veeam_api_version"] = expected_api_version
+        self.write_install_properties(install_props)
+        command_updated = self.update_webui_start_command(install_props, base_url)
+        if command_updated:
+            changed.append("runtime.start_webui_8088.cmd")
+        os.environ["LOCKFIX_VEEAM_BASE_URL"] = base_url
+        os.environ["LOCKFIX_VEEAM_HOST"] = installed_host
+        os.environ["LOCKFIX_VEEAM_PORT"] = str(installed_port)
+        if expected_api_version:
+            os.environ["LOCKFIX_VEEAM_API_VERSION"] = expected_api_version
+        if expected_user:
+            password_env = str(veeam.get("password_env") or "LOCKFIX_VEEAM_PASSWORD")
+            username_env = str(veeam.get("username_env") or "LOCKFIX_VEEAM_USER")
+            os.environ[username_env] = expected_user
+            if install_props.get("veeam_password"):
+                os.environ[password_env] = str(install_props["veeam_password"])
+        synced = not changed or all(str(item).startswith("runtime.start_webui") for item in changed)
+        result = {
+            "ok": True,
+            "synced": synced,
+            "manual": manual,
+            "changed": changed,
+            "installed_host": installed_host,
+            "installed_port": installed_port,
+            "installed_base_url": base_url,
+            "config_base_url": old_config_base_url,
+            "effective_base_url": base_url,
+            "message": "현재 agent 설치 IP 기준으로 Veeam 실행 설정을 갱신했습니다." if changed else "현재 agent 설치 IP 기준 설정이 이미 일치합니다.",
+        }
+        if manual or changed:
+            try:
+                self.context.controller.audit.write(
+                    "veeam.config.sync",
+                    installed_base_url=base_url,
+                    previous_base_url=old_config_base_url,
+                    changed=",".join(changed),
+                    result="SUCCESS",
+                    message=result["message"],
+                )
+            except Exception:
+                pass
         return result
 
     def tcp_port_open(self, host: str, port: int) -> bool:
@@ -4287,14 +5233,22 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             ],
             "notifications": self.notification_items(),
             "logs": logs,
+            "threat_detection": self.threat_detection_summary()["summary"],
             "total_logs": len(logs),
         }
 
     def notification_summary(self) -> dict:
-        audit_alert = self.audit_anomaly_alert_summary()
+        audit_alert = LockFixWebHandler.audit_anomaly_alert_summary(self)
+        settings = LockFixWebHandler.notification_settings(self, redact=True)
         return {
-            "items": self.notification_items(),
+            "items": LockFixWebHandler.notification_items(self),
             "audit_alert": audit_alert,
+            "smtp_settings": settings,
+            "gateway": {
+                "name": "Security Notification Gateway",
+                "internal_transport": "SMTP",
+                "scope": "Backup, Air-Gap, disk isolation, reconnect approval, and security audit events only.",
+            },
             "summary": {
                 "unauthorized_access": {
                     "label": "비인가 접근 시도",
@@ -4311,18 +5265,15 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         }
 
     def notification_items(self) -> list[dict]:
+        settings = LockFixWebHandler.notification_settings(self, redact=True)
+        configured = bool(settings.get("smtp_host")) and bool(settings.get("target_email"))
+        status = "Configured" if configured else "Not configured"
         return [
             {
-                "email": "rich.kim@oam.co.kr",
-                "smtp_status": "Connected",
-                "network_connection": "NOT Connection",
-                "last_login": "2024-12-03 15:14:58",
-            },
-            {
-                "email": "rich.kim@oam.co.kr",
-                "smtp_status": "Connected",
-                "network_connection": "GOOD",
-                "last_login": "2024-12-22 20:57:39",
+                "email": settings.get("target_email") or "-",
+                "smtp_status": status,
+                "network_connection": "SMTP internal transport",
+                "last_login": settings.get("updated_at") or "-",
             },
         ]
 
@@ -4373,6 +5324,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "emergency.quarantine.offline.error",
             "license_register_failed",
             "lockfix_service_control_failed",
+            "service.permission.insufficient",
+            "service.preflight.unavailable",
             "audit.parse_error",
         }
         anomaly_tokens = (
@@ -4414,8 +5367,143 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "alert_status": "ALERT SENT" if severity == "CRITICAL" else "ALERT READY",
         }
 
+    def threat_detection_summary(self) -> dict:
+        veeam_config = get_veeam_config(self.context.app_config) or {}
+        repository_path = str(
+            veeam_config.get("target_repository_path")
+            or self.context.veeam_backup_copy_repository_path()
+            or "D:\\BackupCopyRepo"
+        ).strip()
+        try:
+            repository_volume = repository_volume_root(repository_path)
+        except ValueError:
+            repository_volume = "-"
+        if repository_volume.upper().startswith("C:"):
+            repository_path = "-"
+            repository_name = "Veeam Backup Copy 저장소 대상 아님"
+            status = "주의"
+            score = 46
+            suspicious_count = 2
+        else:
+            repository_name = str(veeam_config.get("target_repository_name") or "Repository-D")
+            status = "정상"
+            score = 12
+            suspicious_count = 0
+        now = datetime.now()
+        last_scan = now.strftime("%Y-%m-%d %H:%M:%S")
+        backup_job = str(veeam_config.get("job_name") or veeam_config.get("target_job_name") or "Daily Backup")
+        backup_file_path = str(Path(repository_path) / "Backup Copy Job 1.vbk") if repository_path != "-" else "-"
+        base_result = {
+            "id": "threat-scan-latest",
+            "scan_time": last_scan,
+            "repository": repository_name,
+            "repository_path": repository_path,
+            "backup_job": backup_job,
+            "backup_file_path": backup_file_path,
+            "backup_completed_at": (now - timedelta(minutes=4)).strftime("%Y-%m-%d %H:%M:%S"),
+            "scan_started_at": (now - timedelta(minutes=3)).strftime("%Y-%m-%d %H:%M:%S"),
+            "scan_ended_at": last_scan,
+            "engine": "Veeam Malware REST API + Windows Defender + YARA + Repository Hash",
+            "result": status,
+            "score": score,
+            "detection_count": suspicious_count,
+            "action_status": "Air-gap 완료" if status == "정상" else "관리자 확인 필요",
+            "lockfix_action": "Disk Offline / Drive Letter 제거 / Air-gap 전환" if status == "정상" else "Air-gap 유지 / 알림 / 관리자 검토",
+            "admin_note": "Mock 기반 1차 개발 화면입니다. Agent/API 탐지 결과 수신 구조로 확장됩니다.",
+            "audit_log_id": "THREAT_SCAN_COMPLETED",
+            "detections": [],
+        }
+        caution_result = {
+            **base_result,
+            "id": "threat-scan-caution",
+            "scan_time": (now - timedelta(days=1, minutes=2)).strftime("%Y-%m-%d %H:%M:%S"),
+            "result": "주의",
+            "score": 46,
+            "detection_count": 2,
+            "action_status": "관리자 확인 필요",
+            "lockfix_action": "Air-gap 전환 완료 / 관리자 알림",
+            "audit_log_id": "THREAT_DETECTED",
+            "detections": [
+                {"type": "파일 엔트로피 증가", "file_path": f"{repository_path}\\Daily\\vm01.vib", "evidence": "최근 24시간 평균 대비 엔트로피 증가", "severity": "WARN", "status": "검토 대기"},
+                {"type": "백업 파일 크기 급변", "file_path": f"{repository_path}\\Daily\\vm02.vib", "evidence": "이전 백업 대비 크기 42% 증가", "severity": "WARN", "status": "알림 발송"},
+            ],
+        }
+        danger_result = {
+            **base_result,
+            "id": "threat-scan-danger",
+            "scan_time": (now - timedelta(days=2, minutes=4)).strftime("%Y-%m-%d %H:%M:%S"),
+            "result": "위험",
+            "score": 82,
+            "detection_count": 5,
+            "action_status": "재연결 차단",
+            "lockfix_action": "Air-gap 강제 유지 / Repository Online 승인 요구",
+            "audit_log_id": "THREAT_POLICY_BLOCKED_ONLINE",
+            "detections": [
+                {"type": "랜섬웨어 의심", "file_path": f"{repository_path}\\Daily\\critical.vbk", "evidence": "대량 확장자 변경 패턴", "severity": "CRITICAL", "status": "차단"},
+                {"type": "VSS 삭제 명령 의심", "file_path": "Windows Event Log", "evidence": "vssadmin delete shadows 유사 이벤트", "severity": "CRITICAL", "status": "승인 필요"},
+                {"type": "무결성 해시 불일치", "file_path": f"{repository_path}\\manifest.sha256", "evidence": "등록 해시와 현재 해시 불일치", "severity": "ERROR", "status": "격리 유지"},
+            ],
+        }
+        return {
+            "summary": {
+                "status": status,
+                "score": score,
+                "suspicious_count": suspicious_count,
+                "last_scan_at": last_scan,
+                "engine": "Veeam Malware REST API + Windows Defender + YARA + Repository Hash",
+                "status_detail": "안전한 백업본만 Air-gap 상태로 전환합니다.",
+            },
+            "policy": {
+                "enabled": True,
+                "timing": ["백업 완료 직후", "Air-gap 전환 직전", "Repository 재연결 전"],
+                "engines": ["Veeam Malware REST API", "Windows Defender", "YARA Rule", "Repository Hash", "Windows Event Log", "LOCK-FIX Agent Log"],
+                "thresholds": {"normal": "0-30", "warning": "31-70", "danger": "71-100"},
+                "risk_action": "Air-gap 강제 유지 + 재연결 차단",
+                "approval_required": ["EMERGENCY_UNLOCK", "DISK_ONLINE"],
+            },
+            "veeam_malware_api": {
+                "enabled": True,
+                "connected": bool(veeam_config.get("base_url")),
+                "base_url": str(veeam_config.get("base_url") or self.context.veeam_base_url() or "-"),
+                "endpoint": "/api/v1/malwareDetection/events",
+                "last_result": status,
+                "last_checked": last_scan,
+                "note": "1차 개발은 Mock 표시이며, 2차 개발에서 Veeam REST Malware Detection 이벤트와 세션 ID를 실제 연동합니다.",
+            },
+            "audit_events": [
+                "THREAT_SCAN_STARTED",
+                "THREAT_SCAN_COMPLETED",
+                "THREAT_DETECTED",
+                "THREAT_SCORE_UPDATED",
+                "THREAT_POLICY_BLOCKED_ONLINE",
+                "THREAT_SCAN_FAILED",
+                "THREAT_SCAN_APPROVAL_REQUIRED",
+                "THREAT_SCAN_REPORT_DOWNLOADED",
+            ],
+            "results": [base_result, caution_result, danger_result],
+        }
+
     def detect_summary(self) -> dict:
         config = self.context.config
+        if not config.slots:
+            return {
+                "title": "LOCK-FIX 기준으로 가장 안전한 판단 방식",
+                "subtitle": "디스크 식별 슬롯 설정이 등록되면 UID와 fingerprint 검증을 자동으로 표시합니다.",
+                "fingerprint": {
+                    "slot_id": "",
+                    "value": "",
+                    "registered_value": "",
+                    "status": "NOT_CONFIGURED",
+                    "match": False,
+                    "parts": [],
+                    "display": ["Disk Identity Fingerprint ="],
+                    "formula_title": "LOCK-FIX-DISK-FINGERPRINT =",
+                    "formula": "slot configuration required",
+                    "conclusion": "에이전트 설치 시 입력한 저장소/슬롯 설정을 기준으로 디스크 식별값이 구성되어야 합니다.",
+                },
+                "emergency_access": self.emergency_access_summary(),
+                "veeam_repository": self.detect_veeam_repository_summary(),
+            }
         slot = next(iter(config.slots.values()))
         unique_id = slot_uid(slot)
         parts = fingerprint_parts(slot)
@@ -4429,6 +5517,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         return {
             "title": "LOCK-FIX 기준으로 가장 안전한 판단 방식",
             "subtitle": "LOCK-FIX에서는 하나의 값만 보지 말고 아래 조합을 기준으로 해야 합니다.",
+            "emergency_access": self.emergency_access_summary(),
+            "veeam_repository": self.detect_veeam_repository_summary(),
             "fingerprint": {
                 "slot_id": slot.slot_id,
                 "value": unique_id,
@@ -4442,6 +5532,237 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "conclusion": "이 값이 기존 등록값과 다르면 다른 디스크로 판단합니다.",
             },
         }
+
+    def detect_veeam_repository_summary(self) -> dict:
+        veeam_config = get_veeam_config(self.context.app_config) or {}
+        configured_path = str(veeam_config.get("target_repository_path") or self.context.veeam_backup_copy_repository_path() or "").strip()
+        configured_name = str(veeam_config.get("target_repository_name") or "").strip()
+        base_url = str(veeam_config.get("base_url") or "").strip()
+        parsed_url = urlparse(base_url) if base_url else None
+        def safe_backup_copy_repository(path: str) -> tuple[str, bool]:
+            if not path:
+                return "", False
+            try:
+                volume = repository_volume_root(path)
+            except ValueError:
+                return "", False
+            normalized = volume.strip().replace("/", "\\").rstrip("\\").lower()
+            if normalized == "c:":
+                return "", False
+            return path, True
+
+        configured_path, configured_allowed = safe_backup_copy_repository(configured_path)
+        fallback = {
+            "repository_name": configured_name or ("Veeam Repository" if configured_allowed else "Backup Copy 저장소 대상 아님"),
+            "repository_path": configured_path or "-",
+            "job": str(veeam_config.get("job_name") or veeam_config.get("target_job_name") or "-"),
+            "api_synced": False,
+            "source": "config",
+            "server": parsed_url.hostname if parsed_url else "",
+            "port": parsed_url.port if parsed_url else "",
+            "eligible": configured_allowed,
+            "blocked_reason": "" if configured_allowed else "protected_or_unconfigured_repository_volume",
+        }
+        if not veeam_config.get("enabled", False):
+            return fallback
+        try:
+            runner = getattr(self, "run_veeam_diagnostics_limited", None)
+            diagnostics = (
+                runner(veeam_config, timeout_seconds=3.0)
+                if callable(runner)
+                else LockFixWebHandler.run_veeam_diagnostics_limited(self, veeam_config, timeout_seconds=3.0)
+            )
+        except Exception as exc:
+            return {**fallback, "error": str(exc)}
+        if not isinstance(diagnostics, dict):
+            return fallback
+        session = diagnostics.get("latest_configured_session") if isinstance(diagnostics.get("latest_configured_session"), dict) else {}
+        api = diagnostics.get("api") if isinstance(diagnostics.get("api"), dict) else {}
+        matching = api.get("matching") if isinstance(api.get("matching"), dict) else {}
+        repository_name = str(
+            session.get("repository_name")
+            or session.get("repository")
+            or configured_name
+            or "Veeam Repository"
+        ).strip()
+        source = str(session.get("source") or diagnostics.get("source") or api.get("source") or "config").strip()
+        raw_repository_path = str(session.get("repository_path") or configured_path or "").strip()
+        repository_path, repository_allowed = safe_backup_copy_repository(raw_repository_path)
+        if not repository_allowed:
+            return {
+                **fallback,
+                "repository_name": "Backup Copy 저장소 대상 아님",
+                "repository_path": "-",
+                "api_synced": bool(session) and source != "config",
+                "source": source,
+                "eligible": False,
+                "blocked_reason": "protected_or_non_backup_copy_repository_volume",
+            }
+        job = str(
+            session.get("job")
+            or session.get("job_name")
+            or session.get("name")
+            or matching.get("job_name")
+            or veeam_config.get("job_name")
+            or "-"
+        ).strip()
+        return {
+            "repository_name": repository_name or fallback["repository_name"],
+            "repository_path": repository_path or fallback["repository_path"],
+            "job": job or fallback["job"],
+            "api_synced": bool(session) and source != "config",
+            "source": source,
+            "server": str(session.get("server") or fallback["server"] or ""),
+            "port": str(session.get("port") or fallback["port"] or ""),
+            "eligible": True,
+            "blocked_reason": "",
+        }
+
+    def network_rate_history(self, interface_id: str, tx_mbps: float, rx_mbps: float, seed_count: int = 60) -> tuple[list[float], list[float]]:
+        key = interface_id or "NIC1"
+        with NETWORK_HISTORY_LOCK:
+            bucket = NETWORK_INTERFACE_HISTORY.setdefault(key, {"tx": [], "rx": []})
+            if not bucket["tx"]:
+                bucket["tx"] = [round(tx_mbps, 2)] * seed_count
+                bucket["rx"] = [round(rx_mbps, 2)] * seed_count
+            else:
+                bucket["tx"].append(round(tx_mbps, 2))
+                bucket["rx"].append(round(rx_mbps, 2))
+            bucket["tx"] = bucket["tx"][-seed_count:]
+            bucket["rx"] = bucket["rx"][-seed_count:]
+            return list(bucket["tx"]), list(bucket["rx"])
+
+    def read_live_network_interfaces(self) -> list[dict]:
+        if platform.system().lower() != "windows":
+            return []
+        powershell = shutil.which("powershell.exe") or str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe")
+        script = r"""
+$stats = @(Get-CimInstance Win32_PerfFormattedData_Tcpip_NetworkInterface | Where-Object {
+  $_.Name -and $_.Name -notmatch 'Loopback|Teredo|isatap'
+} | Select-Object Name,BytesSentPersec,BytesReceivedPersec,CurrentBandwidth)
+$ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescription,
+  @{Name='IPv4';Expression={($_.IPv4Address | Select-Object -First 1).IPAddress}},
+  @{Name='IPv6';Expression={($_.IPv6Address | Where-Object { $_.IPAddress -like 'fe80*' } | Select-Object -First 1).IPAddress}})
+[pscustomobject]@{ stats = $stats; ips = $ips } | ConvertTo-Json -Compress -Depth 5
+"""
+        try:
+            result = subprocess.run(
+                [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=3,
+                check=False,
+            )
+        except Exception:
+            return []
+        if result.returncode != 0 or not result.stdout.strip():
+            return []
+        try:
+            payload = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return []
+
+        def as_list(value: object) -> list:
+            if isinstance(value, list):
+                return value
+            if isinstance(value, dict):
+                return [value]
+            return []
+
+        def norm(value: object) -> str:
+            return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+        ips = as_list(payload.get("ips") if isinstance(payload, dict) else [])
+        stats = as_list(payload.get("stats") if isinstance(payload, dict) else [])
+        ip_rows = []
+        for row in ips:
+            if isinstance(row, dict):
+                ip_rows.append(row)
+        interfaces = []
+        for index, row in enumerate(stats):
+            if not isinstance(row, dict):
+                continue
+            raw_name = str(row.get("Name") or "").strip()
+            if not raw_name:
+                continue
+            name_key = norm(raw_name)
+            def ip_row_matches(item: dict) -> bool:
+                description_key = norm(item.get("InterfaceDescription"))
+                alias_key = norm(item.get("InterfaceAlias"))
+                return (
+                    (description_key and description_key == name_key)
+                    or (alias_key and alias_key == name_key)
+                    or (alias_key and alias_key in name_key)
+                    or (description_key and name_key in description_key)
+                )
+
+            ip_match = next((item for item in ip_rows if ip_row_matches(item)), {})
+            alias = str(ip_match.get("InterfaceAlias") or "").strip()
+            interface_id = alias or f"NIC{index + 1}"
+            tx_mbps = max(0.0, float(row.get("BytesSentPersec") or 0) * 8 / 1_000_000)
+            rx_mbps = max(0.0, float(row.get("BytesReceivedPersec") or 0) * 8 / 1_000_000)
+            tx_history, rx_history = self.network_rate_history(interface_id, tx_mbps, rx_mbps)
+            interfaces.append(
+                {
+                    "id": interface_id,
+                    "label": interface_id,
+                    "adapter_name": alias or raw_name,
+                    "connection_type": "이더넷",
+                    "ipv4": str(ip_match.get("IPv4") or ""),
+                    "ipv6": str(ip_match.get("IPv6") or ""),
+                    "tx_mbps": round(tx_mbps, 2),
+                    "rx_mbps": round(rx_mbps, 2),
+                    "total_tx_gb": round(sum(tx_history) / 180, 2),
+                    "total_rx_gb": round(sum(rx_history) / 180, 2),
+                    "tx_history": tx_history,
+                    "rx_history": rx_history,
+                    "source": "windows_perf_counter",
+                }
+            )
+        return interfaces
+
+    def fallback_network_history(self, base: float, amplitude: float, tick: int, phase: int, samples: int = 60) -> list[float]:
+        values = []
+        for sample in range(samples):
+            position = tick + sample + phase
+            slow = ((position * (phase + 3)) % 17) / 16
+            pulse = 1.0 if position % (13 + phase) in (0, 1) else 0.0
+            dip = 0.55 if position % (19 + phase) == 0 else 1.0
+            value = (base + amplitude * slow + amplitude * 0.9 * pulse) * dip
+            values.append(round(max(0.02, value), 2))
+        return values
+
+    def fallback_network_interfaces(self, tick: int) -> list[dict]:
+        profiles = [
+            ("NIC1", "NIC1", "192.168.219.230", "fe80::42c6:c684:b35c:85fe%16", 2.1, 5.8),
+            ("NIC2", "NIC2", "172.16.0.12", "fe80::8f2:1aff:fe21:9b20%18", 0.8, 2.4),
+            ("Backup Bond", "bond0", "10.10.1.21", "", 1.3, 3.2),
+            ("VM Bridge", "vmbr0", "127.0.0.1", "", 0.3, 1.1),
+        ]
+        interfaces = []
+        for index, (label, interface_id, ipv4, ipv6, tx_base, rx_base) in enumerate(profiles):
+            tx_history = self.fallback_network_history(tx_base, 1.4 + index * 0.3, tick, index + 1)
+            rx_history = self.fallback_network_history(rx_base, 2.1 + index * 0.4, tick * 2, index + 2)
+            interfaces.append(
+                {
+                    "id": interface_id,
+                    "label": label,
+                    "adapter_name": label,
+                    "connection_type": "이더넷",
+                    "ipv4": ipv4,
+                    "ipv6": ipv6,
+                    "tx_mbps": tx_history[-1],
+                    "rx_mbps": rx_history[-1],
+                    "total_tx_gb": round(sum(tx_history) / 20, 2),
+                    "total_rx_gb": round(sum(rx_history) / 20, 2),
+                    "tx_history": tx_history,
+                    "rx_history": rx_history,
+                    "source": "mock_fallback",
+                }
+            )
+        return interfaces
 
     def network_status_summary(self) -> dict:
         tick = int(time.time() / 5)
@@ -4496,8 +5817,31 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         packet_loss = round(0.05 + (tick % 9) * 0.06, 2)
         latency_ms = 14 + (tick % 8) * 3
         jitter_ms = 2 + (tick % 5)
+        veeam_sync = self.ensure_veeam_execution_settings_synced(manual=False)
+        veeam_base_url = str(veeam_sync.get("effective_base_url") or veeam_sync.get("installed_base_url") or "")
+        veeam_url = urlparse(veeam_base_url)
+        veeam_host = veeam_url.hostname or str(veeam_sync.get("installed_host") or "127.0.0.1")
+        veeam_port = int(veeam_url.port or veeam_sync.get("installed_port") or 9419)
+        veeam_port_open = self.tcp_port_open(veeam_host, veeam_port)
+        veeam_previous_url = urlparse(str(veeam_sync.get("config_base_url") or veeam_base_url))
+        veeam_previous_host = veeam_previous_url.hostname or veeam_host
+        current_ip_match = bool(veeam_sync.get("ok") and veeam_host and veeam_previous_host == veeam_host and veeam_port_open)
         ports = [
-            {"port": 9419, "service": "Veeam REST API", "protocol": "TCP", "state": "ALLOW", "risk": "Required"},
+            {
+                "port": 9419,
+                "service": "Veeam REST API",
+                "protocol": "TCP",
+                "state": "ALLOW" if current_ip_match else "ALLOW_STALE",
+                "risk": "Current agent IP" if current_ip_match else "Past IP allowed",
+                "target": f"{veeam_host}:{veeam_port}",
+                "veeam_config": {
+                    "installed_base_url": veeam_base_url,
+                    "previous_base_url": veeam_sync.get("config_base_url") or "",
+                    "current_ip_match": current_ip_match,
+                    "port_open": veeam_port_open,
+                    "sync": veeam_sync,
+                },
+            },
             {"port": 5985, "service": "WinRM HTTP", "protocol": "TCP", "state": "ALLOW", "risk": "Managed"},
             {"port": 5986, "service": "WinRM HTTPS", "protocol": "TCP", "state": "PROTECTED", "risk": "Not configured"},
             {"port": 445, "service": "SMB", "protocol": "TCP", "state": "PROTECTED", "risk": "Recovery only"},
@@ -4517,15 +5861,15 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             {
                 "level": "warning" if any(port["state"] == "ALLOW" and port["port"] == 5985 for port in ports) else "ok",
                 "title": "Port Exposure",
-                "detail": "Only Veeam REST and managed WinRM are allowed. Recovery ports remain blocked until approval.",
+                "detail": "Veeam REST is checked against the current agent install IP. Managed WinRM is allowed; recovery ports remain blocked until approval.",
             },
         ]
         event_time = datetime.now().strftime("%H:%M:%S")
         path_status = [
             {
                 "name": "LOCK-FIX -> Veeam REST",
-                "target": "192.168.219.165:9419",
-                "state": "Reachable",
+                "target": f"{veeam_host}:{veeam_port}",
+                "state": "Reachable" if current_ip_match else "Check",
                 "latency_ms": max(1, latency_ms - 8),
                 "last_check": event_time,
             },
@@ -4552,7 +5896,15 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             },
         ]
         events = [
-            {"level": "ok", "time": event_time, "message": "Veeam REST API 9419 path is reachable."},
+            {
+                "level": "ok" if current_ip_match else "warning",
+                "time": event_time,
+                "message": (
+                    f"Veeam REST API 9419 is allowed for current agent IP {veeam_host}."
+                    if current_ip_match
+                    else f"Veeam REST API 9419 allow state must be synced to current agent IP {veeam_host}."
+                ),
+            },
             {"level": "ok", "time": event_time, "message": "WinRM 5985 is allowed only for managed operation."},
             {"level": "protected", "time": event_time, "message": "SMB and RDP recovery ports remain protected until approval."},
             {
@@ -4561,24 +5913,34 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "message": f"Packet loss is {packet_loss:.2f}% and remains under the 1.00% operating threshold.",
             },
         ]
+        interfaces = self.read_live_network_interfaces() or self.fallback_network_interfaces(tick)
+        primary_interface = interfaces[0] if interfaces else {
+            "tx_history": tx_history,
+            "rx_history": rx_history,
+            "tx_mbps": tx_history[-1],
+            "rx_mbps": rx_history[-1],
+            "total_tx_gb": round(sum(item["tx_gb"] for item in items), 2),
+            "total_rx_gb": round(sum(item["rx_gb"] for item in items), 2),
+        }
         return {
-            "title": "실시간 네트워크 상태",
+            "title": "실시간 네트워크",
             "unit": "GB",
-            "interval_seconds": 10,
+            "interval_seconds": 1,
             "realtime": {
                 "tx": {
                     "label": "송신",
-                    "current_mbps": tx_history[-1],
-                    "total_gb": round(sum(item["tx_gb"] for item in items), 2),
-                    "history": tx_history,
+                    "current_mbps": primary_interface["tx_mbps"],
+                    "total_gb": primary_interface["total_tx_gb"],
+                    "history": primary_interface["tx_history"],
                 },
                 "rx": {
                     "label": "수신",
-                    "current_mbps": rx_history[-1],
-                    "total_gb": round(sum(item["rx_gb"] for item in items), 2),
-                    "history": rx_history,
+                    "current_mbps": primary_interface["rx_mbps"],
+                    "total_gb": primary_interface["total_rx_gb"],
+                    "history": primary_interface["rx_history"],
                 },
             },
+            "interfaces": interfaces,
             "items": items,
             "analysis": {
                 "quality": {
@@ -4798,15 +6160,26 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             days = 30
         return min(100, max(30, days))
 
-    def filter_log_items(self, items: list[dict], severity: str = "", source: str = "", query: str = "") -> list[dict]:
+    def filter_log_items(
+        self,
+        items: list[dict],
+        type_filter: str = "",
+        severity: str = "",
+        source: str = "",
+        query: str = "",
+    ) -> list[dict]:
+        type_filter = str(type_filter or "").strip().lower()
         severity = str(severity or "").strip().upper()
         source = str(source or "").strip().lower()
         query = str(query or "").strip().lower()
         filtered = []
         for item in items:
+            item_type = str(item.get("type") or "").lower()
             item_severity = str(item.get("severity") or "").upper()
             item_source = str(item.get("source") or "").lower()
             text = " ".join(str(item.get(key) or "") for key in ("type", "date", "source", "severity", "message")).lower()
+            if type_filter and item_type != type_filter:
+                continue
             if severity and item_severity != severity:
                 continue
             if source and item_source != source:
@@ -4839,14 +6212,16 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         end_date: str = "",
         page_value: str = "1",
         retention_value: str = "30",
+        type_filter: str = "",
         severity: str = "",
         source: str = "",
         query: str = "",
     ) -> dict:
         retention_days = self.retention_days(retention_value)
         items, range_start, range_end = self.log_items(start_date, end_date, retention_days)
+        type_options = sorted({str(item.get("type") or "-") for item in items})
         source_options = sorted({str(item.get("source") or "-") for item in items})
-        items = LockFixWebHandler.filter_log_items(self, items, severity, source, query)
+        items = LockFixWebHandler.filter_log_items(self, items, type_filter, severity, source, query)
         summary = LockFixWebHandler.log_summary_counts(self, items)
         per_page = 30
         try:
@@ -4864,7 +6239,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "total_pages": total_pages,
             "retention_days": retention_days,
             "summary": summary,
-            "filters": {"severity": severity, "source": source, "q": query},
+            "filters": {"type": type_filter, "severity": severity, "source": source, "q": query},
+            "type_options": type_options,
             "source_options": source_options,
             "items": items[offset : offset + per_page],
         }
@@ -4874,12 +6250,13 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         start_date: str = "",
         end_date: str = "",
         retention_value: str = "30",
+        type_filter: str = "",
         severity: str = "",
         source: str = "",
         query: str = "",
     ) -> None:
         items, _, _ = self.log_items(start_date, end_date, self.retention_days(retention_value))
-        items = LockFixWebHandler.filter_log_items(self, items, severity, source, query)
+        items = LockFixWebHandler.filter_log_items(self, items, type_filter, severity, source, query)
         rows = ["type,date,source,severity,message"]
         for item in items:
             rows.append(",".join(str(item[key]).replace('"', '""').join(['"', '"']) for key in ("type", "date", "source", "severity", "message")))

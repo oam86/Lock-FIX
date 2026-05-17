@@ -1,6 +1,8 @@
 param(
     [string]$InstallRoot = "",
     [string]$ServiceName = "LOCKFIXWebUI",
+    [int]$WebUiPort = 8088,
+    [int[]]$FirewallPorts = @(8088, 8099),
     [switch]$Uninstall
 )
 
@@ -18,11 +20,43 @@ function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        throw "Administrator permission is required to register the LOCK-FIX Web UI Windows service."
+        throw "Administrator permission is required to register or control the LOCK-FIX Web UI Windows service. Open PowerShell with 'Start-Process powershell -Verb runAs' and run this script again."
     }
 }
 
 Assert-Administrator
+
+function Ensure-FirewallRule {
+    param([int]$Port)
+    try {
+        $displayName = "Allow LOCK-FIX WebUI TCP $Port"
+        $existing = Get-NetFirewallRule -DisplayName $displayName -ErrorAction SilentlyContinue
+        if (-not $existing) {
+            New-NetFirewallRule -DisplayName $displayName -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow | Out-Null
+            Write-Host "Firewall rule registered: $displayName"
+        } else {
+            Write-Host "Firewall rule already exists: $displayName"
+        }
+    } catch {
+        Write-Warning "Firewall rule check failed for TCP ${Port}: $($_.Exception.Message)"
+    }
+}
+
+function Test-WebUiEndpoint {
+    param([int]$Port)
+    for ($i = 0; $i -lt 10; $i++) {
+        try {
+            $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$Port/" -TimeoutSec 3
+            if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500) {
+                Write-Host "Web UI endpoint verified: http://127.0.0.1:$Port"
+                return
+            }
+        } catch {
+            Start-Sleep -Seconds 1
+        }
+    }
+    throw "Web UI endpoint did not respond on http://127.0.0.1:$Port after service start."
+}
 
 if ($Uninstall) {
     $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
@@ -66,9 +100,15 @@ if ($existing) {
     Start-Sleep -Seconds 2
 }
 
+foreach ($port in $FirewallPorts) {
+    Ensure-FirewallRule -Port $port
+}
+
 $binPath = '"' + $serviceExe + '"'
-& sc.exe create $ServiceName binPath= $binPath start= auto DisplayName= "LOCK-FIX Web UI" | Out-Null
-& sc.exe description $ServiceName "Keeps LOCK-FIX Web UI listening on http://127.0.0.1:8088 using the bundled offline Python runtime." | Out-Null
+& sc.exe create $ServiceName binPath= $binPath start= auto obj= LocalSystem DisplayName= "LOCK-FIX Web UI" | Out-Null
+& sc.exe description $ServiceName "Keeps LOCK-FIX Web UI listening on http://127.0.0.1:$WebUiPort using the bundled offline Python runtime." | Out-Null
 Start-Service -Name $ServiceName
 Write-Host "LOCK-FIX Web UI service registered and started: $ServiceName"
-Write-Host "Web UI: http://127.0.0.1:8088"
+Write-Host "Service account: LocalSystem"
+Write-Host "Web UI: http://127.0.0.1:$WebUiPort"
+Test-WebUiEndpoint -Port $WebUiPort

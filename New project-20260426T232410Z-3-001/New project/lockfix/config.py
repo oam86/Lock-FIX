@@ -60,6 +60,7 @@ class VeeamConfig:
 @dataclass(frozen=True)
 class LockFixConfig:
     dry_run: bool
+    operation_mode: str
     state_path: Path
     audit_log_path: Path
     io_quiet_seconds: int
@@ -109,6 +110,20 @@ def read_install_properties(root: Path) -> dict[str, str]:
     return props
 
 
+def install_veeam_base_url(props: dict[str, str]) -> str:
+    base_url = str(props.get("veeam_base_url") or "").strip().rstrip("/")
+    if base_url:
+        return base_url
+    host = str(props.get("veeam_host") or "").strip()
+    if not host:
+        return ""
+    port = str(props.get("veeam_port") or "9419").strip() or "9419"
+    if host.startswith(("http://", "https://")):
+        host = host.rstrip("/")
+        return host if ":" in host.rsplit("/", 1)[-1] else f"{host}:{port}"
+    return f"https://{host}:{port}"
+
+
 def dry_run_from_operation_mode(value: Any) -> bool | None:
     if value is None:
         return None
@@ -118,6 +133,31 @@ def dry_run_from_operation_mode(value: Any) -> bool | None:
     if text in {"simulation", "simulate", "dry-run", "dryrun", "test", "safe"}:
         return True
     return None
+
+
+def normalize_operation_mode(value: Any, dry_run: bool | None = None) -> str:
+    text = str(value or "").strip().lower().replace("_", "-")
+    if text in {"poc", "dev", "development", "simulation", "simulate", "dry-run", "dryrun", "test", "safe"}:
+        return "poc"
+    if text in {"delivery", "customer", "customer-delivery", "install", "deployment"}:
+        return "delivery"
+    if text in {"commercial", "live", "production", "prod", "real", "active", ""}:
+        if dry_run is True and not text:
+            return "poc"
+        return "commercial"
+    return "commercial"
+
+
+def configured_operation_mode(raw: dict[str, Any], root: Path, dry_run: bool) -> str:
+    props = read_install_properties(root)
+    for value in (
+        os.getenv("LOCKFIX_OPERATION_MODE"),
+        props.get("operation_mode"),
+        raw.get("operation_mode"),
+    ):
+        if value is not None:
+            return normalize_operation_mode(value, dry_run)
+    return normalize_operation_mode(None, dry_run)
 
 
 def configured_dry_run(raw: dict[str, Any], root: Path) -> bool:
@@ -151,6 +191,7 @@ def load_config(path) -> LockFixConfig:
     base = Path(path).resolve().parent
     app_root = base.parent
     raw = load_app_config(path)
+    install_props = read_install_properties(app_root)
 
     def resolve_path(value: str) -> Path:
         candidate = Path(value)
@@ -197,6 +238,22 @@ def load_config(path) -> LockFixConfig:
         slots[slot.slot_id] = slot
 
     veeam_raw = dict(raw.get("veeam", {}))
+    installed_base_url = install_veeam_base_url(install_props)
+    if installed_base_url:
+        veeam_raw["base_url"] = installed_base_url
+        existing_candidates = [
+            str(item).rstrip("/")
+            for item in veeam_raw.get("discovery_candidates", [])
+            if str(item).strip()
+        ]
+        veeam_raw["discovery_candidates"] = [
+            installed_base_url,
+            *[item for item in existing_candidates if item != installed_base_url],
+        ]
+    if install_props.get("veeam_api_version"):
+        veeam_raw["api_version"] = install_props["veeam_api_version"]
+    if install_props.get("veeam_user"):
+        veeam_raw["username"] = install_props["veeam_user"]
     veeam = VeeamConfig(
         enabled=bool_value(veeam_raw.get("enabled", False)),
         base_url=str(veeam_raw.get("base_url", "https://127.0.0.1:9419")).rstrip("/"),
@@ -225,8 +282,12 @@ def load_config(path) -> LockFixConfig:
         require_repository_resync_quiet=bool_value(veeam_raw.get("require_repository_resync_quiet", True), True),
     )
 
+    dry_run = configured_dry_run(raw, base.parent)
+    operation_mode = configured_operation_mode(raw, base.parent, dry_run)
+
     return LockFixConfig(
-        dry_run=configured_dry_run(raw, base.parent),
+        dry_run=dry_run,
+        operation_mode=operation_mode,
         state_path=resolve_path(raw.get("state_path", "runtime/state.json")),
         audit_log_path=resolve_path(raw.get("audit_log_path", "runtime/audit.jsonl")),
         io_quiet_seconds=int(raw.get("io_quiet_seconds", 30)),

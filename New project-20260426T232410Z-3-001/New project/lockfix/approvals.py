@@ -16,6 +16,7 @@ APPROVED = "APPROVED"
 EXPIRED = "EXPIRED"
 PENDING = "PENDING"
 REJECTED = "REJECTED"
+EXPIRED_REQUEST_RETENTION_DAYS = 30
 
 
 DEFAULT_APPROVER_ROLES = {
@@ -452,6 +453,75 @@ class ApprovalStore:
             "department.review.marked_reviewed",
         )
 
+    def confirm_department_reviews_for_role(
+        self,
+        approval_request_id: str,
+        reviewer_user_id: str,
+        reviewer_role: Role | str,
+        comment: str = "확인 완료",
+    ) -> dict[str, Any]:
+        data = self.load()
+        request = self.find_request(data, approval_request_id)
+        self.expire_request_if_needed(data, request)
+        if request.get("status") != PENDING:
+            self.save(data)
+            raise PermissionError(f"approval request is not pending: {request.get('status')}")
+        reviewer = str(reviewer_user_id or "").strip()
+        if not reviewer:
+            raise ValueError("reviewerUserId is required")
+        role = normalize_role(reviewer_role)
+        allowed_departments = set(ROLE_REVIEW_DEPARTMENTS.get(role.value, []))
+        if not allowed_departments:
+            raise PermissionError(f"reviewer role has no department review scope: {role.value}")
+        now = iso(utc_now())
+        text = str(comment or "확인 완료").strip() or "확인 완료"
+        changed: list[dict[str, Any]] = []
+        for review in data.get("departmentReviews", []):
+            if str(review.get("approvalRequestId") or "") != str(approval_request_id):
+                continue
+            status = str(review.get("status") or "PENDING").upper()
+            department_id = str(review.get("departmentId") or "")
+            if status == "REVIEWED":
+                continue
+            if status == "BLOCKED" and role != Role.SUPER_ADMIN:
+                continue
+            if department_id not in allowed_departments:
+                continue
+            review["reviewerUserId"] = reviewer
+            review["status"] = "REVIEWED"
+            review["comment"] = text
+            review["updatedAt"] = now
+            data.setdefault("reviewComments", []).append(
+                {
+                    "id": uuid.uuid4().hex,
+                    "approvalRequestId": str(approval_request_id),
+                    "departmentReviewId": str(review.get("id") or ""),
+                    "authorUserId": reviewer,
+                    "comment": text,
+                    "createdAt": now,
+                    "status": "REVIEWED",
+                }
+            )
+            changed.append(dict(review))
+        if not changed:
+            self.save(data)
+            raise PermissionError("no pending department review is available for this account")
+        metadata = request.setdefault("metadata", {})
+        metadata["departmentReviewStatus"] = self.department_review_status(request, data)
+        if str(request.get("requestType") or "").upper() == "DISK_ONLINE":
+            metadata["workflowStatus"] = self.repository_online_workflow_status(request, data)
+        request["updatedAt"] = now
+        self.save(data)
+        self.audit_event(
+            "department.review.confirmed",
+            approval_request=request,
+            departmentReviews=changed,
+            reviewerUserId=reviewer,
+            reviewerRole=role.value,
+            comment=text,
+        )
+        return {"request": dict(request), "reviews": self.department_reviews_for(approval_request_id), "confirmed": len(changed)}
+
     def mark_department_needs_changes(
         self,
         approval_request_id: str,
@@ -771,6 +841,76 @@ class ApprovalStore:
         if expired:
             self.save(data)
         return expired
+
+    def purge_expired_requests(self, retention_days: int = EXPIRED_REQUEST_RETENTION_DAYS) -> list[dict[str, Any]]:
+        data = self.load()
+        cutoff = utc_now() - timedelta(days=max(1, int(retention_days or EXPIRED_REQUEST_RETENTION_DAYS)))
+        expired_ids: set[str] = set()
+        purged: list[dict[str, Any]] = []
+        for request in data["requests"]:
+            if str(request.get("status") or "").upper() != EXPIRED:
+                continue
+            reference_time = parse_time(
+                str(request.get("expiresAt") or request.get("updatedAt") or request.get("createdAt") or "")
+            )
+            if reference_time <= cutoff:
+                expired_ids.add(str(request.get("id") or ""))
+                purged.append(dict(request))
+        if not expired_ids:
+            return []
+        data["requests"] = [item for item in data["requests"] if str(item.get("id") or "") not in expired_ids]
+        data["decisions"] = [
+            item for item in data["decisions"] if str(item.get("approvalRequestId") or "") not in expired_ids
+        ]
+        data["departmentReviews"] = [
+            item for item in data["departmentReviews"] if str(item.get("approvalRequestId") or "") not in expired_ids
+        ]
+        data["reviewComments"] = [
+            item for item in data["reviewComments"] if str(item.get("approvalRequestId") or "") not in expired_ids
+        ]
+        data["notifications"] = [
+            item for item in data["notifications"] if str(item.get("approvalRequestId") or "") not in expired_ids
+        ]
+        self.save(data)
+        for request in purged:
+            self.audit_event(
+                "approval.request.auto_deleted",
+                approval_request=request,
+                retention_days=retention_days,
+                reason="expired_request_retention_elapsed",
+            )
+        return purged
+
+    def delete_expired_request(self, approval_request_id: str, deleted_by: str = "") -> dict[str, Any]:
+        data = self.load()
+        request = self.find_request(data, approval_request_id)
+        self.expire_request_if_needed(data, request)
+        if str(request.get("status") or "").upper() != EXPIRED:
+            self.save(data)
+            raise PermissionError(f"approval request can be deleted only when expired: {request.get('status')}")
+        request_id = str(request.get("id") or "")
+        deleted = dict(request)
+        data["requests"] = [item for item in data["requests"] if str(item.get("id") or "") != request_id]
+        data["decisions"] = [
+            item for item in data["decisions"] if str(item.get("approvalRequestId") or "") != request_id
+        ]
+        data["departmentReviews"] = [
+            item for item in data["departmentReviews"] if str(item.get("approvalRequestId") or "") != request_id
+        ]
+        data["reviewComments"] = [
+            item for item in data["reviewComments"] if str(item.get("approvalRequestId") or "") != request_id
+        ]
+        data["notifications"] = [
+            item for item in data["notifications"] if str(item.get("approvalRequestId") or "") != request_id
+        ]
+        self.save(data)
+        self.audit_event(
+            "approval.request.deleted",
+            approval_request=deleted,
+            deleted_by=deleted_by,
+            reason="manual_expired_request_cleanup",
+        )
+        return deleted
 
     def expire_request_if_needed(self, data: dict[str, Any], request: dict[str, Any]) -> bool:
         if request.get("status") != PENDING:

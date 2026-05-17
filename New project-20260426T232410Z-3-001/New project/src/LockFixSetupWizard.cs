@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Text;
@@ -61,6 +62,10 @@ namespace LockFix
         private int pageIndex;
         private bool installed;
         private bool veeamPasswordVisible;
+        private bool veeamHostAutoLocked;
+        private string veeamHostAutoMode = "manual";
+        private string veeamHostAutoMessage = "";
+        private List<string> localIpv4Candidates = new List<string>();
         private readonly string webUiUrl = "http://127.0.0.1:8088";
 
         public SetupWizardForm()
@@ -166,12 +171,11 @@ namespace LockFix
             database.Text = "DB";
             database.Checked = true;
 
-            // Temporary PoC default. Replace with customer-specific input before production packaging.
-            veeamHost.Text = "192.168.219.165";
+            ApplyAutoDetectedVeeamHostDefault();
             veeamPort.Text = "9419";
             authType.Items.AddRange(new object[] { "Windows Authentication", "API Token", "Basic Account" });
             authType.SelectedIndex = 0;
-            veeamUser.Text = "DESKTOP-I3DF527\\OAM";
+            veeamUser.Text = "WIN-73D1N4MIUQS\\Administrator";
             veeamPassword.Text = "backup@1234";
             veeamPassword.PasswordChar = '*';
             veeamPasswordToggle.Text = "표시";
@@ -335,6 +339,7 @@ namespace LockFix
             pageTitle.Text = "Veeam Connection";
             pageBody.Text = "Veeam 서버 연결 정보를 입력합니다. Next 단계는 9419 접속과 토큰 인증이 성공해야 진행됩니다.";
             AddField("Veeam Server IP", veeamHost, 146);
+            AddFieldHint(veeamHostAutoMessage, veeamHost.Left, 174, 560);
             AddField("Port", veeamPort, 196);
             AddField("Authentication", authType, 246);
             AddField("User", veeamUser, 296);
@@ -738,6 +743,7 @@ namespace LockFix
             AddCheck("PowerShell", File.Exists(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell\\v1.0\\powershell.exe")) ? "Available" : "Not found", true);
             AddCheck("WinRM", "Manual verification recommended", true);
             AddCheck("Firewall", "Rule creation prepared for Web UI port 8088", true);
+            AddCheck("Local IPv4", LocalIpv4Summary(), localIpv4Candidates.Count > 0);
             AddCheck("Administrator Permission", IsAdministratorHint() ? "Elevated" : "Current user install mode", true);
         }
 
@@ -777,6 +783,7 @@ namespace LockFix
                 "Web UI Port: 8088" + Environment.NewLine +
                 "Web UI URL: " + webUiUrl + Environment.NewLine +
                 "Veeam Server: " + veeamHost.Text + ":" + veeamPort.Text + Environment.NewLine +
+                "Veeam Host Source: " + veeamHostAutoMode + Environment.NewLine +
                 "Veeam Auth: " + authType.Text + Environment.NewLine +
                 "Security Key: " + securityKeyType.Text + " / " + maskedKey + Environment.NewLine +
                 "Components: " + SelectedComponents();
@@ -998,6 +1005,9 @@ namespace LockFix
                 "dry_run=false" + Environment.NewLine +
                 "components=" + SelectedComponents() + Environment.NewLine +
                 "veeam_host=" + veeamHost.Text + Environment.NewLine +
+                "veeam_host_auto_mode=" + veeamHostAutoMode + Environment.NewLine +
+                "veeam_host_locked=" + veeamHostAutoLocked.ToString().ToLowerInvariant() + Environment.NewLine +
+                "local_ipv4_candidates=" + String.Join(",", localIpv4Candidates.ToArray()) + Environment.NewLine +
                 "veeam_port=" + veeamPort.Text + Environment.NewLine +
                 "veeam_base_url=https://" + veeamHost.Text + ":" + veeamPort.Text + Environment.NewLine +
                 "veeam_api_version=1.2-rev1" + Environment.NewLine +
@@ -1105,6 +1115,9 @@ namespace LockFix
             root["dry_run"] = false;
             veeam["enabled"] = true;
             veeam["base_url"] = baseUrl;
+            veeam["host_source"] = veeamHostAutoMode;
+            veeam["auto_registered_local_ip"] = veeamHostAutoLocked;
+            veeam["local_ipv4_candidates"] = localIpv4Candidates.ToArray();
             veeam["auto_discover"] = false;
             veeam["discovery_candidates"] = new string[] { baseUrl };
             veeam["discovery_scan_local_subnet"] = false;
@@ -1120,18 +1133,95 @@ namespace LockFix
             File.WriteAllText(configPath, serializer.Serialize(root));
         }
 
+        private void ApplyAutoDetectedVeeamHostDefault()
+        {
+            localIpv4Candidates = DetectLocalIpv4Candidates();
+            veeamHost.ReadOnly = false;
+            veeamHost.TabStop = true;
+            veeamHost.BackColor = SystemColors.Window;
+            veeamHostAutoLocked = false;
+
+            if (localIpv4Candidates.Count == 1)
+            {
+                veeamHost.Text = localIpv4Candidates[0];
+                veeamHost.ReadOnly = true;
+                veeamHost.TabStop = false;
+                veeamHost.BackColor = Color.FromArgb(244, 250, 255);
+                veeamHostAutoLocked = true;
+                veeamHostAutoMode = "single-local-ip-fixed";
+                veeamHostAutoMessage = "자동 등록: 단일 로컬 IPv4 " + veeamHost.Text + " 기준으로 고정됩니다.";
+                return;
+            }
+
+            if (localIpv4Candidates.Count > 1)
+            {
+                veeamHost.Text = localIpv4Candidates[0];
+                veeamHostAutoMode = "primary-local-ip-default";
+                veeamHostAutoMessage = "자동 감지: 로컬 IPv4 " + localIpv4Candidates.Count.ToString() + "개 중 " + veeamHost.Text + "을 기본 등록했습니다. 필요 시 수정 가능합니다.";
+                return;
+            }
+
+            veeamHost.Text = "127.0.0.1";
+            veeamHostAutoMode = "fallback-loopback";
+            veeamHostAutoMessage = "자동 감지 가능한 로컬 IPv4가 없어 127.0.0.1을 임시 기본값으로 사용합니다.";
+        }
+
+        private string LocalIpv4Summary()
+        {
+            if (localIpv4Candidates.Count == 0)
+            {
+                return "No usable local IPv4 detected";
+            }
+            if (localIpv4Candidates.Count == 1)
+            {
+                return localIpv4Candidates[0] + " (single IP auto-locked)";
+            }
+            return String.Join(", ", localIpv4Candidates.ToArray()) + " (primary default: " + veeamHost.Text + ")";
+        }
+
         private static string DetectPrimaryIpv4()
         {
+            List<string> candidates = DetectLocalIpv4Candidates();
+            if (candidates.Count > 0)
+            {
+                return candidates[0];
+            }
+            return "127.0.0.1";
+        }
+
+        private static List<string> DetectLocalIpv4Candidates()
+        {
+            List<string> gatewayBacked = new List<string>();
+            List<string> other = new List<string>();
+
             try
             {
-                foreach (IPAddress address in Dns.GetHostEntry(Dns.GetHostName()).AddressList)
+                foreach (NetworkInterface item in NetworkInterface.GetAllNetworkInterfaces())
                 {
-                    if (address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(address))
+                    if (item.OperationalStatus != OperationalStatus.Up ||
+                        item.NetworkInterfaceType == NetworkInterfaceType.Loopback ||
+                        item.NetworkInterfaceType == NetworkInterfaceType.Tunnel)
                     {
-                        string text = address.ToString();
-                        if (!text.StartsWith("169.254."))
+                        continue;
+                    }
+
+                    IPInterfaceProperties properties = item.GetIPProperties();
+                    bool hasGateway = HasIpv4Gateway(properties);
+                    foreach (UnicastIPAddressInformation addressInfo in properties.UnicastAddresses)
+                    {
+                        IPAddress address = addressInfo.Address;
+                        if (!IsUsableLocalIpv4(address))
                         {
-                            return text;
+                            continue;
+                        }
+
+                        if (hasGateway)
+                        {
+                            AddUnique(gatewayBacked, address.ToString());
+                        }
+                        else
+                        {
+                            AddUnique(other, address.ToString());
                         }
                     }
                 }
@@ -1139,7 +1229,72 @@ namespace LockFix
             catch
             {
             }
-            return "127.0.0.1";
+
+            List<string> result = new List<string>();
+            foreach (string address in gatewayBacked)
+            {
+                AddUnique(result, address);
+            }
+            foreach (string address in other)
+            {
+                AddUnique(result, address);
+            }
+
+            if (result.Count == 0)
+            {
+                try
+                {
+                    foreach (IPAddress address in Dns.GetHostEntry(Dns.GetHostName()).AddressList)
+                    {
+                        if (IsUsableLocalIpv4(address))
+                        {
+                            AddUnique(result, address.ToString());
+                        }
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return result;
+        }
+
+        private static bool HasIpv4Gateway(IPInterfaceProperties properties)
+        {
+            foreach (GatewayIPAddressInformation gateway in properties.GatewayAddresses)
+            {
+                IPAddress address = gateway.Address;
+                if (address != null &&
+                    address.AddressFamily == AddressFamily.InterNetwork &&
+                    address.ToString() != "0.0.0.0")
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static bool IsUsableLocalIpv4(IPAddress address)
+        {
+            if (address == null ||
+                address.AddressFamily != AddressFamily.InterNetwork ||
+                IPAddress.IsLoopback(address))
+            {
+                return false;
+            }
+
+            string text = address.ToString();
+            return text != "0.0.0.0" &&
+                   !text.StartsWith("169.254.", StringComparison.Ordinal);
+        }
+
+        private static void AddUnique(List<string> items, string value)
+        {
+            if (!String.IsNullOrWhiteSpace(value) && !items.Contains(value))
+            {
+                items.Add(value);
+            }
         }
 
         private static void CopyDirectory(string source, string target)
@@ -1191,13 +1346,15 @@ namespace LockFix
             {
                 if (File.Exists(Path.Combine(candidate, "webui.py")) &&
                     Directory.Exists(Path.Combine(candidate, "dist")) &&
-                    Directory.Exists(Path.Combine(candidate, "web")))
+                    Directory.Exists(Path.Combine(candidate, "web")) &&
+                    Directory.Exists(Path.Combine(candidate, "python")) &&
+                    File.Exists(Path.Combine(candidate, "python", "python.exe")))
                 {
                     return candidate;
                 }
             }
 
-            throw new DirectoryNotFoundException("Setup source files were not found. Run this setup from the LOCK-FIX project or dist\\installer folder.");
+            throw new DirectoryNotFoundException("Setup source files were not found. Run this setup from the LOCK-FIX package folder that contains python\\python.exe, dist, and web.");
         }
 
         private void AddHeroCard(string title, string text, int left, int top, int width, int height)
@@ -1253,6 +1410,26 @@ namespace LockFix
             input.Height = 26;
             content.Controls.Add(fieldLabel);
             content.Controls.Add(input);
+        }
+
+        private void AddFieldHint(string text, int left, int top, int width)
+        {
+            if (String.IsNullOrWhiteSpace(text))
+            {
+                return;
+            }
+
+            Label hint = new Label
+            {
+                Text = text,
+                Left = left,
+                Top = top,
+                Width = width,
+                Height = 18,
+                Font = new Font("Segoe UI", 8),
+                ForeColor = veeamHostAutoLocked ? Color.FromArgb(26, 112, 72) : Color.FromArgb(90, 105, 120)
+            };
+            content.Controls.Add(hint);
         }
 
         private void AddLog(string text)

@@ -1,10 +1,10 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ko">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LOCK-FIX PoC</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260517-register-account-guide" />
   </head>
   <body>
     <section class="login-screen" id="loginScreen">
@@ -35,7 +35,7 @@
           <button class="qr-submit" id="qrLoginButton" type="button">QR CODE LOGIN</button>
           <div class="login-copy">
             <span>Don't have an account?</span>
-            <button type="button">Register account</button>
+            <button id="registerAccountButton" type="button">Register account</button>
           </div>
           <div class="license-switch login-license">
             <span>Switch License</span>
@@ -47,7 +47,7 @@
 
     <section class="login-splash hidden" id="loginSplash" aria-live="polite" aria-busy="true">
       <div class="splash-stage">
-        <img class="splash-image" src="/static/lockfix-splash.png" alt="LOCK-FIX Air-Gap Protection" />
+        <img class="splash-image" src="/static/lockfix-global-logo.svg?v=20260517-splash-text-pulse" alt="LOCK-FIX Air-Gap Protection" />
         <div class="splash-loader" aria-hidden="true"><i></i></div>
       </div>
     </section>
@@ -65,7 +65,8 @@
           <button class="side-item rbac-menu active" data-menu-section="customer" data-view="dashboard" data-permission="DASHBOARD_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"></rect><rect x="13" y="4" width="7" height="7" rx="1.5"></rect><rect x="4" y="13" width="7" height="7" rx="1.5"></rect><rect x="13" y="13" width="7" height="7" rx="1.5"></rect></svg></span><span data-i18n="nav.dashboard">Dashboard</span></button>
           <button class="side-item rbac-menu" data-menu-section="customer" data-view="monitoring" data-permission="DASHBOARD_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="3" height="8" rx="1"></rect><rect x="10.5" y="6" width="3" height="12" rx="1"></rect><rect x="17" y="3" width="3" height="15" rx="1"></rect></svg></span><span data-i18n="nav.monitoring">Monitoring</span></button>
           <button class="side-item rbac-menu" data-menu-section="customer" data-view="detect2" data-permission="DASHBOARD_VIEW"><span class="nav-icon detect-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"></circle><path d="m15 15 4 4"></path><path d="M10.5 7.8v5.4"></path><path d="M7.8 10.5h5.4"></path></svg></span><span data-i18n="nav.detect">Hardware Detect</span></button>
-          <button class="side-item rbac-menu" data-menu-section="customer" data-view="network2" data-permission="DASHBOARD_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8c2-2 4-2 6 0s4 2 6 0 4-2 6 0"></path><path d="M4 12c2-2 4-2 6 0s4 2 6 0 4-2 6 0"></path><path d="M4 16c2-2 4-2 6 0s4 2 6 0 4-2 6 0"></path></svg></span><span data-i18n="nav.network">Network Status</span></button>
+          <button class="side-item rbac-menu" data-menu-section="customer" data-view="threat" data-permission="AIRGAP_POLICY_VIEW"><span class="nav-icon threat-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8.5h8"></path><path d="M9 4.8 10.6 7"></path><path d="M15 4.8 13.4 7"></path><path d="M12 7c-3 0-5 2.3-5 5.6v1.2c0 3.4 2 5.2 5 5.2s5-1.8 5-5.2v-1.2C17 9.3 15 7 12 7Z"></path><path d="M5 10.5H3.3"></path><path d="M20.7 10.5H19"></path><path d="M5 15H3.3"></path><path d="M20.7 15H19"></path><path d="M9.4 12h5.2"></path><path d="M9.7 15h4.6"></path><path d="M12 8.8v9"></path></svg></span><span data-i18n="nav.threat">Threat Detection</span></button>
+          <button class="side-item rbac-menu" data-menu-section="customer" data-view="network2" data-permission="DASHBOARD_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8c2-2 4-2 6 0s4 2 6 0 4-2 6 0"></path><path d="M4 12c2-2 4-2 6 0s4 2 6 0 4-2 6 0"></path><path d="M4 16c2-2 4-2 6 0s4 2 6 0 4-2 6 0"></path></svg></span><span data-i18n="nav.network">Network</span></button>
           <button class="side-item rbac-menu airgap-side" data-menu-section="customer" data-view="sources" data-permission="AIRGAP_POLICY_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path><path d="M12 14v2"></path></svg></span><span data-i18n="nav.airgap">Air-Gap</span></button>
           <button class="side-item rbac-menu" data-menu-section="customer" data-view="report" data-permission="REPORT_EXPORT"><span class="nav-icon report-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h8.8l3.2 3.2v13.8h-12Z"></path><path d="M15 3.8V7h3.2"></path><path d="M9 12.2h5.5"></path><path d="M9 15.5h3.5"></path></svg></span><span data-i18n="nav.report">Reports</span></button>
           <button class="side-item rbac-menu" data-menu-section="customer" data-view="license2" data-permission="DASHBOARD_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 7v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7Z"></path><path d="m9 12 2 2 4-5"></path></svg></span><span data-i18n="nav.license">License</span></button>
@@ -275,13 +276,13 @@
         <div class="dashboard-summary" id="dashboardCards"></div>
 
         <section class="dashboard-panel">
-          <h2 data-i18n="dashboard.notification">Notification</h2>
+            <h2 data-i18n="dashboard.notification">Security Notification Gateway</h2>
           <div class="dashboard-table-wrap">
             <table class="dashboard-table">
               <thead>
                 <tr>
                   <th>Email</th>
-                  <th>SMTP Status</th>
+            <th>Gateway Status</th>
                   <th>Network Connection</th>
                   <th>Last Login</th>
                 </tr>
@@ -416,7 +417,7 @@
       </section>
 
       <section class="view placeholder-view" id="detectView"><h1>Detect</h1><p>하드웨어 변경과 초과 사용 이상 로그를 확인하는 화면입니다.</p></section>
-      <section class="view placeholder-view" id="notificationView"><h1>Notification</h1><p>관리자 계정, SMTP, 네트워크 상태와 마지막 로그인 시간을 확인하는 화면입니다.</p></section>
+      <section class="view placeholder-view" id="notificationView"><h1>Security Notification Gateway</h1><p>폐쇄망 환경에서 LOCK-FIX 보안 이벤트를 승인된 대상에게 제한적으로 전달합니다.</p></section>
       <section class="view placeholder-view" id="logsView"><h1>Logs</h1><p>탐지 내역과 서버 전체 로그를 확인하는 화면입니다.</p></section>
       <section class="view placeholder-view" id="contactView"><h1>Contact Service</h1><p>우암전자 고객 센터와 원격지원 접속 정보를 확인하는 화면입니다.</p></section>
       <section class="view placeholder-view" id="licenseView"><h1>License</h1><p>라이선스 코드와 만료 상태를 확인합니다.</p></section>
@@ -425,18 +426,70 @@
         <div class="detect-fingerprint-root" id="detectFingerprintRoot"></div>
       </section>
 
+      <section class="view threat-view" id="threatView">
+        <div class="threat-hero">
+          <div>
+            <span>SECURE BACKUP VALIDATION</span>
+            <h1>위협 탐지</h1>
+            <p class="threat-hero-warning">백업본의 악성코드, 랜섬웨어 의심 징후, 비정상 변경 여부를 분석하여 안전한 백업본만 Air-gap 상태로 전환합니다.</p>
+          </div>
+          <button type="button" id="threatManualScanButton">수동 검사</button>
+        </div>
+        <div class="threat-summary-grid" id="threatSummaryCards"></div>
+        <section class="threat-veeam-api-panel" id="threatVeeamApiPanel"></section>
+        <section class="threat-panel">
+          <div class="threat-panel-head">
+            <div>
+              <h2>최근 위협 탐지 결과</h2>
+              <p>Repository, 백업 작업, 위험 점수, LOCK-FIX 조치 상태를 함께 확인합니다.</p>
+            </div>
+            <span id="threatPolicyBadge">Policy Ready</span>
+          </div>
+          <div class="threat-table-wrap">
+            <table class="threat-table">
+              <thead>
+                <tr>
+                  <th>검사 시간</th>
+                  <th>대상 Repository</th>
+                  <th>백업 작업명</th>
+                  <th>검사 결과</th>
+                  <th>위험 점수</th>
+                  <th>탐지 항목</th>
+                  <th>조치 상태</th>
+                  <th>상세 보기</th>
+                </tr>
+              </thead>
+              <tbody id="threatResultTable"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="threat-detail-panel" id="threatDetailPanel" hidden></section>
+      </section>
+
       <section class="view logs-view" id="logs2View">
+        <div class="logs-hero">
+          <div>
+            <h1>Logs</h1>
+            <p>운영 이벤트, 보안 감사, 백업 연동 상태를 조건별로 빠르게 확인합니다.</p>
+          </div>
+          <span id="logsTotal">Total: 0 logs</span>
+        </div>
         <div class="logs-range">
           <label><span data-i18n="logs.startDate">Start Date</span><input id="logsStart" type="date" /></label>
           <label><span data-i18n="logs.endDate">End Date</span><input id="logsEnd" type="date" /></label>
+          <label><span>Type</span><select id="logsTypeFilter"><option value="">All</option></select></label>
+          <label><span>Source</span><select id="logsSourceFilter"><option value="">All</option></select></label>
+          <label><span>Severity</span><select id="logsSeverityFilter"><option value="">All</option><option value="ERROR">ERROR</option><option value="WARN">WARN</option><option value="INFO">INFO</option></select></label>
+          <label class="logs-search-label"><span>Data</span><input id="logsSearch" type="search" placeholder="message, policy, veeam" /></label>
           <button type="button" class="logs-apply-button" id="logsRangeApply" data-i18n="logs.apply">Apply</button>
           <button type="button" class="logs-apply-button" id="logsRangeDownload">CSV</button>
         </div>
+        <div class="logs-summary-grid" id="logsSummaryCards"></div>
 
         <section class="logs-panel">
           <div class="logs-panel-head">
-            <h1>Logs</h1>
-            <span id="logsTotal">Total: 0 logs</span>
+            <h1>Log Timeline</h1>
+            <span>Filtered view</span>
           </div>
           <div class="logs-table-wrap">
             <table class="logs-history-table">
@@ -458,109 +511,141 @@
 
       <section class="view license-status-view" id="license2View">
         <section class="license-status-panel">
-          <h1 data-i18n="license.statusTitle">License Status</h1>
+          <div class="license-status-header">
+            <div>
+              <h1 data-i18n="license.statusTitle">라이선스 상태</h1>
+              <p data-i18n="license.statusSubtitle">고객사 라이선스와 만료 정보를 확인합니다.</p>
+            </div>
+            <div class="license-status-badges" id="licenseStatusBadges"></div>
+          </div>
+          <div class="license-summary-grid" id="licenseSummaryGrid"></div>
           <table class="license-status-table">
             <tbody id="licenseStatusTable"></tbody>
           </table>
+          <div class="license-support-box" id="licenseSupportBox"></div>
         </section>
       </section>
 
       <section class="view network-status-view" id="network2View">
         <section class="network-chart-panel">
-          <div class="network-panel-header">
-            <div>
-              <h1 id="networkStatusTitle">실시간 네트워크 상태</h1>
-              <p data-i18n="network.subtitle">송신/수신 속도와 포트 정책, 손실 분석을 한 화면에서 확인합니다.</p>
-            </div>
-            <span data-i18n="network.badge">실시간 트래픽</span>
-          </div>
-          <div class="network-ops-layout">
-            <div class="network-main-column">
-              <div class="network-live-grid">
-                <article class="network-live-card network-live-tx">
-                  <div class="network-live-head">
-                    <span data-i18n="network.tx">송신</span>
-                    <strong id="networkTxRate">- Mbps</strong>
-                  </div>
-                  <div class="network-flow-track"><i></i><i></i><i></i></div>
-                  <svg class="network-flow-chart" id="networkTxFlow" viewBox="0 0 360 110" role="img" aria-label="tx realtime flow"></svg>
-                  <div class="network-ip-summary" id="networkTxIps"></div>
-                  <p><span data-i18n="network.cumulativeTx">누적 송신</span> <b id="networkTxTotal">- GB</b></p>
-                </article>
-
-                <article class="network-live-card network-live-rx">
-                  <div class="network-live-head">
-                    <span data-i18n="network.rx">수신</span>
-                    <strong id="networkRxRate">- Mbps</strong>
-                  </div>
-                  <div class="network-flow-track"><i></i><i></i><i></i></div>
-                  <svg class="network-flow-chart" id="networkRxFlow" viewBox="0 0 360 110" role="img" aria-label="rx realtime flow"></svg>
-                  <div class="network-ip-summary" id="networkRxIps"></div>
-                  <p><span data-i18n="network.cumulativeRx">누적 수신</span> <b id="networkRxTotal">- GB</b></p>
-                </article>
+              <div class="network-panel-header">
+                <div>
+                  <h1 id="networkStatusTitle">실시간 네트워크</h1>
+                  <p data-i18n="network.subtitle">송신/수신 속도와 포트 정책, 손실 분석을 한 화면에서 확인합니다.</p>
+                </div>
+                <div class="network-header-badge">
+                  <span data-i18n="network.badge">실시간 트래픽</span>
+                  <strong id="networkSelectedNic">-</strong>
+                </div>
               </div>
-              <section class="network-analysis-card network-loss-card network-loss-standalone network-loss-feature">
-                <div class="network-analysis-head network-loss-head">
-                  <span data-i18n="network.lossTitle">네트워크 손실</span>
-                  <div class="network-loss-score">
-                    <strong id="networkLossScore">-</strong>
-                    <em id="networkLossState">-</em>
+            <div class="network-interface-bar">
+              <div>
+                <strong>NIC</strong>
+                <span>실시간 그래프 기준</span>
+              </div>
+              <label class="network-interface-select">
+                <span class="sr-only">NIC</span>
+                <select id="networkInterfaceSelect" aria-label="NIC selection"></select>
+              </label>
+            </div>
+            <div class="network-ops-layout">
+              <div class="network-main-column">
+                <section class="network-mini-chart-strip" id="networkMiniChartStrip" aria-label="NIC traffic charts"></section>
+                <div class="network-live-grid">
+                  <article class="network-live-card network-live-combined">
+                    <div class="network-live-head network-combined-head">
+                      <div>
+                        <span data-i18n="network.combinedTitle">송신 / 수신</span>
+                      </div>
+                    </div>
+                    <div class="network-flow-status-bar" aria-label="Network traffic legend">
+                      <button type="button" class="network-flow-pill network-flow-filter-button network-flow-pill-tx active" data-network-flow-mode="tx" aria-pressed="true"><i></i><b>보내기</b><strong id="networkLegendTxRate">- Mbps</strong></button>
+                      <button type="button" class="network-flow-pill network-flow-filter-button network-flow-pill-rx active" data-network-flow-mode="rx" aria-pressed="true"><i></i><b>받기</b><strong id="networkLegendRxRate">- Mbps</strong></button>
+                      <span class="network-flow-pill network-flow-pill-scale"><b>상한</b><strong id="networkCombinedScale">- Mbps</strong></span>
+                    </div>
+                    <svg class="network-flow-chart network-combined-flow" id="networkCombinedFlow" viewBox="0 0 1280 320" preserveAspectRatio="none" role="img" aria-label="tx rx realtime flow"></svg>
+                    <div class="network-task-stats">
+                      <section class="network-task-rate network-task-send">
+                        <span>보내기</span>
+                        <strong id="networkTxRate">- Mbps</strong>
+                        <small>누적 <b id="networkTxTotal">- GB</b></small>
+                      </section>
+                      <section class="network-task-rate network-task-receive">
+                        <span>받기</span>
+                        <strong id="networkRxRate">- Mbps</strong>
+                        <small>누적 <b id="networkRxTotal">- GB</b></small>
+                      </section>
+                      <dl class="network-adapter-meta">
+                        <div><dt>어댑터 이름</dt><dd id="networkAdapterName">-</dd></div>
+                        <div class="network-connection-type-meta"><dt>연결 형식</dt><dd id="networkConnectionType">-</dd></div>
+                        <div><dt>IPv4 주소</dt><dd id="networkIpv4Address">-</dd></div>
+                        <div class="network-ipv6-meta"><dt>IPv6 주소</dt><dd id="networkIpv6Address">-</dd></div>
+                      </dl>
+                    </div>
+                    <div class="network-combined-ip-grid">
+                      <div class="network-ip-summary" id="networkTxIps"></div>
+                      <div class="network-ip-summary network-ip-summary-rx" id="networkRxIps"></div>
+                    </div>
+                  </article>
+                </div>
+              </div>
+            </div>
+            <section class="network-secondary-grid network-card-board" id="networkCardBoard" aria-label="Network detail analysis">
+              <div class="network-inline-summary-row network-loss-summary-row network-draggable-card" data-network-card="loss" aria-label="Network loss summary">
+                <section class="network-analysis-card network-loss-card network-loss-inline network-loss-feature" id="networkLossCard" data-loss-tone="good">
+                  <div class="network-loss-hero">
+                    <div class="network-loss-title-line">
+                      <span data-i18n="network.lossTitle">네트워크 손실</span>
+                      <small id="networkLossTrend">실시간 추세</small>
+                      <span class="network-card-grip network-card-drag-handle" draggable="true" role="button" tabindex="0" aria-label="카드 위치 이동" title="카드 위치 이동"></span>
+                    </div>
+                    <div class="network-loss-score">
+                      <i class="network-loss-live-dot" aria-hidden="true"></i>
+                      <strong id="networkLossScore">-</strong>
+                      <em id="networkLossState">-</em>
+                    </div>
+                    <svg class="network-loss-sparkline" id="networkLossSparkline" viewBox="0 0 220 44" preserveAspectRatio="none" role="img" aria-label="packet loss trend"></svg>
                   </div>
-                </div>
-                <div class="network-quality-grid">
-                  <div><span data-i18n="network.latency">지연</span><b id="networkLatency">-</b></div>
-                  <div><span data-i18n="network.jitter">지터</span><b id="networkJitter">-</b></div>
-                  <div><span data-i18n="network.allowedPorts">허용 포트</span><b id="networkAllowedPorts">-</b></div>
-                  <div><span data-i18n="network.blockedPorts">차단 포트</span><b id="networkBlockedPorts">-</b></div>
-                </div>
-              </section>
-              <section class="network-ops-summary">
+                  <div class="network-quality-grid network-quality-chip-grid">
+                    <div class="network-quality-chip quality-latency"><span data-i18n="network.latency">지연</span><b id="networkLatency">-</b></div>
+                    <div class="network-quality-chip quality-jitter"><span data-i18n="network.jitter">지터</span><b id="networkJitter">-</b></div>
+                    <div class="network-quality-chip quality-allowed"><span data-i18n="network.allowedPorts">허용 포트</span><b id="networkAllowedPorts">-</b></div>
+                    <div class="network-quality-chip quality-blocked"><span data-i18n="network.blockedPorts">차단 포트</span><b id="networkBlockedPorts">-</b></div>
+                  </div>
+                </section>
+              </div>
+              <section class="network-detail-card network-draggable-card" data-network-card="path">
                 <div class="network-ops-summary-head">
-                  <strong data-i18n="network.opsSummaryTitle">네트워크 운영 요약</strong>
-                  <span data-i18n="network.opsSummaryBadge">Live</span>
+                  <strong data-i18n="network.pathTitle">네트워크 경로 상태</strong>
+                  <button type="button" class="network-section-toggle network-path-toggle" id="networkPathToggle" data-i18n="network.pathBadgeCollapsed">보기</button>
+                  <span class="network-card-grip network-card-drag-handle" draggable="true" role="button" tabindex="0" aria-label="카드 위치 이동" title="카드 위치 이동"></span>
                 </div>
-                <div class="network-ops-summary-grid" id="networkOpsSummary"></div>
+                <div class="network-path-list" id="networkPathStatus"></div>
               </section>
-              <div class="network-detail-grid">
-                <section class="network-detail-card">
-                  <div class="network-ops-summary-head">
-                    <strong data-i18n="network.pathTitle">네트워크 경로 상태</strong>
-                    <span data-i18n="network.pathBadge">경로 검증</span>
-                  </div>
-                  <div class="network-path-list" id="networkPathStatus"></div>
-                </section>
-                <section class="network-detail-card">
-                  <div class="network-ops-summary-head">
-                    <strong data-i18n="network.eventsTitle">최근 네트워크 이벤트</strong>
-                    <span data-i18n="network.eventsBadge">실시간</span>
-                  </div>
-                  <div class="network-event-list" id="networkEventList"></div>
-                </section>
-              </div>
-              <div class="network-analysis-grid">
-                <section class="network-analysis-card">
-                  <div class="network-analysis-head">
-                    <span data-i18n="network.portTitle">포트 차단/허용 분석</span>
-                    <em data-i18n="network.portBadge">Policy View</em>
-                  </div>
-                  <div class="network-port-list" id="networkPortTable"></div>
-                </section>
-                <section class="network-analysis-card">
-                  <div class="network-analysis-head">
-                    <span data-i18n="network.insightTitle">네트워크 분석</span>
-                    <em data-i18n="network.insightBadge">QoE</em>
-                  </div>
-                  <div class="network-insight-list" id="networkInsights"></div>
-                </section>
-              </div>
-            </div>
-          </div>
+              <section class="network-analysis-card network-draggable-card" data-network-card="ports">
+                <div class="network-analysis-head">
+                  <span data-i18n="network.portTitle">포트 허용/차단 분석</span>
+                  <button type="button" class="network-section-toggle network-port-toggle" id="networkPortToggle" data-i18n="network.portBadgeCollapsed">보기</button>
+                  <span class="network-card-grip network-card-drag-handle" draggable="true" role="button" tabindex="0" aria-label="카드 위치 이동" title="카드 위치 이동"></span>
+                </div>
+                <div class="network-port-list" id="networkPortTable"></div>
+              </section>
+              <section class="network-analysis-card network-insight-strip network-draggable-card" data-network-card="insights">
+                <div class="network-analysis-head">
+                  <span data-i18n="network.insightTitle">네트워크 분석</span>
+                  <button type="button" class="network-section-toggle network-insight-toggle" id="networkInsightToggle" data-i18n="network.insightBadgeCollapsed">보기</button>
+                  <em data-i18n="network.insightBadge">QoE</em>
+                  <span class="network-card-grip network-card-drag-handle" draggable="true" role="button" tabindex="0" aria-label="카드 위치 이동" title="카드 위치 이동"></span>
+                </div>
+                <div class="network-insight-list" id="networkInsights"></div>
+              </section>
+            </section>
         </section>
       </section>
 
       <section class="view notification-view" id="notification2View">
         <section class="notification-panel">
-          <h1>Notification</h1>
+          <h1>Security Notification Gateway</h1>
           <div class="notification-kpi-row">
             <article class="security-kpi notification-access-kpi">
               <i class="security-icon security-icon-user security-tone-dark" aria-hidden="true"></i>
@@ -576,7 +661,7 @@
               <thead>
                 <tr>
                   <th>Email</th>
-                  <th>SMTP Status</th>
+                  <th>Gateway Status</th>
                   <th>Network Connection</th>
                   <th>Last Login</th>
                 </tr>
@@ -685,6 +770,55 @@
             <p>승인 요청 등록, 부서 검토 대기, 내 검토함, 내 승인 대기, 협의 댓글, 검토 완료 상태, 보완 요청 상태, 최종 승인 가능 여부를 한 화면에서 확인합니다.</p>
           </div>
         </div>
+        <section class="approval-workflow-hero">
+          <div class="approval-workflow-copy">
+            <span>운영 요청 등록부터 감사 기록까지</span>
+            <h2>위험 작업은 요청, 부서 검토, 승인, 실행, 감사 기록 순서로 남깁니다.</h2>
+            <p>권한 작업을 구두 승인이나 임시 메신저 기록에 의존하지 않고, 누가 어떤 사유로 요청했고 어느 부서가 검토했는지 한 화면에서 추적합니다.</p>
+          </div>
+          <div class="approval-workflow-steps" aria-label="Approval workflow steps">
+            <span>1 요청 등록</span>
+            <span>2 부서 검토</span>
+            <span>3 2인 승인</span>
+            <span>4 실행 허용</span>
+            <span>5 감사 기록</span>
+          </div>
+        </section>
+        <section class="approval-ops-grid" id="approvalWorkflowSummary" aria-label="Approval workflow summary"></section>
+        <section class="approval-execution-proof" id="approvalExecutionProof" aria-label="Execution approval proof"></section>
+        <section class="approval-create-panel">
+          <div>
+            <h2>승인 요청 등록</h2>
+            <p>작업 유형, 대상 슬롯/장비, 사유를 입력하면 필요한 부서 검토와 승인 단계가 자동으로 생성됩니다.</p>
+          </div>
+          <form class="approval-request-form" id="approvalRequestForm">
+            <label>
+              <span>요청 유형</span>
+              <select id="approvalRequestType">
+                <option value="DISK_ONLINE">DISK_ONLINE - 저장소 재접속</option>
+                <option value="DISK_OFFLINE">DISK_OFFLINE - 저장소 격리</option>
+                <option value="POLICY_CHANGE">POLICY_CHANGE - 정책 변경</option>
+                <option value="EMERGENCY_UNLOCK">EMERGENCY_UNLOCK - 긴급 해제</option>
+                <option value="HARDWARE_POWER_ON">HARDWARE_POWER_ON - 하드웨어 전원 켜기</option>
+                <option value="HARDWARE_POWER_OFF">HARDWARE_POWER_OFF - 하드웨어 전원 끄기</option>
+              </select>
+            </label>
+            <label>
+              <span>대상</span>
+              <input id="approvalTargetId" type="text" value="BAY-01" placeholder="BAY-01 또는 Repository ID">
+            </label>
+            <label>
+              <span>저장소 경로</span>
+              <input id="approvalRepositoryPath" type="text" placeholder="예: D:\\ 또는 \\\\?\\Volume{...}\\">
+            </label>
+            <label class="approval-request-reason">
+              <span>요청 사유</span>
+              <textarea id="approvalReason" rows="3" placeholder="예: 백업 검증을 위해 Repository Online 작업이 필요합니다."></textarea>
+            </label>
+            <button type="submit">요청 등록</button>
+          </form>
+          <p class="approval-form-status" id="approvalFormStatus" aria-live="polite"></p>
+        </section>
         <div class="rbac-tabs" id="approvalTabs">
           <!-- approvalWorkflowPipeline: 작업 요청 | 부서 검토 | 승인 | 실행 | 감사 기록 -->
           <button type="button" class="active" data-approval-tab="approvalRequestBox">승인 요청함</button>
@@ -710,7 +844,7 @@
                   <th>Status</th>
                   <th>Approvals</th>
                   <th>Expires</th>
-                  <th>Action</th>
+                  <th>확인</th>
                 </tr>
               </thead>
               <tbody id="approvalRequestsTable"></tbody>
@@ -845,6 +979,54 @@
               <option value="100">최대 100일</option>
             </select>
           </article>
+          <article class="settings-card settings-notification-card">
+            <div>
+              <h2 data-i18n="settings.notificationTitle">Security Notification Gateway</h2>
+              <p data-i18n="settings.notificationDesc">Register approved recipients and use SMTP only as the internal delivery method for LOCK-FIX security events.</p>
+            </div>
+            <div class="settings-notification-form">
+              <div class="settings-field-row">
+                <label for="notificationChannel" data-i18n="settings.notificationChannel">Internal transport</label>
+                <select id="notificationChannel" aria-label="Notification channel">
+                  <option value="SMTP">SMTP</option>
+                </select>
+              </div>
+              <div class="settings-field-row">
+                <label for="notificationTargetEmail" data-i18n="settings.notificationTargetEmail">Target email</label>
+                <input id="notificationTargetEmail" type="email" placeholder="security@example.com" autocomplete="email" />
+              </div>
+              <div class="settings-smtp-grid">
+                <div class="settings-field-row">
+                  <label for="notificationSmtpHost" data-i18n="settings.smtpHost">SMTP host</label>
+                  <input id="notificationSmtpHost" type="text" placeholder="smtp.example.com" />
+                </div>
+                <div class="settings-field-row">
+                  <label for="notificationSmtpPort" data-i18n="settings.smtpPort">Port</label>
+                  <input id="notificationSmtpPort" type="number" min="1" max="65535" value="587" />
+                </div>
+              </div>
+              <div class="settings-smtp-grid">
+                <div class="settings-field-row">
+                  <label for="notificationSmtpFrom" data-i18n="settings.smtpFrom">Sender</label>
+                  <input id="notificationSmtpFrom" type="email" placeholder="lockfix@example.com" />
+                </div>
+                <div class="settings-field-row">
+                  <label for="notificationSmtpUser" data-i18n="settings.smtpUser">User</label>
+                  <input id="notificationSmtpUser" type="text" autocomplete="username" />
+                </div>
+              </div>
+              <div class="settings-smtp-grid">
+                <div class="settings-field-row">
+                  <label for="notificationSmtpPassword" data-i18n="settings.smtpPassword">Password</label>
+                  <input id="notificationSmtpPassword" type="password" autocomplete="new-password" placeholder="기존 비밀번호 유지" />
+                </div>
+                <div class="settings-toggle-row">
+                  <label><input id="notificationUseTls" type="checkbox" checked /> <span data-i18n="settings.smtpTls">STARTTLS</span></label>
+                  <label><input id="notificationUseSsl" type="checkbox" /> <span data-i18n="settings.smtpSsl">SSL</span></label>
+                </div>
+              </div>
+            </div>
+          </article>
           <article class="settings-card settings-navigation-card">
             <div>
               <h2 data-i18n="settings.managementTitle">Operation & Administration</h2>
@@ -855,6 +1037,45 @@
               <button type="button" class="settings-shortcut" data-settings-view="approvals"><span data-i18n="settings.approvalWorkflow">Approval Workflow</span><em id="settingsApprovalStatus" data-i18n="settings.statusChecking">Checking</em></button>
               <button type="button" class="settings-shortcut" data-settings-view="userManagement"><span data-i18n="settings.userRoleManagement">User & Role Management</span><em id="settingsServiceStatus" data-i18n="settings.statusChecking">Checking</em></button>
               <button type="button" class="settings-shortcut" data-settings-view="auditLogs"><span data-i18n="settings.auditLogs">Audit Logs</span><em id="settingsAuditStatus" data-i18n="settings.statusChecking">Checking</em></button>
+            </div>
+          </article>
+          <article class="settings-card settings-threat-policy-card">
+            <div>
+              <h2>위협 탐지 정책</h2>
+              <p>백업 완료 후 Air-gap 전환 전 백업본 보안 검증 조건과 위험 시 조치 정책을 설정합니다.</p>
+            </div>
+            <div class="settings-threat-policy-grid">
+              <label><span>위협 탐지</span><select id="threatPolicyEnabled"><option value="enabled">사용</option><option value="disabled">사용 안 함</option></select></label>
+              <label><span>검사 실행 시점</span><select id="threatPolicyTiming"><option>백업 완료 직후</option><option>Air-gap 전환 직전</option><option>Repository 재연결 전</option><option>수동 검사</option><option>예약 검사</option></select></label>
+              <label><span>검사 엔진</span><select id="threatPolicyEngine"><option>Veeam Malware REST API + Windows Defender + YARA + Hash</option><option>Veeam Malware REST API</option><option>Windows Defender</option><option>YARA Rule</option><option>Agent Log Analysis</option></select></label>
+              <label><span>위험 임계값</span><input id="threatPolicyThreshold" type="number" min="1" max="100" value="71" /></label>
+              <label><span>YARA Rule 경로</span><input id="threatPolicyYaraPath" type="text" value="C:\ProgramData\LOCK-FIX\rules" /></label>
+              <label><span>검사 제외 경로</span><input id="threatPolicyExcludePath" type="text" value="C:\Windows; C:\Program Files" /></label>
+              <label><span>위험 탐지 시 Air-gap 정책</span><select id="threatPolicyAction"><option>Air-gap 강제 유지 + 재연결 차단</option><option>관리자 승인 후 재연결</option><option>알림만 발생</option></select></label>
+              <label><span>리포트 저장 경로</span><input id="threatPolicyReportPath" type="text" value="C:\ProgramData\LOCK-FIX\reports\threat" /></label>
+            </div>
+          </article>
+          <article class="settings-card settings-service-card">
+            <div>
+              <h2 data-i18n="settings.servicePolicyTitle">권한 운영 정책</h2>
+              <p data-i18n="settings.servicePolicyDesc">운영 모드, 서비스 실행 계정, 디스크 제어 권한, Veeam REST 권한을 Agent/Service 기준으로 진단합니다.</p>
+              <strong id="serviceControlStatus">LOCK-FIX Service : Checking</strong>
+            </div>
+            <div class="settings-service-preflight">
+              <div class="settings-service-status-row">
+                <span id="servicePreflightStatus">확인 중</span>
+                <button type="button" id="servicePreflightButton" data-i18n="settings.preflightRefresh">재진단</button>
+              </div>
+              <div class="settings-preflight-grid">
+                <div><em>Mode</em><b id="servicePreflightMode">-</b></div>
+                <div><em>Service Account</em><b id="servicePreflightAccount">-</b></div>
+                <div><em>Restricted</em><b id="servicePreflightRestricted">-</b></div>
+              </div>
+              <ul id="servicePreflightChecks" class="settings-preflight-checks"></ul>
+              <div class="settings-service-actions">
+                <button type="button" id="serviceStartButton" data-i18n="settings.serviceStart">Start</button>
+                <button type="button" id="serviceStopButton" data-i18n="settings.serviceStop">Stop</button>
+              </div>
             </div>
           </article>
           <div class="settings-actions">
@@ -881,6 +1102,44 @@
         <p class="license-error" id="licenseError"></p>
         <button type="submit">라이선스 등록</button>
       </form>
+    </section>
+
+    <section class="account-guide-modal hidden" id="accountGuideModal" role="dialog" aria-modal="true" aria-labelledby="accountGuideTitle">
+      <div class="account-guide-card">
+        <button class="account-guide-close" id="accountGuideClose" type="button" aria-label="Close">×</button>
+        <span class="account-guide-kicker">LOCK-FIX 계정 등록 안내</span>
+        <h1 id="accountGuideTitle">회원 가입은 관리자 승인 후 생성됩니다.</h1>
+        <p>
+          LOCK-FIX는 백업 저장소 격리와 승인 워크플로우를 다루는 보안 제품이므로,
+          일반 사용자가 직접 가입하지 않고 관리자 또는 보안 담당자가 계정을 등록합니다.
+        </p>
+        <div class="account-guide-steps">
+          <div><b>1</b><span>관리자에게 계정 생성 요청</span></div>
+          <div><b>2</b><span>역할과 부서 권한 확인</span></div>
+          <div><b>3</b><span>승인 후 로그인 계정 발급</span></div>
+        </div>
+        <div class="account-guide-note">
+          <strong>요청 정보</strong>
+          <span>이름, 부서, 담당 업무, 필요한 권한, 연락처를 관리자에게 전달해 주세요.</span>
+        </div>
+        <button class="account-guide-primary" id="accountGuideOk" type="button">확인</button>
+      </div>
+    </section>
+
+    <section class="account-guide-modal hidden" id="airgapConfirmModal" role="dialog" aria-modal="true" aria-labelledby="airgapConfirmTitle">
+      <div class="account-guide-card">
+        <button class="account-guide-close" id="airgapConfirmClose" type="button" aria-label="Close">×</button>
+        <span class="account-guide-kicker">승인 최종 완료</span>
+        <h1 id="airgapConfirmTitle">에어갭 화면에서 바로 확인하세요.</h1>
+        <p>
+          최종 승인이 완료되었습니다. 이제 에어갭 화면으로 이동해 저장소 상태와 실행 가능 여부를 즉시 확인할 수 있습니다.
+        </p>
+        <div class="account-guide-note">
+          <strong>다음 단계</strong>
+          <span>에어갭 화면에서 확인 버튼을 눌러 재접속/격리 상태를 바로 점검합니다.</span>
+        </div>
+        <button class="account-guide-primary" id="airgapConfirmOk" type="button">에어갭 화면에서 확인</button>
+      </div>
     </section>
 
     <template id="slotTemplate">
@@ -943,7 +1202,7 @@
       </div>
     </template>
 
-    <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=20260517-register-account-guide"></script>
   </body>
 </html>
 

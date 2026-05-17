@@ -5,6 +5,13 @@ const loginForm = document.querySelector("#loginForm");
 const loginEmail = document.querySelector("#loginEmail");
 const loginPassword = document.querySelector("#loginPassword");
 const loginError = document.querySelector("#loginError");
+const registerAccountButton = document.querySelector("#registerAccountButton");
+const accountGuideModal = document.querySelector("#accountGuideModal");
+const accountGuideClose = document.querySelector("#accountGuideClose");
+const accountGuideOk = document.querySelector("#accountGuideOk");
+const airgapConfirmModal = document.querySelector("#airgapConfirmModal");
+const airgapConfirmClose = document.querySelector("#airgapConfirmClose");
+const airgapConfirmOk = document.querySelector("#airgapConfirmOk");
 const passwordLogin = document.querySelector("#passwordLogin");
 const qrLoginView = document.querySelector("#qrLoginView");
 const qrLoginButton = document.querySelector("#qrLoginButton");
@@ -92,6 +99,12 @@ const detectDetectTable = document.querySelector("#detectDetectTable");
 const detectWarningTable = document.querySelector("#detectWarningTable");
 const detectLogsTable = document.querySelector("#detectLogsTable");
 const detectFingerprintRoot = document.querySelector("#detectFingerprintRoot");
+const threatSummaryCards = document.querySelector("#threatSummaryCards");
+const threatVeeamApiPanel = document.querySelector("#threatVeeamApiPanel");
+const threatResultTable = document.querySelector("#threatResultTable");
+const threatDetailPanel = document.querySelector("#threatDetailPanel");
+const threatPolicyBadge = document.querySelector("#threatPolicyBadge");
+const threatManualScanButton = document.querySelector("#threatManualScanButton");
 const logsStart = document.querySelector("#logsStart");
 const logsEnd = document.querySelector("#logsEnd");
 const logsRangeApply = document.querySelector("#logsRangeApply");
@@ -100,6 +113,7 @@ const logsTotal = document.querySelector("#logsTotal");
 const logsHistoryTable = document.querySelector("#logsHistoryTable");
 const logsPagination = document.querySelector("#logsPagination");
 const logsSummaryCards = document.querySelector("#logsSummaryCards");
+const logsTypeFilter = document.querySelector("#logsTypeFilter");
 const logsSeverityFilter = document.querySelector("#logsSeverityFilter");
 const logsSourceFilter = document.querySelector("#logsSourceFilter");
 const logsSearch = document.querySelector("#logsSearch");
@@ -118,21 +132,40 @@ const licenseSupportCode = document.querySelector("#licenseSupportCode");
 const licenseKeyInput = document.querySelector("#licenseKeyInput");
 const licenseError = document.querySelector("#licenseError");
 const networkStatusTitle = document.querySelector("#networkStatusTitle");
+const networkSelectedNic = document.querySelector("#networkSelectedNic");
 const networkTxRate = document.querySelector("#networkTxRate");
 const networkRxRate = document.querySelector("#networkRxRate");
 const networkTxTotal = document.querySelector("#networkTxTotal");
 const networkRxTotal = document.querySelector("#networkRxTotal");
 const networkTxFlow = document.querySelector("#networkTxFlow");
 const networkRxFlow = document.querySelector("#networkRxFlow");
+const networkCombinedFlow = document.querySelector("#networkCombinedFlow");
+const networkCombinedScale = document.querySelector("#networkCombinedScale");
+const networkLegendTxRate = document.querySelector("#networkLegendTxRate");
+const networkLegendRxRate = document.querySelector("#networkLegendRxRate");
+const networkFlowModeButtons = document.querySelectorAll("[data-network-flow-mode]");
+const networkAdapterName = document.querySelector("#networkAdapterName");
+const networkConnectionType = document.querySelector("#networkConnectionType");
+const networkIpv4Address = document.querySelector("#networkIpv4Address");
+const networkIpv6Address = document.querySelector("#networkIpv6Address");
 const networkTxIps = document.querySelector("#networkTxIps");
 const networkRxIps = document.querySelector("#networkRxIps");
+const networkLossCard = document.querySelector("#networkLossCard");
 const networkLossScore = document.querySelector("#networkLossScore");
 const networkLossState = document.querySelector("#networkLossState");
+const networkLossTrend = document.querySelector("#networkLossTrend");
+const networkLossSparkline = document.querySelector("#networkLossSparkline");
 const networkLatency = document.querySelector("#networkLatency");
 const networkJitter = document.querySelector("#networkJitter");
 const networkAllowedPorts = document.querySelector("#networkAllowedPorts");
 const networkBlockedPorts = document.querySelector("#networkBlockedPorts");
+const networkInterfaceSelect = document.querySelector("#networkInterfaceSelect");
+const networkMiniChartStrip = document.querySelector("#networkMiniChartStrip");
+const networkCardBoard = document.querySelector("#networkCardBoard");
 const networkPortTable = document.querySelector("#networkPortTable");
+const networkPortToggle = document.querySelector("#networkPortToggle");
+const networkPathToggle = document.querySelector("#networkPathToggle");
+const networkInsightToggle = document.querySelector("#networkInsightToggle");
 const networkInsights = document.querySelector("#networkInsights");
 const networkOpsSummary = document.querySelector("#networkOpsSummary");
 const networkPathStatus = document.querySelector("#networkPathStatus");
@@ -158,6 +191,15 @@ const systemTemplate = document.querySelector("#systemTemplate");
 const languageSelect = document.querySelector("#languageSelect");
 const themeSelect = document.querySelector("#themeSelect");
 const logRetentionSelect = document.querySelector("#logRetentionSelect");
+const notificationChannel = document.querySelector("#notificationChannel");
+const notificationTargetEmail = document.querySelector("#notificationTargetEmail");
+const notificationSmtpHost = document.querySelector("#notificationSmtpHost");
+const notificationSmtpPort = document.querySelector("#notificationSmtpPort");
+const notificationSmtpFrom = document.querySelector("#notificationSmtpFrom");
+const notificationSmtpUser = document.querySelector("#notificationSmtpUser");
+const notificationSmtpPassword = document.querySelector("#notificationSmtpPassword");
+const notificationUseTls = document.querySelector("#notificationUseTls");
+const notificationUseSsl = document.querySelector("#notificationUseSsl");
 const settingsApplyButton = document.querySelector("#settingsApplyButton");
 const settingsApplyStatus = document.querySelector("#settingsApplyStatus");
 const settingsShortcutItems = document.querySelectorAll("[data-settings-view]");
@@ -170,12 +212,26 @@ const consoleStatusDetail = document.querySelector("#consoleStatusDetail");
 const serviceControlStatus = document.querySelector("#serviceControlStatus");
 const serviceStartButton = document.querySelector("#serviceStartButton");
 const serviceStopButton = document.querySelector("#serviceStopButton");
+const servicePreflightStatus = document.querySelector("#servicePreflightStatus");
+const servicePreflightMode = document.querySelector("#servicePreflightMode");
+const servicePreflightAccount = document.querySelector("#servicePreflightAccount");
+const servicePreflightRestricted = document.querySelector("#servicePreflightRestricted");
+const servicePreflightChecks = document.querySelector("#servicePreflightChecks");
+const servicePreflightButton = document.querySelector("#servicePreflightButton");
 const veeamIntegrationStatus = document.querySelector("#veeamIntegrationStatus");
 const veeamIntegrationSummary = document.querySelector("#veeamIntegrationSummary");
 const approvalTabs = document.querySelector("#approvalTabs");
 const approvalTabTitle = document.querySelector("#approvalTabTitle");
 const approvalCount = document.querySelector("#approvalCount");
 const approvalRequestsTable = document.querySelector("#approvalRequestsTable");
+const approvalWorkflowSummary = document.querySelector("#approvalWorkflowSummary");
+const approvalExecutionProof = document.querySelector("#approvalExecutionProof");
+const approvalRequestForm = document.querySelector("#approvalRequestForm");
+const approvalRequestType = document.querySelector("#approvalRequestType");
+const approvalTargetId = document.querySelector("#approvalTargetId");
+const approvalRepositoryPath = document.querySelector("#approvalRepositoryPath");
+const approvalReason = document.querySelector("#approvalReason");
+const approvalFormStatus = document.querySelector("#approvalFormStatus");
 const userManagementDepartmentCount = document.querySelector("#userManagementDepartmentCount");
 const userManagementDepartments = document.querySelector("#userManagementDepartments");
 const userManagementCount = document.querySelector("#userManagementCount");
@@ -193,6 +249,10 @@ let qrClockTimer = null;
 let monitoringZoom = 1;
 let latestMonitoringSeries = [];
 let latestMonitoringData = null;
+let selectedNetworkInterface = "";
+let latestNetworkStatusData = null;
+let activeNetworkFlowMode = "both";
+let networkLossSamples = [];
 let latestReportData = null;
 let latestSourcesData = null;
 let latestDashboardData = null;
@@ -223,9 +283,17 @@ let emergencyReconnectDetailLogs = [];
 let emergencyReconnectInitialState = "";
 let emergencyReconnectJobId = "";
 let reconnectHistoryExpanded = false;
+let airgapStepEvidenceCache = {};
+let networkPortsCollapsed = true;
+let networkPathCollapsed = true;
+let networkInsightsCollapsed = true;
 // Compatibility labels retained for older package checks: Reconnect History, 긴급 볼륨 접속, 인증 해시값 전체를 입력하세요, RECONNECT_REQUESTED, ONLINE_VERIFIED_RW.
 const REALTIME_POLL_INTERVAL_MS = 1000;
 const GLOBAL_REFRESH_INTERVAL_MS = 60000;
+const NETWORK_CARD_ORDER_KEY = "lockfix.networkCardOrder";
+const NETWORK_CARD_ORDER_VERSION_KEY = "lockfix.networkCardOrderVersion";
+const NETWORK_CARD_ORDER_VERSION = "loss-insights-path-ports-v2";
+const NETWORK_CARD_DEFAULT_ORDER = ["loss", "insights", "path", "ports"];
 const REALTIME_VIEW_IDS = new Set(["sourcesView", "dashboardView", "monitoringView"]);
 let activeMonitoringMetric = "cpu";
 let monitoringRange = {
@@ -237,6 +305,7 @@ let logsRange = {
   end: "",
   page: 1,
   retention: Number(localStorage.getItem("lockfix.logRetentionDays") || "30"),
+  type: "",
   severity: "",
   source: "",
   q: "",
@@ -252,13 +321,16 @@ let sidebarCollapsed = false;
 let currentSession = { authenticated: false, user: "", role: "", permissions: [] };
 let latestApprovalsData = { policies: [], requests: [], decisions: [], departmentReviews: [], reviewComments: [], notifications: [] };
 let activeApprovalTab = "approvalRequestBox";
+let approvalActionInProgress = false;
+let pendingAirgapConfirmationRequestId = "";
 localStorage.setItem("lockfix.sidebarCollapsed", "false");
 
 const menuDefinitions = [
   { view: "dashboard", label: "Dashboard", permissions: ["DASHBOARD_VIEW"], section: "customer" },
   { view: "monitoring", label: "Monitoring", permissions: ["DASHBOARD_VIEW"], section: "customer" },
-  { view: "detect2", label: "Hardware Detect", permissions: ["DASHBOARD_VIEW"], section: "customer" },
-  { view: "network2", label: "Network Status", permissions: ["DASHBOARD_VIEW"], section: "customer" },
+  { view: "detect2", label: "Hardware Detect", anyPermissions: ["DASHBOARD_VIEW", "AIRGAP_POLICY_VIEW"], section: "customer" },
+  { view: "threat", label: "위협 탐지", permissions: ["AIRGAP_POLICY_VIEW"], section: "customer" },
+  { view: "network2", label: "Network", permissions: ["DASHBOARD_VIEW"], section: "customer" },
   { view: "sources", label: "Air-Gap Status", permissions: ["AIRGAP_POLICY_VIEW"], section: "customer" },
   { view: "report", label: "Reports", permissions: ["REPORT_EXPORT"], section: "customer" },
   { view: "license2", label: "License", permissions: ["DASHBOARD_VIEW"], section: "customer" },
@@ -302,18 +374,19 @@ const translations = {
     "nav.report": "Report",
     "nav.dashboard": "Dashboard",
     "nav.detect": "Detect",
-    "nav.notification": "Notification",
+    "nav.threat": "Threat Detection",
+    "nav.notification": "Security Notification",
     "nav.securityAudit": "Security Audit",
     "nav.logs": "Logs",
     "nav.contact": "Contact Service",
     "nav.license": "License",
-    "nav.network": "Network Status",
+    "nav.network": "Network",
     "nav.download": "Logs - Download",
     "nav.airgap": "Air-Gap",
     "nav.veeam": "Veeam Backup",
     "nav.settings": "Settings",
     "nav.logout": "Logout",
-    "nav.customerWorkspace": "Customer View",
+    "nav.customerWorkspace": "",
     "nav.operatorWorkspace": "Operation",
     "nav.adminWorkspace": "Admin / Developer",
     "network.subtitle": "View transmit/receive rates, port policy, and loss analysis in one screen.",
@@ -322,13 +395,15 @@ const translations = {
     "network.opsSummaryBadge": "Live",
     "network.title": "Real-time Network Status",
     "network.pathTitle": "Network Path Status",
-    "network.pathBadge": "Path Check",
+    "network.pathBadge": "Collapse",
+    "network.pathBadgeCollapsed": "View",
     "network.eventsTitle": "Recent Network Events",
     "network.eventsBadge": "Live",
     "network.chartTitle": "Cumulative Traffic by IP",
     "network.chartDesc": "Compare the top traffic flow by transmit and receive volume.",
     "network.tx": "Transmit",
     "network.rx": "Receive",
+    "network.combinedTitle": "Transmit / Receive",
     "network.cumulativeTx": "Cumulative transmit",
     "network.cumulativeRx": "Cumulative receive",
     "network.lossTitle": "Network Loss",
@@ -336,10 +411,13 @@ const translations = {
     "network.jitter": "Jitter",
     "network.allowedPorts": "Allowed Ports",
     "network.blockedPorts": "Blocked Ports",
-    "network.portTitle": "Port Block/Allow Analysis",
-    "network.portBadge": "Policy View",
+    "network.portTitle": "Port Allow/Block Analysis",
+    "network.portBadge": "Collapse",
+    "network.portBadgeCollapsed": "View",
     "network.insightTitle": "Network Analysis",
     "network.insightBadge": "QoE",
+    "network.insightBadgeCollapsed": "View",
+    "network.insightBadgeExpanded": "Collapse",
     "settings.title": "Settings",
     "settings.subtitle": "Configure display language and screen theme.",
     "settings.languageTitle": "Language",
@@ -348,6 +426,17 @@ const translations = {
     "settings.themeDesc": "Switch between white and black backgrounds.",
     "settings.logRetentionTitle": "Log Retention",
     "settings.logRetentionDesc": "Choose how many days logs are retained.",
+    "settings.notificationTitle": "Security Notification Gateway",
+    "settings.notificationDesc": "Register approved recipients and use SMTP only as the internal delivery method for LOCK-FIX security events.",
+    "settings.notificationChannel": "Internal transport",
+    "settings.notificationTargetEmail": "Target email",
+    "settings.smtpHost": "SMTP host",
+    "settings.smtpPort": "Port",
+    "settings.smtpFrom": "Sender",
+    "settings.smtpUser": "User",
+    "settings.smtpPassword": "Password",
+    "settings.smtpTls": "STARTTLS",
+    "settings.smtpSsl": "SSL",
     "settings.managementTitle": "Operation & Administration",
     "settings.managementDesc": "Open operational, approval, user, and audit management screens from Settings.",
     "settings.hardwareControl": "Hardware Control",
@@ -364,6 +453,9 @@ const translations = {
     "settings.serviceStopped": "Service stopped",
     "settings.serviceTitle": "LOCK-FIX Service",
     "settings.serviceDesc": "Start or stop the installed LOCK-FIX Windows service.",
+    "settings.servicePolicyTitle": "Operation Permission Policy",
+    "settings.servicePolicyDesc": "Check operation mode, service account, disk-control permissions, and Veeam REST permissions through the Agent/Service.",
+    "settings.preflightRefresh": "Recheck",
     "settings.serviceStart": "Start",
     "settings.serviceStop": "Stop",
     "settings.themeLight": "White",
@@ -371,6 +463,9 @@ const translations = {
     "settings.apply": "Apply",
     "settings.pending": "Select options, then click Apply.",
     "settings.applied": "Settings have been applied.",
+    "settings.notificationSaved": "Security Notification Gateway settings have been saved.",
+    "license.statusTitle": "License Status",
+    "license.statusSubtitle": "Check customer license validity and expiration details.",
     "veeam.title": "Post-Backup Isolation Procedure",
     "veeam.subtitle": "Check backup progress, success or failure, and API logs every second.",
     "veeam.job": "Backup Job",
@@ -387,7 +482,7 @@ const translations = {
     "logs.startDate": "Start Date",
     "logs.endDate": "End Date",
     "logs.apply": "Apply",
-    "dashboard.notification": "Notification",
+    "dashboard.notification": "Security Notification Gateway",
     "dashboard.logs": "Logs",
     "dashboard.type": "Type",
     "dashboard.date": "Date",
@@ -461,18 +556,19 @@ const translations = {
     "nav.report": "보고서",
     "nav.dashboard": "대시보드",
     "nav.detect": "탐지 내역",
-    "nav.notification": "알림",
+    "nav.threat": "위협 탐지",
+    "nav.notification": "보안 알림",
     "nav.securityAudit": "보안 감사",
     "nav.logs": "로그",
     "nav.contact": "고객 센터",
     "nav.license": "라이선스",
-    "nav.network": "네트워크 상태",
+    "nav.network": "네트워크",
     "nav.download": "로그 다운로드",
     "nav.airgap": "에어갭",
     "nav.veeam": "Veeam 백업",
     "nav.settings": "설정",
     "nav.logout": "로그아웃",
-    "nav.customerWorkspace": "고객 확인",
+    "nav.customerWorkspace": "",
     "nav.operatorWorkspace": "운영 작업",
     "nav.adminWorkspace": "관리 / 개발",
     "network.subtitle": "송신/수신 속도와 포트 정책, 손실 분석을 한 화면에서 확인합니다.",
@@ -481,13 +577,15 @@ const translations = {
     "network.opsSummaryBadge": "Live",
     "network.title": "실시간 네트워크 상태",
     "network.pathTitle": "네트워크 경로 상태",
-    "network.pathBadge": "경로 검증",
+    "network.pathBadge": "접기",
+    "network.pathBadgeCollapsed": "보기",
     "network.eventsTitle": "최근 네트워크 이벤트",
     "network.eventsBadge": "실시간",
     "network.chartTitle": "IP별 누적 트래픽",
     "network.chartDesc": "상위 트래픽 흐름을 송신/수신 기준으로 비교합니다.",
     "network.tx": "송신",
     "network.rx": "수신",
+    "network.combinedTitle": "송신 / 수신",
     "network.cumulativeTx": "누적 송신",
     "network.cumulativeRx": "누적 수신",
     "network.lossTitle": "네트워크 손실",
@@ -495,10 +593,13 @@ const translations = {
     "network.jitter": "지터",
     "network.allowedPorts": "허용 포트",
     "network.blockedPorts": "차단 포트",
-    "network.portTitle": "포트 차단/허용 분석",
-    "network.portBadge": "정책 보기",
+    "network.portTitle": "포트 허용/차단 분석",
+    "network.portBadge": "접기",
+    "network.portBadgeCollapsed": "보기",
     "network.insightTitle": "네트워크 분석",
     "network.insightBadge": "QoE",
+    "network.insightBadgeCollapsed": "보기",
+    "network.insightBadgeExpanded": "접기",
     "settings.title": "설정",
     "settings.subtitle": "표시 언어와 화면 테마를 설정합니다.",
     "settings.languageTitle": "언어",
@@ -507,6 +608,17 @@ const translations = {
     "settings.themeDesc": "흰색 배경 또는 검은색 배경으로 전환합니다.",
     "settings.logRetentionTitle": "로그 보관 기간",
     "settings.logRetentionDesc": "로그를 보관할 기간을 선택합니다.",
+    "settings.notificationTitle": "Security Notification Gateway",
+    "settings.notificationDesc": "LOCK-FIX 보안 이벤트의 승인된 수신자와 내부 전송 방식 SMTP를 등록합니다.",
+    "settings.notificationChannel": "내부 전송 방식",
+    "settings.notificationTargetEmail": "알림 대상 메일",
+    "settings.smtpHost": "SMTP 호스트",
+    "settings.smtpPort": "포트",
+    "settings.smtpFrom": "발신 메일",
+    "settings.smtpUser": "계정",
+    "settings.smtpPassword": "비밀번호",
+    "settings.smtpTls": "STARTTLS",
+    "settings.smtpSsl": "SSL",
     "settings.managementTitle": "운영/관리",
     "settings.managementDesc": "운영, 승인, 사용자, 감사 관리 화면은 설정에서만 이동합니다.",
     "settings.hardwareControl": "하드웨어 제어",
@@ -523,6 +635,9 @@ const translations = {
     "settings.serviceStopped": "서비스 중지",
     "settings.serviceTitle": "LOCK-FIX 서비스",
     "settings.serviceDesc": "설치된 LOCK-FIX Windows 서비스를 시작하거나 중지합니다.",
+    "settings.servicePolicyTitle": "권한 운영 정책",
+    "settings.servicePolicyDesc": "운영 모드, 서비스 실행 계정, 디스크 제어 권한, Veeam REST 권한을 Agent/Service 기준으로 진단합니다.",
+    "settings.preflightRefresh": "재진단",
     "settings.serviceStart": "시작",
     "settings.serviceStop": "중지",
     "settings.themeLight": "흰색",
@@ -530,6 +645,9 @@ const translations = {
     "settings.apply": "적용",
     "settings.pending": "항목을 선택한 뒤 적용 버튼을 누르세요.",
     "settings.applied": "설정이 적용되었습니다.",
+    "settings.notificationSaved": "Security Notification Gateway 설정이 저장되었습니다.",
+    "license.statusTitle": "라이선스 상태",
+    "license.statusSubtitle": "고객사 라이선스와 만료 정보를 확인합니다.",
     "veeam.title": "백업 완료 후 격리 절차",
     "veeam.subtitle": "백업 진행률, 성공/실패 여부, API 상세 로그를 1초 단위로 확인합니다.",
     "veeam.job": "백업 작업",
@@ -546,7 +664,7 @@ const translations = {
     "logs.startDate": "시작일",
     "logs.endDate": "종료일",
     "logs.apply": "적용",
-    "dashboard.notification": "알림",
+    "dashboard.notification": "Security Notification Gateway",
     "dashboard.logs": "로그",
     "dashboard.type": "유형",
     "dashboard.date": "날짜",
@@ -1123,6 +1241,49 @@ function applyUiSettings() {
   applySidebarTooltips();
 }
 
+function renderNotificationSettings(settings = {}) {
+  if (notificationChannel) notificationChannel.value = "SMTP";
+  if (notificationTargetEmail) notificationTargetEmail.value = settings.target_email || "";
+  if (notificationSmtpHost) notificationSmtpHost.value = settings.smtp_host || "";
+  if (notificationSmtpPort) notificationSmtpPort.value = settings.smtp_port || 587;
+  if (notificationSmtpFrom) notificationSmtpFrom.value = settings.smtp_from || "";
+  if (notificationSmtpUser) notificationSmtpUser.value = settings.smtp_user || "";
+  if (notificationSmtpPassword) {
+    notificationSmtpPassword.value = "";
+    notificationSmtpPassword.placeholder = settings.password_configured
+      ? (uiSettings.language === "ko" ? "저장된 비밀번호 유지" : "Keep saved password")
+      : (uiSettings.language === "ko" ? "SMTP 비밀번호" : "SMTP password");
+  }
+  if (notificationUseTls) notificationUseTls.checked = settings.use_tls !== false;
+  if (notificationUseSsl) notificationUseSsl.checked = Boolean(settings.use_ssl);
+}
+
+async function loadNotificationSettings() {
+  if (!notificationTargetEmail) return;
+  const data = await requestJson("/api/notification-settings");
+  renderNotificationSettings(data);
+}
+
+async function saveNotificationSettings() {
+  if (!notificationTargetEmail) return null;
+  return requestJson("/api/notification-settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      enabled: true,
+      channel: "SMTP",
+      target_email: notificationTargetEmail.value.trim(),
+      smtp_host: notificationSmtpHost?.value.trim() || "",
+      smtp_port: Number(notificationSmtpPort?.value || 587),
+      smtp_from: notificationSmtpFrom?.value.trim() || "",
+      smtp_user: notificationSmtpUser?.value.trim() || "",
+      smtp_password: notificationSmtpPassword?.value || "",
+      use_tls: Boolean(notificationUseTls?.checked),
+      use_ssl: Boolean(notificationUseSsl?.checked),
+    }),
+  });
+}
+
 function applySidebarTooltips() {
   document.querySelectorAll(".side-item[data-view]").forEach((item) => {
     const label = item.querySelector("span:not(.nav-icon)")?.textContent?.trim() || "";
@@ -1171,6 +1332,10 @@ function firstAllowedView(session = currentSession) {
   return visibleMenuDefinitions(session)[0]?.view || "accessDenied";
 }
 
+function defaultLandingView(session = currentSession) {
+  return canAccessView("monitoring", session) ? "monitoring" : firstAllowedView(session);
+}
+
 function applyMenuVisibility() {
   const allowedViews = new Set(visibleMenuDefinitions().map((item) => item.view));
   const visibleSections = new Set();
@@ -1198,19 +1363,35 @@ function applyMenuVisibility() {
 
 function showAccessDenied(view) {
   sideItems.forEach((item) => item.classList.remove("active"));
-  views.forEach((item) => item.classList.remove("view-active"));
+  hideAllViews();
+  if (appRoot) appRoot.dataset.activeView = "accessDenied";
   const denied = document.querySelector("#accessDeniedView");
   if (accessDeniedMessage) {
     accessDeniedMessage.textContent = `Access denied for ${menuDefinitionFor(view)?.label || view}. Required permission is missing.`;
   }
-  denied?.classList.add("view-active");
+  activateViewElement(denied);
   contentArea?.scrollTo({ top: 0, left: 0 });
+}
+
+function hideAllViews() {
+  views.forEach((view) => {
+    view.classList.remove("view-active");
+    view.hidden = true;
+    view.setAttribute("aria-hidden", "true");
+  });
+}
+
+function activateViewElement(view) {
+  if (!view) return;
+  view.hidden = false;
+  view.removeAttribute("aria-hidden");
+  view.classList.add("view-active");
 }
 
 function initialRouteView() {
   const candidate = decodeURIComponent(String(window.location.hash || "").replace(/^#/, "")).trim();
   if (candidate && menuDefinitionFor(candidate)) return candidate;
-  return firstAllowedView();
+  return defaultLandingView();
 }
 
 function applySidebarState() {
@@ -1226,40 +1407,155 @@ function toggleSidebar() {
   applySidebarState();
 }
 
-function applyPendingUiSettings() {
+function getNetworkCardOrder() {
+  try {
+    const savedVersion = localStorage.getItem(NETWORK_CARD_ORDER_VERSION_KEY);
+    if (savedVersion !== NETWORK_CARD_ORDER_VERSION) {
+      return [...NETWORK_CARD_DEFAULT_ORDER];
+    }
+    const saved = JSON.parse(localStorage.getItem(NETWORK_CARD_ORDER_KEY) || "[]");
+    const valid = Array.isArray(saved)
+      ? saved.filter((id) => NETWORK_CARD_DEFAULT_ORDER.includes(id))
+      : [];
+    return [...valid, ...NETWORK_CARD_DEFAULT_ORDER.filter((id) => !valid.includes(id))];
+  } catch {
+    return [...NETWORK_CARD_DEFAULT_ORDER];
+  }
+}
+
+function saveNetworkCardOrder() {
+  if (!networkCardBoard) return;
+  const order = [...networkCardBoard.querySelectorAll("[data-network-card]")]
+    .map((card) => card.dataset.networkCard)
+    .filter(Boolean);
+  localStorage.setItem(NETWORK_CARD_ORDER_KEY, JSON.stringify(order));
+  localStorage.setItem(NETWORK_CARD_ORDER_VERSION_KEY, NETWORK_CARD_ORDER_VERSION);
+}
+
+function applyNetworkCardOrder() {
+  if (!networkCardBoard) return;
+  const cardsById = new Map(
+    [...networkCardBoard.querySelectorAll("[data-network-card]")]
+      .map((card) => [card.dataset.networkCard, card])
+  );
+  getNetworkCardOrder().forEach((id) => {
+    const card = cardsById.get(id);
+    if (card) networkCardBoard.appendChild(card);
+  });
+  if (localStorage.getItem(NETWORK_CARD_ORDER_VERSION_KEY) !== NETWORK_CARD_ORDER_VERSION) {
+    saveNetworkCardOrder();
+  }
+}
+
+function getNetworkCardAfterElement(board, x, y) {
+  const cards = [...board.querySelectorAll("[data-network-card]:not(.network-card-dragging)")];
+  return cards.find((card) => {
+    const box = card.getBoundingClientRect();
+    const centerY = box.top + box.height / 2;
+    return y < centerY;
+  }) || null;
+}
+
+function setupNetworkCardDragDrop() {
+  if (!networkCardBoard) return;
+  applyNetworkCardOrder();
+  const cards = [...networkCardBoard.querySelectorAll("[data-network-card]")];
+  cards.forEach((card) => {
+    card.draggable = false;
+    const handle = card.querySelector(".network-card-drag-handle");
+    if (!handle) return;
+    handle.draggable = true;
+    handle.addEventListener("dragstart", (event) => {
+      card.classList.add("network-card-dragging");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", card.dataset.networkCard || "");
+    });
+    handle.addEventListener("dragend", () => {
+      card.classList.remove("network-card-dragging");
+      networkCardBoard.classList.remove("network-card-board-active");
+      saveNetworkCardOrder();
+    });
+  });
+  networkCardBoard.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    networkCardBoard.classList.add("network-card-board-active");
+    const draggingCard = networkCardBoard.querySelector(".network-card-dragging");
+    if (!draggingCard) return;
+    const afterCard = getNetworkCardAfterElement(networkCardBoard, event.clientX, event.clientY);
+    networkCardBoard.insertBefore(draggingCard, afterCard);
+  });
+  networkCardBoard.addEventListener("drop", (event) => {
+    event.preventDefault();
+    networkCardBoard.classList.remove("network-card-board-active");
+    saveNetworkCardOrder();
+  });
+}
+
+async function applyPendingUiSettings() {
   uiSettings = { ...pendingUiSettings };
   localStorage.setItem("lockfix.language", uiSettings.language);
   localStorage.setItem("lockfix.theme", uiSettings.theme);
   logsRange.retention = Number(logRetentionSelect?.value || logsRange.retention || 30);
   logsRange.page = 1;
   localStorage.setItem("lockfix.logRetentionDays", String(logsRange.retention));
-  applyUiSettings();
-  settingsApplyStatus.textContent = t("settings.applied");
-  if (latestMonitoringData) {
-    renderMonitoring(latestMonitoringData);
+  try {
+    await saveNotificationSettings();
+    applyUiSettings();
+    settingsApplyStatus.textContent = t("settings.notificationSaved");
+    if (latestMonitoringData) {
+      renderMonitoring(latestMonitoringData);
+    }
+    if (latestReportData) {
+      renderReport(latestReportData);
+    }
+    if (latestSourcesData) {
+      renderSources(latestSourcesData);
+    }
+    if (latestDashboardData) {
+      renderDashboard(latestDashboardData);
+    }
+    reloadLogs().catch((error) => console.warn("Unable to reload logs after retention change", error));
+    reloadNotification().catch((error) => console.warn("Unable to reload notification view after settings change", error));
+  } catch (error) {
+    settingsApplyStatus.textContent = error.message || "Notification settings save failed.";
   }
-  if (latestReportData) {
-    renderReport(latestReportData);
-  }
-  if (latestSourcesData) {
-    renderSources(latestSourcesData);
-  }
-  if (latestDashboardData) {
-    renderDashboard(latestDashboardData);
-  }
-  reloadLogs().catch((error) => console.warn("Unable to reload logs after retention change", error));
 }
 
 async function requestJson(url, options = {}) {
-  const response = await fetch(url, { credentials: "same-origin", ...options });
+  const timeoutMs = Number(options.timeoutMs || 15000);
+  const fetchOptions = { ...options };
+  delete fetchOptions.timeoutMs;
+  const controller = new AbortController();
+  const timeoutId = Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? window.setTimeout(() => controller.abort(), timeoutMs)
+    : 0;
+  let response;
+  try {
+    response = await fetch(url, { credentials: "same-origin", ...fetchOptions, signal: fetchOptions.signal || controller.signal });
+  } catch (error) {
+    const aborted = error?.name === "AbortError";
+    const message = aborted
+      ? "WebUI 서버 응답이 지연되어 중단했습니다. 현재 접속 주소가 http://127.0.0.1:8088 인지 확인하고, WebUI/Python 서버를 새로고침 또는 재시작하세요."
+      : window.location.protocol === "file:"
+      ? "현재 화면이 파일로 직접 열려 있어 WebUI 서버 API에 연결할 수 없습니다. http://127.0.0.1:8088 또는 실행 중인 WebUI 주소로 접속하세요."
+      : "WebUI 서버에 연결하지 못했습니다. LOCK-FIX WebUI/Python 서버가 실행 중인지 확인하세요.";
+    const networkError = new Error(message);
+    networkError.cause = error;
+    networkError.code = aborted ? "REQUEST_TIMEOUT" : "NETWORK_UNREACHABLE";
+    throw networkError;
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId);
+  }
   const payload = await response.json();
   if (!response.ok) {
-    const message = payload.error || (response.status === 401 ? "login session expired" : "request failed");
+    const message = payload.error || (response.status === 401 ? "로그인 세션이 만료되었습니다. 다시 로그인 후 승인 요청을 등록하세요." : "request failed");
     if (response.status === 401 && url !== "/api/session") {
       setAuthenticated(false);
     }
     const error = new Error(message);
     error.status = response.status;
+    if (response.status === 401) error.code = "UNAUTHENTICATED";
+    error.payload = payload;
     throw error;
   }
   return payload;
@@ -1271,6 +1567,7 @@ function activeViewId() {
 
 function shouldRunGlobalRefresh() {
   if (!currentSession.authenticated || appRoot.classList.contains("app-locked")) return false;
+  if (approvalActionInProgress) return false;
   return !REALTIME_VIEW_IDS.has(activeViewId());
 }
 
@@ -1368,6 +1665,33 @@ async function logout() {
   }
 }
 
+function openAccountGuide() {
+  accountGuideModal?.classList.remove("hidden");
+  accountGuideOk?.focus();
+}
+
+function closeAccountGuide() {
+  accountGuideModal?.classList.add("hidden");
+  registerAccountButton?.focus();
+}
+
+function openAirgapConfirmation(requestId = "") {
+  pendingAirgapConfirmationRequestId = String(requestId || "");
+  airgapConfirmModal?.classList.remove("hidden");
+  airgapConfirmOk?.focus();
+}
+
+function closeAirgapConfirmation() {
+  pendingAirgapConfirmationRequestId = "";
+  airgapConfirmModal?.classList.add("hidden");
+}
+
+function maybeOpenAirgapConfirmation(requestId) {
+  const request = latestApprovalsData.requests.find((item) => String(item.id || "") === String(requestId || ""));
+  if (!request || !isExecutionAllowedRequest(request)) return;
+  openAirgapConfirmation(request.id);
+}
+
 function showView(name) {
   if (name === "logout") {
     logout();
@@ -1380,10 +1704,11 @@ function showView(name) {
     return;
   }
   sideItems.forEach((item) => item.classList.toggle("active", item.dataset.view === targetView));
-  views.forEach((view) => view.classList.remove("view-active"));
+  hideAllViews();
+  if (appRoot) appRoot.dataset.activeView = targetView;
   const target = document.querySelector(`#${targetView}View`);
   if (target) {
-    target.classList.add("view-active");
+    activateViewElement(target);
     contentArea?.scrollTo({ top: 0, left: 0 });
   }
   if (window.location.hash !== `#${targetView}`) history.replaceState(null, "", `#${targetView}`);
@@ -1394,6 +1719,28 @@ function showView(name) {
     reloadSources().catch((error) => {
       console.warn("Unable to reload Air-Gap view", error);
       renderSources({ air_gap: fallbackAirGapSummary() });
+    });
+  }
+  if (targetView === "detect2") {
+    renderDetectFallback();
+    requestJson("/api/detect")
+      .then((data) => renderDetect(data))
+      .catch((error) => {
+        console.warn("Unable to reload Detect view", error);
+        renderDetectFallback(
+          "탐지 내역을 표시할 수 없습니다.",
+          error?.message || "WebUI 서버 연결, 로그인 권한, 또는 AIRGAP_POLICY_VIEW 권한을 확인해 주세요."
+        );
+      });
+  }
+  if (targetView === "threat") {
+    reloadThreatDetection().catch((error) => {
+      console.warn("Unable to reload threat detection", error);
+      renderThreatDetection({
+        summary: { status: "확인 필요", score: "-", suspicious_count: 0, last_scan_at: "-", engine: "연결 확인 필요" },
+        results: [],
+        policy: { risk_action: "WebUI 서버/API 연결 확인 필요" },
+      });
     });
   }
   if (targetView === "veeam") {
@@ -1430,12 +1777,20 @@ function showView(name) {
     renderSecurityAudit(latestAuditData);
   }
   if (targetView === "settings") {
+    loadNotificationSettings().catch((error) => {
+      console.warn("Unable to reload notification settings", error);
+      if (settingsApplyStatus) settingsApplyStatus.textContent = error.message;
+    });
     reloadSettingsShortcutStatus().catch((error) => {
       console.warn("Unable to reload settings shortcut status", error);
     });
     reloadServiceControlStatus().catch((error) => {
       console.warn("Unable to reload service status", error);
       if (serviceControlStatus) serviceControlStatus.textContent = error.message;
+    });
+    reloadServicePreflight().catch((error) => {
+      console.warn("Unable to reload service preflight", error);
+      if (servicePreflightStatus) servicePreflightStatus.textContent = error.message;
     });
   }
 }
@@ -1729,7 +2084,16 @@ function renderDashboard(data) {
   const backup = data.backup || {};
   const events = Array.isArray(data.logs) ? data.logs.slice(0, 5) : [];
   const alerts = Array.isArray(data.alerts) ? data.alerts : [];
+  const threat = data.threat_detection || {};
+  const threatStatus = String(threat.status || "정상");
+  const threatDanger = threatTone(threatStatus) === "danger";
   dashboardView.innerHTML = `
+    ${threatDanger ? `
+      <section class="dashboard-threat-banner">
+        <strong>위험 경고: 최근 백업본에서 랜섬웨어 의심 징후가 탐지되었습니다.</strong>
+        <span>Repository 재연결이 차단되었으며 관리자 승인이 필요합니다.</span>
+      </section>
+    ` : ""}
     <div class="security-kpi-grid">
       ${securityKpis.map(({ icon, label, value, tone, meta }) => `
         <article class="security-kpi security-kpi-${icon}">
@@ -1766,6 +2130,16 @@ function renderDashboard(data) {
             <div><dt>LOCK-FIX 상태</dt><dd>${escapeHtml(backup.isolation_state || "-")}</dd></div>
             <div><dt>차단 결과</dt><dd class="backup-result ${String(backup.result || "").includes("Failed") ? "backup-result-failed" : "backup-result-success"}">${escapeHtml(backup.result || "-")}</dd></div>
           </dl>
+        </div>
+      </section>
+
+      <section class="security-panel dashboard-threat-panel">
+        <header><h2>위협 탐지 요약</h2><button type="button" class="threat-detail-button" onclick="window.location.hash='#threat'">보기</button></header>
+        <div class="panel-body dashboard-threat-summary">
+          <div><span>최근 상태</span><strong class="threat-${threatTone(threatStatus)}">${escapeHtml(threatStatus)}</strong></div>
+          <div><span>위험 점수</span><strong>${escapeHtml(String(threat.score ?? "-"))}</strong></div>
+          <div><span>마지막 검사</span><strong>${escapeHtml(threat.last_scan_at || "-")}</strong></div>
+          <div><span>의심 항목</span><strong>${escapeHtml(String(threat.suspicious_count ?? 0))}건</strong></div>
         </div>
       </section>
 
@@ -1989,7 +2363,56 @@ function renderNotification(data) {
   });
 }
 
+function renderDetectFallback(message = "탐지 내역을 불러오는 중입니다.", detail = "LOCK-FIX가 디스크 식별, 에어갭 볼륨, Veeam Backup Copy 저장소 정보를 확인하고 있습니다.") {
+  if (!detectFingerprintRoot) return;
+  detectFingerprintRoot.innerHTML = `
+    <div class="detect-judgement-page detect-empty-state">
+      <header class="detect-judgement-head">
+        <span aria-hidden="true"></span>
+        <div>
+          <h1>탐지 내역</h1>
+          <p>${escapeHtml(detail)}</p>
+        </div>
+      </header>
+      <section class="detect-judgement-panel detect-judgement-normal">
+        <div class="detect-judgement-topline">
+          <div class="detect-final-state">
+            <span>DETECTION STATUS</span>
+            <div class="detect-state-row">
+              <strong>CHECKING</strong>
+              <b>${escapeHtml(message)}</b>
+            </div>
+            <em>화면이 비어 보이지 않도록 기본 상태를 표시합니다.</em>
+          </div>
+          <div class="detect-latency">
+            <span>VIEW</span>
+            <strong>READY</strong>
+          </div>
+        </div>
+        <div class="detect-judgement-cards">
+          <article>
+            <span>DISK IDENTITY</span>
+            <strong>확인 중</strong>
+          </article>
+          <article>
+            <span>AIR-GAP VOLUME</span>
+            <strong>확인 중</strong>
+          </article>
+          <article>
+            <span>VEEAM REPOSITORY</span>
+            <strong>확인 중</strong>
+          </article>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
 function renderDetect(data) {
+  if (!data || typeof data !== "object") {
+    renderDetectFallback("탐지 데이터가 아직 준비되지 않았습니다.", "서버 연결 또는 권한 상태를 확인한 뒤 다시 표시합니다.");
+    return;
+  }
   if (detectFingerprintRoot) {
     const fingerprint = data.fingerprint || {};
     const parts = Array.isArray(fingerprint.parts) ? fingerprint.parts : [];
@@ -2007,7 +2430,36 @@ function renderDetect(data) {
     const latency = fingerprint.detection_latency_seconds ?? data.detection_latency_seconds ?? "0.5";
     const fingerprintValue = String(fingerprint.value || "-");
     const shortFingerprint = fingerprintValue.length > 12 ? `${fingerprintValue.slice(0, 12)}...` : fingerprintValue;
-    const backgroundFormula = `${fingerprint.formula_title || "LOCK-FIX-DISK-FINGERPRINT ="}\n${fingerprint.formula || ""}`;
+    const emergencyAccess = data.emergency_access || {};
+    const emergencySlot = emergencyAccess.slot || {};
+    const emergencyVolume = emergencySlot.mount_point || emergencySlot.device || "-";
+    const emergencyState = String(emergencySlot.state || "-").toUpperCase();
+    const emergencyHashStatus = String(emergencySlot.hash_status || "-").toUpperCase();
+    const veeamRepository = data.veeam_repository || {};
+    const veeamRepositoryName = veeamRepository.repository_name || "Veeam Repository";
+    const veeamRepositoryPath = veeamRepository.repository_path || "-";
+    const veeamRepositoryEligible = veeamRepository.eligible !== false;
+    const veeamRepositoryMeta = veeamRepositoryEligible
+      ? [
+          veeamRepositoryPath,
+          veeamRepository.api_synced ? "REST API 연동" : "설정 기준",
+        ].filter(Boolean).join(" · ")
+      : "Veeam Backup Copy 저장소만 표시";
+    const emergencyItems = [
+      { label: "SLOT", value: emergencySlot.slot_id || fingerprint.slot_id || "-" },
+      { label: "VOLUME", value: emergencyVolume },
+      { label: "STATE", value: emergencyState },
+      { label: "HASH CHECK", value: emergencyHashStatus },
+      { label: "AUTH HASH", value: emergencySlot.authorization_hash_short || "-" },
+      { label: "DISK UID", value: emergencySlot.current_uid_short || "-" },
+      { label: "LAST RECONNECT", value: emergencySlot.last_reconnect || "-" },
+      {
+        label: "VEEAM REPOSITORY",
+        value: veeamRepositoryName,
+        meta: veeamRepositoryMeta,
+        className: veeamRepositoryEligible ? "detect-veeam-repository-card" : "detect-veeam-repository-card detect-veeam-repository-blocked",
+      },
+    ];
     detectFingerprintRoot.innerHTML = `
       <div class="detect-judgement-page">
         <header class="detect-judgement-head">
@@ -2046,39 +2498,57 @@ function renderDetect(data) {
               <strong>${escapeHtml(diskSize?.value || "-")}</strong>
             </article>
           </div>
-          <div class="detect-action-row">
-            <button type="button" class="detect-action-primary" data-detect-action="logs">상세 로그 보기</button>
-            <button type="button" class="detect-action-secondary" data-detect-action="airgap">격리 유지</button>
-            <button type="button" class="detect-action-secondary" data-detect-action="settings">등록 요청</button>
-          </div>
-        </section>
-        <section class="detect-background-fingerprint" aria-label="Background fingerprint judgement basis">
-          <h2>Background Judgement Basis</h2>
-          <div class="detect-background-grid">
-            <article>
-              <span>REGISTERED FINGERPRINT</span>
-              <strong>${escapeHtml(fingerprint.registered_value || "-")}</strong>
-            </article>
-            <article>
-              <span>CURRENT STATUS</span>
-              <strong class="${isNormal ? "detect-text-normal" : "detect-text-abnormal"}">${escapeHtml(status)}</strong>
-            </article>
-            <article>
-              <span>FORMULA</span>
-              <strong>${escapeHtml(backgroundFormula.replace(/\n/g, " "))}</strong>
-            </article>
-          </div>
-        </section>
-        <section class="detect-parts-grid" aria-label="Disk identity fingerprint parts">
-          ${parts.map((part) => `
-            <article>
-              <span>${escapeHtml(part.label || "-")}</span>
-              <strong>${escapeHtml(part.value || "-")}</strong>
-            </article>
-          `).join("")}
-        </section>
-      </div>
-    `;
+            <div class="detect-action-row">
+              <button type="button" class="detect-action-primary" data-detect-action="logs">상세 로그 보기</button>
+              <button type="button" class="detect-action-secondary" data-detect-action="airgap">격리 유지</button>
+              <button type="button" class="detect-action-secondary" data-detect-action="settings">등록 요청</button>
+            </div>
+            <section class="detect-volume-unified-card" aria-label="Air-Gap isolated volume status">
+              <div class="detect-volume-head">
+                <div>
+                  <span>AIR-GAP VOLUME DETECTION</span>
+                  <h2>격리 볼륨 통합 상태</h2>
+                </div>
+                <strong class="${/VALID|READY|ONLINE|ISOLATED/.test(emergencyState + emergencyHashStatus) ? "detect-text-normal" : "detect-text-abnormal"}">${escapeHtml(emergencyState)}</strong>
+              </div>
+              <div class="detect-volume-grid">
+                ${emergencyItems.map((item) => `
+                  <article class="${escapeHtml(item.className || "")}">
+                    <span>${escapeHtml(item.label)}</span>
+                    <strong>${escapeHtml(item.value)}</strong>
+                    ${item.meta ? `<em>${escapeHtml(item.meta)}</em>` : ""}
+                  </article>
+                `).join("")}
+              </div>
+            </section>
+            <section class="detect-background-fingerprint" aria-label="Background fingerprint judgement basis">
+              <h2>Background Judgement Basis</h2>
+              <div class="detect-background-grid">
+                <article>
+                  <span>REGISTERED FINGERPRINT</span>
+                  <strong>${escapeHtml(fingerprint.registered_value || "-")}</strong>
+                </article>
+                <article>
+                  <span>CURRENT STATUS</span>
+                  <strong class="${isNormal ? "detect-text-normal" : "detect-text-abnormal"}">${escapeHtml(status)}</strong>
+                </article>
+                <article>
+                  <span>FORMULA</span>
+                  <strong>${escapeHtml((fingerprint.formula_title || "LOCK-FIX-DISK-FINGERPRINT =") + " " + (fingerprint.formula || ""))}</strong>
+                </article>
+              </div>
+            </section>
+            <section class="detect-parts-grid" aria-label="Disk identity fingerprint parts">
+              ${parts.map((part) => `
+                <article>
+                  <span>${escapeHtml(part.label || "-")}</span>
+                  <strong>${escapeHtml(part.value || "-")}</strong>
+                </article>
+              `).join("")}
+            </section>
+          </section>
+        </div>
+      `;
     return;
   }
   if (!detectStart || !detectEnd || !detectCards || !detectDetectTable || !detectWarningTable || !detectLogsTable) return;
@@ -2129,18 +2599,25 @@ function renderLogs(data) {
   if (!logsRange.end) logsRange.end = data.range.end;
   logsRange.page = data.page || 1;
   logsRange.retention = data.retention_days || logsRange.retention;
+  logsRange.type = data.filters?.type || logsRange.type || "";
   logsRange.severity = data.filters?.severity || logsRange.severity || "";
   logsRange.source = data.filters?.source || logsRange.source || "";
   logsRange.q = data.filters?.q || logsRange.q || "";
   logsStart.value = logsRange.start;
   logsEnd.value = logsRange.end;
   if (logRetentionSelect) logRetentionSelect.value = String(logsRange.retention);
+  renderLogsTypeOptions(data.type_options || Object.keys(data.summary?.types || {}), logsRange.type);
   if (logsSeverityFilter) logsSeverityFilter.value = logsRange.severity;
   if (logsSearch) logsSearch.value = logsRange.q;
   renderLogsSourceOptions(data.source_options || [], logsRange.source);
   renderLogsSummaryCards(data);
   logsTotal.textContent = `Total ${data.total_logs} logs · ${data.retention_days}일 보관`;
   logsHistoryTable.replaceChildren();
+  if (!data.items.length) {
+    const row = document.createElement("tr");
+    row.innerHTML = `<td colspan="5" class="logs-empty-cell">조건에 맞는 로그가 없습니다.</td>`;
+    logsHistoryTable.appendChild(row);
+  }
   data.items.forEach((item) => {
     const row = document.createElement("tr");
     const severity = String(item.severity || "INFO").toUpperCase();
@@ -2155,6 +2632,15 @@ function renderLogs(data) {
   });
   renderLogsPagination(data);
   renderOperationsOverview();
+}
+
+function renderLogsTypeOptions(options, selected) {
+  if (!logsTypeFilter) return;
+  const current = selected || "";
+  const optionHtml = [`<option value="">All</option>`]
+    .concat(options.map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`));
+  logsTypeFilter.innerHTML = optionHtml.join("");
+  logsTypeFilter.value = current;
 }
 
 function renderLogsSourceOptions(options, selected) {
@@ -2307,16 +2793,365 @@ async function registerLicense(event) {
 }
 
 function renderNetworkStatus(data) {
-  networkStatusTitle.textContent = uiSettings.language === "ko" ? (data.title || t("network.title")) : t("network.title");
-  networkTxRate.textContent = `${data.realtime.tx.current_mbps.toFixed(1)} Mbps`;
-  networkRxRate.textContent = `${data.realtime.rx.current_mbps.toFixed(1)} Mbps`;
-  networkTxTotal.textContent = `${data.realtime.tx.total_gb.toFixed(2)} GB`;
-  networkRxTotal.textContent = `${data.realtime.rx.total_gb.toFixed(2)} GB`;
-  drawFlowChart(networkTxFlow, data.realtime.tx.history, "tx");
-  drawFlowChart(networkRxFlow, data.realtime.rx.history, "rx");
-  renderNetworkIpSummary(networkTxIps, data.items, "tx");
-  renderNetworkIpSummary(networkRxIps, data.items, "rx");
+  latestNetworkStatusData = data;
+  const realtime = data.realtime || {};
+  const txRealtime = realtime.tx || {};
+  const rxRealtime = realtime.rx || {};
+  const interfaces = buildNetworkInterfaces(data.interfaces || data.items);
+  syncNetworkInterfaceSelect(interfaces);
+  const selected = interfaces.find((item) => item.id === selectedNetworkInterface) || interfaces[0] || null;
+  const selectedItems = Array.isArray(data.items) ? data.items : [];
+  const hasInterfaceSamples = Array.isArray(data.interfaces) && data.interfaces.length > 0;
+  const txHistory = normalizeNetworkHistory(hasInterfaceSamples ? selected?.txHistory : [], txRealtime.history);
+  const rxHistory = normalizeNetworkHistory(hasInterfaceSamples ? selected?.rxHistory : [], rxRealtime.history);
+  const txCurrent = lastNetworkValue(txHistory, hasInterfaceSamples ? selected?.txMbps : txRealtime.current_mbps);
+  const rxCurrent = lastNetworkValue(rxHistory, hasInterfaceSamples ? selected?.rxMbps : rxRealtime.current_mbps);
+  const txTotal = Number((hasInterfaceSamples ? selected?.totalTxGb : txRealtime.total_gb) ?? 0);
+  const rxTotal = Number((hasInterfaceSamples ? selected?.totalRxGb : rxRealtime.total_gb) ?? 0);
+  if (networkStatusTitle) {
+    networkStatusTitle.textContent = uiSettings.language === "ko" ? (data.title || t("network.title")) : t("network.title");
+  }
+  if (networkTxRate) networkTxRate.textContent = formatNetworkRate(txCurrent);
+  if (networkRxRate) networkRxRate.textContent = formatNetworkRate(rxCurrent);
+  if (networkLegendTxRate) networkLegendTxRate.textContent = formatNetworkRate(txCurrent);
+  if (networkLegendRxRate) networkLegendRxRate.textContent = formatNetworkRate(rxCurrent);
+  if (networkTxTotal) networkTxTotal.textContent = `${txTotal.toFixed(2)} GB`;
+  if (networkRxTotal) networkRxTotal.textContent = `${rxTotal.toFixed(2)} GB`;
+  if (networkSelectedNic) {
+    networkSelectedNic.textContent = selected ? `${selected.label} · ${selected.id}` : "-";
+  }
+  if (networkAdapterName) networkAdapterName.textContent = selected?.adapterName || selected?.label || "-";
+  if (networkConnectionType) networkConnectionType.textContent = selected?.connectionType || (uiSettings.language === "ko" ? "이더넷" : "Ethernet");
+  if (networkIpv4Address) networkIpv4Address.textContent = selected?.ipv4 || data.local_ip || "-";
+  if (networkIpv6Address) networkIpv6Address.textContent = selected?.ipv6 || "-";
+  updateNetworkFlowModeControls();
+  const scale = drawCombinedNetworkFlow(networkCombinedFlow, txHistory, rxHistory, activeNetworkFlowMode);
+  if (networkCombinedScale) {
+    networkCombinedScale.textContent = formatNetworkRate(scale);
+  }
+  if (networkTxFlow) drawFlowChart(networkTxFlow, txHistory, "tx");
+  if (networkRxFlow) drawFlowChart(networkRxFlow, rxHistory, "rx");
+  renderNetworkInterfaceStrip(interfaces, selected);
+  renderNetworkIpSummary(networkTxIps, selectedItems, "tx");
+  renderNetworkIpSummary(networkRxIps, selectedItems, "rx");
   renderNetworkAnalysis(data.analysis || {});
+}
+
+function buildNetworkInterfaces(items) {
+  const source = Array.isArray(items) ? items : [];
+  const map = new Map();
+  source.forEach((item, index) => {
+    const key = String(item.id || item.interface || item.nic || item.adapter || item.name || "NIC-1");
+    const label = String(item.label || item.display_name || item.name || key);
+    if (!map.has(key)) {
+      map.set(key, {
+        id: key,
+        label,
+        adapterName: String(item.adapter_name || item.adapterName || item.interface_name || label),
+        connectionType: String(item.connection_type || item.connectionType || item.media_type || ""),
+        ipv4: String(item.ipv4 || item.ipv4_address || item.address || ""),
+        ipv6: String(item.ipv6 || item.ipv6_address || ""),
+        items: [],
+        txHistory: [],
+        rxHistory: [],
+        txMbps: 0,
+        rxMbps: 0,
+        totalTxGb: 0,
+        totalRxGb: 0,
+      });
+    }
+    const bucket = map.get(key);
+    bucket.items.push(item);
+    bucket.adapterName = bucket.adapterName || String(item.adapter_name || item.adapterName || label);
+    bucket.connectionType = bucket.connectionType || String(item.connection_type || item.connectionType || item.media_type || "");
+    bucket.ipv4 = bucket.ipv4 || String(item.ipv4 || item.ipv4_address || item.address || "");
+    bucket.ipv6 = bucket.ipv6 || String(item.ipv6 || item.ipv6_address || "");
+    const txSamples = numericNetworkSeries(item.tx_history || item.txHistory || item.history_tx);
+    const rxSamples = numericNetworkSeries(item.rx_history || item.rxHistory || item.history_rx);
+    const txValue = Number(item.tx_mbps ?? item.current_tx_mbps ?? item.tx_rate ?? item.tx ?? item.tx_gb ?? txSamples[txSamples.length - 1] ?? 0);
+    const rxValue = Number(item.rx_mbps ?? item.current_rx_mbps ?? item.rx_rate ?? item.rx ?? item.rx_gb ?? rxSamples[rxSamples.length - 1] ?? 0);
+    bucket.txHistory.push(...(txSamples.length ? txSamples : [txValue]));
+    bucket.rxHistory.push(...(rxSamples.length ? rxSamples : [rxValue]));
+    bucket.txMbps = txValue;
+    bucket.rxMbps = rxValue;
+    bucket.totalTxGb += Number(item.total_tx_gb ?? item.tx_gb ?? 0);
+    bucket.totalRxGb += Number(item.total_rx_gb ?? item.rx_gb ?? 0);
+    if (index === 0 && !selectedNetworkInterface) {
+      selectedNetworkInterface = key;
+    }
+  });
+  return Array.from(map.values()).map((entry) => ({
+    ...entry,
+    txHistory: entry.txHistory.slice(-60),
+    rxHistory: entry.rxHistory.slice(-60),
+    connectionType: entry.connectionType || (uiSettings.language === "ko" ? "이더넷" : "Ethernet"),
+    totalTxGb: Number(entry.totalTxGb.toFixed(2)),
+    totalRxGb: Number(entry.totalRxGb.toFixed(2)),
+  }));
+}
+
+function numericNetworkSeries(values) {
+  if (!Array.isArray(values)) return [];
+  return values
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value >= 0);
+}
+
+function normalizeNetworkHistory(primary, fallback) {
+  const source = numericNetworkSeries(primary);
+  const alternate = numericNetworkSeries(fallback);
+  const values = (source.length ? source : alternate).slice(-60);
+  if (!values.length) return [0, 0];
+  if (values.length === 1) return [values[0], values[0]];
+  return values;
+}
+
+function lastNetworkValue(values, fallback = 0) {
+  const series = numericNetworkSeries(values);
+  if (series.length) return series[series.length - 1];
+  const value = Number(fallback);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function syncNetworkInterfaceSelect(interfaces) {
+  if (!networkInterfaceSelect) return;
+  const selectedStillExists = interfaces.some((item) => item.id === selectedNetworkInterface);
+  if (!selectedStillExists) {
+    selectedNetworkInterface = interfaces[0]?.id || "";
+  }
+  networkInterfaceSelect.replaceChildren();
+  if (!interfaces.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No NIC";
+    networkInterfaceSelect.appendChild(option);
+    networkInterfaceSelect.value = "";
+    networkInterfaceSelect.disabled = true;
+    return;
+  }
+  networkInterfaceSelect.disabled = false;
+  interfaces.forEach((item) => {
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = item.label;
+    networkInterfaceSelect.appendChild(option);
+  });
+  networkInterfaceSelect.value = selectedNetworkInterface || interfaces[0].id;
+}
+
+function renderNetworkInterfaceStrip(interfaces, selected) {
+  if (!networkMiniChartStrip) return;
+  const list = interfaces.length ? interfaces.slice(0, 3) : [];
+  networkMiniChartStrip.replaceChildren();
+  if (!list.length) {
+    const empty = document.createElement("div");
+    empty.className = "network-mini-chart-empty";
+    empty.textContent = "NIC 데이터가 없습니다.";
+    networkMiniChartStrip.appendChild(empty);
+    return;
+  }
+  list.forEach((item) => {
+    const card = document.createElement("article");
+    card.className = `network-mini-chart-card${item.id === selected?.id ? " active" : ""}`;
+    const isSelected = item.id === selected?.id;
+    card.innerHTML = `
+        <div class="network-mini-chart-head">
+          <strong>${escapeHtml(item.label)}</strong>
+          <span>${escapeHtml(isSelected ? (uiSettings.language === "ko" ? "선택" : "Selected") : "NIC")}</span>
+        </div>
+        <svg class="network-mini-flow" viewBox="0 0 640 120" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(item.label)} traffic chart">
+          ${buildMiniSparkline(item.txHistory, isSelected ? "#0b5cad" : "#7aa2d6")}
+          ${buildMiniSparkline(item.rxHistory, isSelected ? "#f28f16" : "#c8a36f")}
+        </svg>
+        <div class="network-mini-chart-foot">
+          <span>TX ${formatCompactRate(item.txHistory)} / ${item.totalTxGb.toFixed(1)} GB</span>
+        <span>RX ${formatCompactRate(item.rxHistory)} / ${item.totalRxGb.toFixed(1)} GB</span>
+      </div>
+    `;
+    card.addEventListener("click", () => {
+      selectedNetworkInterface = item.id;
+      if (latestNetworkStatusData) renderNetworkStatus(latestNetworkStatusData);
+    });
+    networkMiniChartStrip.appendChild(card);
+  });
+}
+
+function threatTone(result = "") {
+  const value = String(result).toUpperCase();
+  if (value.includes("위험") || value.includes("RISK") || value.includes("DANGER")) return "danger";
+  if (value.includes("주의") || value.includes("WARN")) return "warn";
+  return "normal";
+}
+
+function renderThreatDetection(data = {}) {
+  if (!threatSummaryCards || !threatResultTable) return;
+  const summary = data.summary || {};
+  const results = Array.isArray(data.results) ? data.results : [];
+  const policy = data.policy || {};
+  const veeamMalwareApi = data.veeam_malware_api || {};
+  const cards = [
+    { label: "최근 검사 상태", value: summary.status || "-", meta: summary.status_detail || "정상 / 주의 / 위험", tone: threatTone(summary.status) },
+    { label: "위험 점수", value: String(summary.score ?? "-"), meta: "0~30 정상 · 31~70 주의 · 71~100 위험", tone: threatTone(summary.status) },
+    { label: "탐지된 의심 항목", value: `${summary.suspicious_count ?? 0}건`, meta: "악성코드·랜섬웨어·비정상 변경", tone: Number(summary.suspicious_count || 0) > 0 ? "warn" : "normal" },
+    { label: "마지막 검사 시간", value: summary.last_scan_at || "-", meta: summary.engine || "Windows Defender + YARA + Hash", tone: "normal" },
+  ];
+  threatSummaryCards.innerHTML = cards.map((card) => `
+    <article class="threat-summary-card threat-${card.tone}">
+      <span>${escapeHtml(card.label)}</span>
+      <strong>${escapeHtml(card.value)}</strong>
+      <em>${escapeHtml(card.meta)}</em>
+    </article>
+  `).join("");
+  if (threatPolicyBadge) {
+    threatPolicyBadge.textContent = policy.risk_action || "Air-gap 강제 유지 + 재연결 차단";
+  }
+  if (threatVeeamApiPanel) {
+    const apiStatus = veeamMalwareApi.connected ? "연동 준비" : "연동 대기";
+    const apiStatusClass = veeamMalwareApi.connected ? "ready" : "pending";
+    threatVeeamApiPanel.innerHTML = `
+      <div>
+        <span class="threat-veeam-api-badge">VEEAM MALWARE REST API</span>
+        <h2><strong>Veeam Malware Detection</strong> 연동 상태</h2>
+        <p>Veeam 백업 세션의 Malware Detection 결과를 LOCK-FIX 위협 점수와 Air-gap 정책에 연결합니다.</p>
+      </div>
+      <div class="threat-veeam-api-grid">
+        <article><span>API 상태</span><strong class="threat-api-status threat-api-${apiStatusClass}">${escapeHtml(apiStatus)}</strong></article>
+        <article><span>Endpoint</span><strong>${escapeHtml(veeamMalwareApi.endpoint || "-")}</strong></article>
+        <article><span>최근 Malware 결과</span><strong class="threat-${threatTone(veeamMalwareApi.last_result || "정상")}">${escapeHtml(veeamMalwareApi.last_result || "-")}</strong></article>
+      </div>
+    `;
+  }
+  threatResultTable.innerHTML = results.map((item) => `
+    <tr>
+      <td>${escapeHtml(item.scan_time || "-")}</td>
+      <td>${escapeHtml(item.repository || "-")}</td>
+      <td>${escapeHtml(item.backup_job || "-")}</td>
+      <td><span class="threat-result-pill threat-${threatTone(item.result)}">${escapeHtml(item.result || "-")}</span></td>
+      <td><strong class="threat-score threat-${threatTone(item.result)}">${escapeHtml(String(item.score ?? "-"))}</strong></td>
+      <td>${escapeHtml(String(item.detection_count ?? 0))}건</td>
+      <td>${escapeHtml(item.action_status || "-")}</td>
+      <td><button type="button" class="threat-detail-button" data-threat-id="${escapeHtml(item.id || "")}">상세</button></td>
+    </tr>
+  `).join("") || `<tr><td colspan="8">위협 탐지 이력이 없습니다.</td></tr>`;
+  renderThreatDetail(results[0] || null);
+}
+
+function renderThreatDetail(item) {
+  if (!threatDetailPanel) return;
+  if (!item) {
+    threatDetailPanel.hidden = true;
+    return;
+  }
+  threatDetailPanel.hidden = false;
+  const detections = Array.isArray(item.detections) ? item.detections : [];
+  threatDetailPanel.innerHTML = `
+    <div class="threat-detail-head">
+      <div>
+        <span>SCAN DETAIL</span>
+        <h2>${escapeHtml(item.repository || "-")} · ${escapeHtml(item.backup_job || "-")}</h2>
+        <p>${escapeHtml(item.backup_file_path || "-")}</p>
+      </div>
+      <strong class="threat-${threatTone(item.result)}">${escapeHtml(item.result || "-")} · ${escapeHtml(String(item.score ?? "-"))}</strong>
+    </div>
+    <div class="threat-detail-grid">
+      <div><span>백업 완료 시간</span><strong>${escapeHtml(item.backup_completed_at || "-")}</strong></div>
+      <div><span>검사 시작</span><strong>${escapeHtml(item.scan_started_at || item.scan_time || "-")}</strong></div>
+      <div><span>검사 종료</span><strong>${escapeHtml(item.scan_ended_at || "-")}</strong></div>
+      <div><span>검사 엔진</span><strong>${escapeHtml(item.engine || "-")}</strong></div>
+      <div><span>LOCK-FIX 조치</span><strong>${escapeHtml(item.lockfix_action || item.action_status || "-")}</strong></div>
+      <div><span>감사로그</span><strong>${escapeHtml(item.audit_log_id || "-")}</strong></div>
+    </div>
+    <div class="threat-detection-list">
+      <h3>탐지된 의심 항목</h3>
+      <table class="threat-table">
+        <thead><tr><th>탐지 유형</th><th>파일 경로</th><th>탐지 근거</th><th>심각도</th><th>처리 상태</th></tr></thead>
+        <tbody>
+          ${detections.map((detection) => `
+            <tr>
+              <td>${escapeHtml(detection.type || "-")}</td>
+              <td>${escapeHtml(detection.file_path || "-")}</td>
+              <td>${escapeHtml(detection.evidence || "-")}</td>
+              <td>${escapeHtml(detection.severity || "-")}</td>
+              <td>${escapeHtml(detection.status || "-")}</td>
+            </tr>
+          `).join("") || `<tr><td colspan="5">탐지된 의심 항목이 없습니다.</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+    <label class="threat-admin-note"><span>관리자 메모</span><textarea readonly>${escapeHtml(item.admin_note || "정책 기준에 따라 감사로그와 승인 워크플로우에 연결됩니다.")}</textarea></label>
+  `;
+}
+
+async function reloadThreatDetection() {
+  const data = await requestJson("/api/threat-detection");
+  renderThreatDetection(data);
+  return data;
+}
+
+function formatCompactRate(values) {
+  const max = Math.max(0, ...values.map((value) => Number(value) || 0));
+  if (max >= 1) return `${max.toFixed(1)} Mbps`;
+  return `${(max * 1000).toFixed(0)} Kbps`;
+}
+
+function formatNetworkRate(value) {
+  const rate = Number(value) || 0;
+  if (rate >= 1000) return `${(rate / 1000).toFixed(2)} Gbps`;
+  if (rate >= 1) return `${rate.toFixed(1)} Mbps`;
+  return `${(rate * 1000).toFixed(1)} Kbps`;
+}
+
+function buildMiniSparkline(values, stroke) {
+  const series = Array.isArray(values) ? values : [];
+  if (!series.length) {
+    return `<path d="M 4 108 L 636 108" fill="none" stroke="${stroke}" stroke-width="2.1" stroke-linecap="round" />`;
+  }
+  const max = Math.max(1, ...series.map((value) => Number(value) || 0));
+  const width = 640;
+  const height = 120;
+  const padX = 4;
+  const padY = 8;
+  const plotWidth = width - padX * 2;
+  const plotHeight = height - padY * 2;
+  const step = plotWidth / Math.max(1, series.length - 1);
+  const points = series.map((value, index) => [
+    padX + index * step,
+    padY + plotHeight - ((Number(value) || 0) / max) * plotHeight,
+  ]);
+  const path = smoothPath(points, 0.2);
+  const area = `${path} L ${points[points.length - 1][0].toFixed(1)} ${padY + plotHeight} L ${points[0][0].toFixed(1)} ${padY + plotHeight} Z`;
+  return `
+    <path d="${area}" fill="${stroke}" fill-opacity="0.11" />
+    <path d="${path}" fill="none" stroke="${stroke}" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" />
+  `;
+}
+
+function smoothPath(points, tension = 0.18) {
+  if (!points.length) return "";
+  if (points.length === 1) {
+    const [x, y] = points[0];
+    return `M ${x.toFixed(1)} ${y.toFixed(1)}`;
+  }
+  const commands = [`M ${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`];
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const current = points[index];
+    const next = points[index + 1];
+    const prev = points[index - 1] || current;
+    const after = points[index + 2] || next;
+    const cp1x = current[0] + (next[0] - prev[0]) * tension;
+    const cp1y = current[1] + (next[1] - prev[1]) * tension;
+    const cp2x = next[0] - (after[0] - current[0]) * tension;
+    const cp2y = next[1] - (after[1] - current[1]) * tension;
+    commands.push(
+      `C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${next[0].toFixed(1)} ${next[1].toFixed(1)}`
+    );
+  }
+  return commands.join(" ");
+}
+
+function linearPath(points) {
+  if (!points.length) return "";
+  return points.map(([x, y], index) => `${index ? "L" : "M"} ${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
 }
 
 function renderNetworkIpSummary(target, items, type) {
@@ -2333,17 +3168,26 @@ function renderNetworkIpSummary(target, items, type) {
     target.innerHTML = `<span>${escapeHtml(label)}</span><em>-</em>`;
     return;
   }
-  const top = rows[0];
+  const primary = rows[0];
+  const secondaryRows = rows.slice(1);
+  const total = rows.reduce((sum, item) => sum + Number(item[key] || 0), 0);
+  const primaryValue = Number(primary[key] || 0);
+  const primaryShare = total > 0 ? Math.max(8, Math.min(100, (primaryValue / total) * 100)) : 0;
   target.innerHTML = `
     <div class="network-ip-main">
       <span>${escapeHtml(label)}</span>
-      <strong>${escapeHtml(top.target)}</strong>
-      <em>${Number(top[key] || 0).toFixed(2)} GB</em>
+      <div class="network-ip-primary-rank">
+        <i>1</i>
+        <strong>${escapeHtml(primary.target)}</strong>
+      </div>
+      <em>${primaryValue.toFixed(2)} GB</em>
+      <div class="network-ip-share" aria-hidden="true"><b style="width: ${primaryShare.toFixed(1)}%"></b></div>
     </div>
     <div class="network-ip-list">
-      ${rows.map((item) => `
-        <span><code>${escapeHtml(item.target)}</code><b>${Number(item[key] || 0).toFixed(2)} GB</b></span>
+      ${secondaryRows.map((item, index) => `
+        <span><i>${index + 2}</i><code>${escapeHtml(item.target)}</code><b>${Number(item[key] || 0).toFixed(2)} GB</b></span>
       `).join("")}
+      ${!secondaryRows.length ? `<span><i>2</i><code>-</code><b>-</b></span>` : ""}
     </div>
   `;
 }
@@ -2421,6 +3265,247 @@ function networkLossLabel(loss) {
   return uiSettings.language === "ko" ? "정상" : "Normal";
 }
 
+function networkLossTone(loss) {
+  if (loss >= 1) return "critical";
+  if (loss >= 0.3) return "warning";
+  return "good";
+}
+
+function networkLossTrendInfo(values) {
+  const samples = numericNetworkSeries(values);
+  if (samples.length < 3) {
+    return {
+      label: uiSettings.language === "ko" ? "실시간 추세" : "Live trend",
+      direction: "steady",
+    };
+  }
+  const recent = samples.slice(-6);
+  const first = recent[0];
+  const last = recent[recent.length - 1];
+  const delta = last - first;
+  const threshold = Math.max(0.03, Math.max(...recent) * 0.08);
+  if (delta > threshold) {
+    return {
+      label: uiSettings.language === "ko" ? "상승 감지" : "Rising",
+      direction: "rising",
+    };
+  }
+  if (delta < -threshold) {
+    return {
+      label: uiSettings.language === "ko" ? "개선 중" : "Improving",
+      direction: "improving",
+    };
+  }
+  return {
+    label: uiSettings.language === "ko" ? "안정 흐름" : "Stable",
+    direction: "steady",
+  };
+}
+
+function networkLossHistory(quality, analysis, loss) {
+  const supplied = numericNetworkSeries(
+    quality.packet_loss_history
+    || quality.loss_history
+    || analysis.packet_loss_history
+    || analysis.loss_history
+    || []
+  ).slice(-28);
+  if (supplied.length >= 2) {
+    networkLossSamples = supplied;
+  } else {
+    networkLossSamples = [...networkLossSamples, loss].slice(-28);
+  }
+  if (networkLossSamples.length < 2) {
+    networkLossSamples = [loss, loss];
+  }
+  return networkLossSamples;
+}
+
+function renderNetworkLossSparkline(target, values) {
+  if (!target) return;
+  const samples = numericNetworkSeries(values).slice(-28);
+  if (!samples.length) {
+    target.innerHTML = "";
+    return;
+  }
+  const width = 220;
+  const height = 44;
+  const pad = { left: 4, right: 4, top: 6, bottom: 8 };
+  const plotWidth = width - pad.left - pad.right;
+  const plotHeight = height - pad.top - pad.bottom;
+  const maxValue = Math.max(0.1, ...samples) * 1.18;
+  const points = samples.map((value, index) => [
+    pad.left + (plotWidth * index) / Math.max(1, samples.length - 1),
+    pad.top + plotHeight - (plotHeight * Math.min(maxValue, Number(value) || 0)) / maxValue,
+  ]);
+  const path = linearPath(points);
+  const area = `${path} L ${points[points.length - 1][0].toFixed(1)} ${height - pad.bottom} L ${points[0][0].toFixed(1)} ${height - pad.bottom} Z`;
+  target.innerHTML = `
+    <path class="network-loss-spark-area" d="${area}"></path>
+    <path class="network-loss-spark-line" d="${path}"></path>
+    <circle class="network-loss-spark-dot" cx="${points[points.length - 1][0].toFixed(1)}" cy="${points[points.length - 1][1].toFixed(1)}" r="3.2"></circle>
+  `;
+}
+
+function setNetworkQualityChipTone(node, tone) {
+  const chip = node?.closest(".network-quality-chip");
+  if (!chip) return;
+  chip.classList.remove("quality-good", "quality-warning", "quality-critical", "quality-info");
+  chip.classList.add(`quality-${tone}`);
+}
+
+function setNetworkQualityValue(node, value, unit = "") {
+  if (!node) return;
+  node.style.setProperty("display", "flex", "important");
+  node.style.setProperty("align-items", "baseline", "important");
+  node.style.setProperty("gap", "4px", "important");
+  node.style.setProperty("font-size", "50px", "important");
+  node.style.setProperty("font-weight", "950", "important");
+  node.style.setProperty("line-height", "0.92", "important");
+  node.innerHTML = `<span class="network-quality-value" style="font-size:50px!important;font-weight:950!important;line-height:.92!important;">${escapeHtml(String(value))}</span>${unit ? `<span class="network-quality-unit" style="font-size:18px!important;font-weight:850!important;line-height:1!important;">${escapeHtml(unit)}</span>` : ""}`;
+}
+
+function updateNetworkPortToggle() {
+  if (!networkPortToggle || !networkPortTable) return;
+  networkPortToggle.textContent = networkPortsCollapsed ? t("network.portBadgeCollapsed") : t("network.portBadge");
+  networkPortToggle.setAttribute("aria-expanded", String(!networkPortsCollapsed));
+  networkPortTable.setAttribute("aria-hidden", String(networkPortsCollapsed));
+  networkPortTable.classList.toggle("network-port-list-collapsed", networkPortsCollapsed);
+  if (networkPortsCollapsed) {
+    networkPortTable.style.setProperty("display", "none", "important");
+  } else {
+    networkPortTable.style.removeProperty("display");
+  }
+}
+
+function updateNetworkPathToggle() {
+  if (!networkPathToggle || !networkPathStatus) return;
+  networkPathToggle.textContent = networkPathCollapsed ? t("network.pathBadgeCollapsed") : t("network.pathBadge");
+  networkPathToggle.setAttribute("aria-expanded", String(!networkPathCollapsed));
+  networkPathStatus.setAttribute("aria-hidden", String(networkPathCollapsed));
+  networkPathStatus.classList.toggle("network-path-list-collapsed", networkPathCollapsed);
+  if (networkPathCollapsed) {
+    networkPathStatus.style.setProperty("display", "none", "important");
+  } else {
+    networkPathStatus.style.removeProperty("display");
+  }
+}
+
+function updateNetworkInsightToggle() {
+  if (!networkInsightToggle || !networkInsights) return;
+  networkInsightToggle.textContent = networkInsightsCollapsed ? t("network.insightBadgeCollapsed") : t("network.insightBadgeExpanded");
+  networkInsightToggle.setAttribute("aria-expanded", String(!networkInsightsCollapsed));
+  networkInsights.setAttribute("aria-hidden", String(networkInsightsCollapsed));
+  networkInsights.classList.toggle("network-insight-list-collapsed", networkInsightsCollapsed);
+  if (networkInsightsCollapsed) {
+    networkInsights.style.setProperty("display", "none", "important");
+  } else {
+    networkInsights.style.removeProperty("display");
+  }
+}
+
+function networkScaleCeil(maxValue) {
+  const value = Math.max(0.1, Number(maxValue) || 0);
+  const exponent = Math.pow(10, Math.floor(Math.log10(value)));
+  const normalized = value / exponent;
+  const step = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  return step * exponent;
+}
+
+function alignNetworkHistory(values, count) {
+  const source = normalizeNetworkHistory(values, []);
+  if (source.length >= count) return source.slice(source.length - count);
+  return Array(count - source.length).fill(source[0] || 0).concat(source);
+}
+
+function updateNetworkFlowModeControls() {
+  networkFlowModeButtons.forEach((button) => {
+    const mode = button.dataset.networkFlowMode;
+    const active = activeNetworkFlowMode === "both" || activeNetworkFlowMode === mode;
+    button.classList.toggle("active", active);
+    button.classList.toggle("muted", activeNetworkFlowMode !== "both" && !active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
+function setNetworkFlowMode(mode) {
+  const nextMode = activeNetworkFlowMode === mode ? "both" : mode;
+  activeNetworkFlowMode = ["tx", "rx"].includes(nextMode) ? nextMode : "both";
+  updateNetworkFlowModeControls();
+  if (latestNetworkStatusData) renderNetworkStatus(latestNetworkStatusData);
+}
+
+function drawCombinedNetworkFlow(target, txValues, rxValues, displayMode = "both") {
+  if (!target) return 0;
+  const txSource = normalizeNetworkHistory(txValues, []);
+  const rxSource = normalizeNetworkHistory(rxValues, []);
+  const sampleCount = Math.max(2, Math.min(60, Math.max(txSource.length, rxSource.length)));
+  const tx = alignNetworkHistory(txSource, sampleCount);
+  const rx = alignNetworkHistory(rxSource, sampleCount);
+  const mode = ["tx", "rx"].includes(displayMode) ? displayMode : "both";
+  const showTx = mode !== "rx";
+  const showRx = mode !== "tx";
+  const visibleValues = [
+    ...(showTx ? tx : []),
+    ...(showRx ? rx : []),
+  ];
+  const width = 1280;
+  const height = 320;
+  const pad = { left: 2, right: 10, top: 28, bottom: 46 };
+  const plotWidth = width - pad.left - pad.right;
+  const plotHeight = height - pad.top - pad.bottom;
+  const maxValue = networkScaleCeil(Math.max(0.1, ...visibleValues) * 1.12);
+  const x = (index) => pad.left + (plotWidth * index) / Math.max(1, sampleCount - 1);
+  const y = (value) => pad.top + plotHeight - (plotHeight * Math.min(maxValue, Number(value) || 0)) / maxValue;
+  const txPoints = tx.map((value, index) => [x(index), y(value)]);
+  const rxPoints = rx.map((value, index) => [x(index), y(value)]);
+  const txPath = linearPath(txPoints);
+  const rxPath = linearPath(rxPoints);
+  const areaPath = (points) => `${linearPath(points)} L ${points[points.length - 1][0].toFixed(1)} ${pad.top + plotHeight} L ${points[0][0].toFixed(1)} ${pad.top + plotHeight} Z`;
+  const rowCount = 6;
+  const gridRows = Array.from({ length: rowCount + 1 }, (_, index) => {
+    const value = maxValue - (maxValue * index) / rowCount;
+    const gridY = y(value);
+    const major = index === 0 || index === rowCount || index === Math.round(rowCount * 0.3);
+    return `<line x1="${pad.left}" y1="${gridY.toFixed(1)}" x2="${(width - pad.right).toFixed(1)}" y2="${gridY.toFixed(1)}" class="network-task-grid${major ? " grid-major" : ""}"></line>`;
+  }).join("");
+  const gridColumns = Array.from({ length: 11 }, (_, index) => {
+    const gridX = pad.left + (plotWidth * index) / 10;
+    return `<line x1="${gridX.toFixed(1)}" y1="${pad.top}" x2="${gridX.toFixed(1)}" y2="${(height - pad.bottom).toFixed(1)}" class="network-task-grid network-task-grid-vertical"></line>`;
+  }).join("");
+  target.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  target.setAttribute("preserveAspectRatio", "none");
+  target.innerHTML = `
+    <defs>
+      <linearGradient id="combinedTxFill" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0%" stop-color="#f97316" stop-opacity="0.13"></stop>
+        <stop offset="100%" stop-color="#f97316" stop-opacity="0.01"></stop>
+      </linearGradient>
+      <linearGradient id="combinedRxFill" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0%" stop-color="#0ea5a3" stop-opacity="0.12"></stop>
+        <stop offset="100%" stop-color="#0ea5a3" stop-opacity="0.01"></stop>
+      </linearGradient>
+      <filter id="combinedLineGlow" x="-12%" y="-12%" width="124%" height="124%">
+        <feGaussianBlur stdDeviation="0.75" result="blur"></feGaussianBlur>
+        <feMerge>
+          <feMergeNode in="blur"></feMergeNode>
+          <feMergeNode in="SourceGraphic"></feMergeNode>
+        </feMerge>
+      </filter>
+    </defs>
+    <rect x="${pad.left}" y="${pad.top}" width="${plotWidth}" height="${plotHeight}" class="network-task-plot"></rect>
+    ${gridRows}
+    ${gridColumns}
+    ${showRx ? `<path d="${areaPath(rxPoints)}" fill="url(#combinedRxFill)"></path>` : ""}
+    ${showTx ? `<path d="${areaPath(txPoints)}" fill="url(#combinedTxFill)"></path>` : ""}
+    ${showRx ? `<path d="${rxPath}" fill="none" stroke="#0ea5a3" stroke-width="1.95" stroke-linecap="round" stroke-linejoin="round" filter="url(#combinedLineGlow)"></path>` : ""}
+    ${showTx ? `<path d="${txPath}" fill="none" stroke="#f97316" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 2"></path>` : ""}
+    ${showTx ? `<circle cx="${txPoints[txPoints.length - 1][0].toFixed(1)}" cy="${txPoints[txPoints.length - 1][1].toFixed(1)}" r="4.2" fill="#f97316"></circle>` : ""}
+    ${showRx ? `<circle cx="${rxPoints[rxPoints.length - 1][0].toFixed(1)}" cy="${rxPoints[rxPoints.length - 1][1].toFixed(1)}" r="4.8" fill="#0ea5a3" class="network-chart-pulse"></circle>` : ""}
+  `;
+  return maxValue;
+}
+
 function networkPathDisplay(item) {
   const rawName = String(item?.name || "-");
   const target = String(item?.target || "-");
@@ -2442,22 +3527,49 @@ function renderNetworkAnalysis(analysis) {
   const pathStatus = Array.isArray(analysis.path_status) ? analysis.path_status : [];
   const events = Array.isArray(analysis.events) ? analysis.events : [];
   const loss = Number(quality.packet_loss_percent || 0);
+  const lossTone = networkLossTone(loss);
+  const lossHistory = networkLossHistory(quality, analysis, loss);
+  const lossTrend = networkLossTrendInfo(lossHistory);
+  if (networkLossCard) {
+    networkLossCard.dataset.lossTone = lossTone;
+    networkLossCard.dataset.lossTrend = lossTrend.direction;
+  }
   if (networkLossScore) {
     networkLossScore.textContent = `${loss.toFixed(2)}%`;
-    networkLossScore.className = loss >= 1 ? "network-loss-critical" : (loss >= 0.3 ? "network-loss-warning" : "network-loss-good");
+    networkLossScore.className = `network-loss-${lossTone}`;
   }
   if (networkLossState) {
-    networkLossState.textContent = networkLossLabel(loss);
-    networkLossState.className = loss >= 1 ? "loss-state-critical" : (loss >= 0.3 ? "loss-state-warning" : "loss-state-good");
+    networkLossState.textContent = `${networkLossLabel(loss)} · ${lossTrend.label}`;
+    networkLossState.className = `loss-state-${lossTone}`;
   }
-  if (networkLatency) networkLatency.textContent = `${Number(quality.latency_ms || 0).toFixed(0)} ms`;
-  if (networkJitter) networkJitter.textContent = `${Number(quality.jitter_ms || 0).toFixed(0)} ms`;
-  if (networkAllowedPorts) networkAllowedPorts.textContent = String(ports.filter((item) => String(item.state || "").toUpperCase() === "ALLOW").length);
-  if (networkBlockedPorts) networkBlockedPorts.textContent = String(ports.filter((item) => ["BLOCK", "PROTECTED"].includes(String(item.state || "").toUpperCase())).length);
+  if (networkLossTrend) networkLossTrend.textContent = lossTrend.label;
+  renderNetworkLossSparkline(networkLossSparkline, lossHistory);
+  const latency = Number(quality.latency_ms || 0);
+  const jitter = Number(quality.jitter_ms || 0);
+  const allowedCount = ports.filter((item) => String(item.state || "").toUpperCase().startsWith("ALLOW")).length;
+  const blockedCount = ports.filter((item) => ["BLOCK", "PROTECTED"].includes(String(item.state || "").toUpperCase())).length;
+  if (networkLatency) {
+    setNetworkQualityValue(networkLatency, latency.toFixed(0), "ms");
+    setNetworkQualityChipTone(networkLatency, latency >= 80 ? "critical" : (latency >= 35 ? "warning" : "good"));
+  }
+  if (networkJitter) {
+    setNetworkQualityValue(networkJitter, jitter.toFixed(0), "ms");
+    setNetworkQualityChipTone(networkJitter, jitter >= 25 ? "critical" : (jitter >= 10 ? "warning" : "good"));
+  }
+  if (networkAllowedPorts) {
+    setNetworkQualityValue(networkAllowedPorts, allowedCount);
+    setNetworkQualityChipTone(networkAllowedPorts, allowedCount ? "good" : "warning");
+  }
+  if (networkBlockedPorts) {
+    setNetworkQualityValue(networkBlockedPorts, blockedCount);
+    setNetworkQualityChipTone(networkBlockedPorts, blockedCount ? "info" : "warning");
+  }
   if (networkOpsSummary) {
     const protectedCount = ports.filter((item) => ["BLOCK", "PROTECTED"].includes(String(item.state || "").toUpperCase())).length;
+    const veeamRestPort = ports.find((item) => Number(item.port) === 9419);
+    const veeamCurrentIpMatch = veeamRestPort?.veeam_config?.current_ip_match !== false && String(veeamRestPort?.state || "").toUpperCase() === "ALLOW";
     const summaryItems = [
-      { label: "Veeam REST", value: ports.some((item) => Number(item.port) === 9419 && String(item.state).toUpperCase() === "ALLOW") ? (uiSettings.language === "ko" ? "정상" : "Available") : (uiSettings.language === "ko" ? "확인 필요" : "Check"), tone: "ok" },
+      { label: "Veeam REST", value: veeamCurrentIpMatch ? (uiSettings.language === "ko" ? "현재 IP" : "Current IP") : (uiSettings.language === "ko" ? "IP 확인" : "Check IP"), tone: veeamCurrentIpMatch ? "ok" : "risk" },
       { label: "WinRM", value: ports.some((item) => Number(item.port) === 5985 && String(item.state).toUpperCase() === "ALLOW") ? (uiSettings.language === "ko" ? "관리" : "Managed") : (uiSettings.language === "ko" ? "차단" : "Blocked"), tone: "info" },
       { label: uiSettings.language === "ko" ? "복구 포트" : "Recovery Ports", value: uiSettings.language === "ko" ? `${protectedCount}개 보호` : `${protectedCount} Protected`, tone: "protected" },
       { label: uiSettings.language === "ko" ? "패킷 손실" : "Packet Loss", value: `${loss.toFixed(2)}%`, tone: loss >= 1 ? "risk" : (loss >= 0.3 ? "warn" : "ok") },
@@ -2471,19 +3583,40 @@ function renderNetworkAnalysis(analysis) {
   }
   if (networkPortTable) {
     networkPortTable.innerHTML = ports.map((item) => {
-      const state = String(item.state || "").toLowerCase();
-      const stateClass = state === "block" || state === "blocked" ? "protected" : state;
+      const state = String(item.state || "").toUpperCase();
+      const veeamConfig = item.veeam_config || {};
+      const isVeeamRest = Number(item.port) === 9419;
+      const isStaleAllow = isVeeamRest && (state === "ALLOW_STALE" || veeamConfig.current_ip_match === false);
+      const stateClass = isStaleAllow
+        ? "allow-stale"
+        : (state.toLowerCase() === "block" || state.toLowerCase() === "blocked" ? "protected" : state.toLowerCase());
+      const stateLabel = isStaleAllow
+        ? (uiSettings.language === "ko" ? "허용" : "Allow")
+        : networkDisplayState(item.state);
+      const riskLabel = isStaleAllow
+        ? (uiSettings.language === "ko" ? "과거 IP" : "Past IP")
+        : (isVeeamRest ? (uiSettings.language === "ko" ? "현재 IP" : "Current IP") : networkDisplayRisk(item.risk));
+      const targetLine = item.target
+        ? `<small>${escapeHtml(uiSettings.language === "ko" ? "대상" : "Target")} ${escapeHtml(item.target)}</small>`
+        : "";
+      const stateControl = isVeeamRest
+        ? `<button type="button" class="network-port-state-button" data-veeam-sync title="${escapeHtml(uiSettings.language === "ko" ? "현재 agent 설치 IP 기준으로 실행 설정을 갱신합니다." : "Sync execution settings to the current agent install IP.")}">${escapeHtml(stateLabel)}</button>`
+        : `<b>${escapeHtml(stateLabel)}</b>`;
       return `
         <article class="network-port-row port-${escapeHtml(stateClass)}">
           <div>
             <strong>${escapeHtml(item.port || "-")}</strong>
             <span>${escapeHtml(item.service || "-")} · ${escapeHtml(item.protocol || "TCP")}</span>
+            ${targetLine}
           </div>
-          <b>${escapeHtml(networkDisplayState(item.state))}</b>
-          <em>${escapeHtml(networkDisplayRisk(item.risk))}</em>
+          <div class="network-port-metrics">
+            ${stateControl}
+            <em>${escapeHtml(riskLabel)}</em>
+          </div>
         </article>
       `;
     }).join("") || `<article class="network-empty-row">No port policy data</article>`;
+    updateNetworkPortToggle();
   }
   if (networkInsights) {
     networkInsights.innerHTML = insights.map((item) => `
@@ -2492,6 +3625,7 @@ function renderNetworkAnalysis(analysis) {
         <span>${escapeHtml(networkDisplayInsightDetail(item.detail))}</span>
       </article>
     `).join("") || `<article class="network-empty-row">No analysis data</article>`;
+    updateNetworkInsightToggle();
   }
   if (networkPathStatus) {
     networkPathStatus.innerHTML = pathStatus.map((item) => {
@@ -2511,6 +3645,7 @@ function renderNetworkAnalysis(analysis) {
         </article>
       `;
     }).join("") || `<article class="network-empty-row">No path status data</article>`;
+    updateNetworkPathToggle();
   }
   if (networkEventList) {
     networkEventList.innerHTML = events.map((item) => `
@@ -2523,27 +3658,48 @@ function renderNetworkAnalysis(analysis) {
 }
 
 function drawFlowChart(target, values, type) {
-  const width = 360;
-  const height = 110;
-  const pad = { left: 14, right: 14, top: 12, bottom: 18 };
+  const width = 640;
+  const height = 204;
+  const pad = { left: 22, right: 22, top: 18, bottom: 24 };
   const chartWidth = width - pad.left - pad.right;
   const chartHeight = height - pad.top - pad.bottom;
   const maxValue = Math.max(...values, 1);
   const x = (index) => pad.left + (chartWidth * index) / Math.max(1, values.length - 1);
   const y = (value) => pad.top + chartHeight - (chartHeight * value) / maxValue;
-  const path = values.map((value, index) => `${index === 0 ? "M" : "L"}${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(" ");
-  const area = `${path} L${x(values.length - 1).toFixed(1)},${pad.top + chartHeight} L${pad.left},${pad.top + chartHeight} Z`;
+  const points = values.map((value, index) => [x(index), y(value)]);
+  const path = smoothPath(points, 0.16);
+  const area = `${path} L ${x(values.length - 1).toFixed(1)} ${pad.top + chartHeight} L ${pad.left.toFixed(1)} ${pad.top + chartHeight} Z`;
   const color = type === "tx" ? "#2388ff" : "#37dca0";
+  const gridRows = [0.25, 0.5, 0.75].map((ratio) => {
+    const gridY = pad.top + chartHeight * ratio;
+    return `<line x1="${pad.left}" y1="${gridY.toFixed(1)}" x2="${(width - pad.right).toFixed(1)}" y2="${gridY.toFixed(1)}" class="network-chart-grid"></line>`;
+  }).join("");
+  const gridColumns = Array.from({ length: 7 }, (_, index) => {
+    const gridX = pad.left + (chartWidth * index) / 6;
+    return `<line x1="${gridX.toFixed(1)}" y1="${pad.top}" x2="${gridX.toFixed(1)}" y2="${(height - pad.bottom).toFixed(1)}" class="network-chart-grid network-chart-grid-vertical"></line>`;
+  }).join("");
   target.innerHTML = `
-    <defs>
-      <linearGradient id="flowFill-${type}" x1="0" x2="0" y1="0" y2="1">
-        <stop offset="0%" stop-color="${color}" stop-opacity="0.22"></stop>
-        <stop offset="100%" stop-color="${color}" stop-opacity="0.03"></stop>
-      </linearGradient>
+      <defs>
+        <linearGradient id="flowFill-${type}" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stop-color="${color}" stop-opacity="0.24"></stop>
+          <stop offset="62%" stop-color="${color}" stop-opacity="0.1"></stop>
+          <stop offset="100%" stop-color="${color}" stop-opacity="0.03"></stop>
+        </linearGradient>
+        <filter id="flowGlow-${type}" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="2.4" result="blur"></feGaussianBlur>
+          <feMerge>
+            <feMergeNode in="blur"></feMergeNode>
+            <feMergeNode in="SourceGraphic"></feMergeNode>
+        </feMerge>
+      </filter>
     </defs>
+    <rect x="${pad.left}" y="${pad.top}" width="${chartWidth}" height="${chartHeight}" class="network-chart-plot"></rect>
+    ${gridRows}
+    ${gridColumns}
     <path d="${area}" fill="url(#flowFill-${type})"></path>
-    <path d="${path}" fill="none" stroke="${color}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></path>
-    <circle cx="${x(values.length - 1).toFixed(1)}" cy="${y(values[values.length - 1]).toFixed(1)}" r="5" fill="${color}"></circle>
+    <path d="${path}" fill="none" stroke="${color}" stroke-width="8" stroke-opacity="0.16" stroke-linecap="round" stroke-linejoin="round"></path>
+    <path d="${path}" fill="none" stroke="${color}" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#flowGlow-${type})"></path>
+    <circle cx="${x(values.length - 1).toFixed(1)}" cy="${y(values[values.length - 1]).toFixed(1)}" r="8" fill="${color}" class="network-chart-pulse"></circle>
   `;
 }
 
@@ -2775,6 +3931,7 @@ function logsUrl() {
   const params = new URLSearchParams();
   if (logsRange.start) params.set("start", logsRange.start);
   if (logsRange.end) params.set("end", logsRange.end);
+  if (logsRange.type) params.set("type", logsRange.type);
   if (logsRange.severity) params.set("severity", logsRange.severity);
   if (logsRange.source) params.set("source", logsRange.source);
   if (logsRange.q) params.set("q", logsRange.q);
@@ -2788,6 +3945,7 @@ function logsCsvUrl() {
   const params = new URLSearchParams();
   if (logsRange.start) params.set("start", logsRange.start);
   if (logsRange.end) params.set("end", logsRange.end);
+  if (logsRange.type) params.set("type", logsRange.type);
   if (logsRange.severity) params.set("severity", logsRange.severity);
   if (logsRange.source) params.set("source", logsRange.source);
   if (logsRange.q) params.set("q", logsRange.q);
@@ -2833,6 +3991,7 @@ function renderLoadedData(key, value) {
   if (key === "report") renderReport(value);
   if (key === "notification") renderNotification(value);
   if (key === "detect") renderDetect(value);
+  if (key === "threat") renderThreatDetection(value);
   if (key === "networkStatus") renderNetworkStatus(value);
   if (key === "logs") renderLogs(value);
   if (key === "license") {
@@ -3007,6 +4166,16 @@ function canReviewDepartment(review, session = currentSession) {
   return roleDepartmentIds(session.role).includes(String(review.departmentId || ""));
 }
 
+function isNoPendingDepartmentReviewError(error) {
+  return /no pending department review is available/i.test(String(error?.message || error || ""));
+}
+
+function showNoPendingDepartmentReviewNotice() {
+  if (!approvalFormStatus) return;
+  approvalFormStatus.textContent = "확인할 부서 검토가 없습니다. 이미 처리되었거나 현재 계정 권한의 검토 대상이 아니므로 승인 요청함 또는 내 승인 대기에서 다음 단계를 확인하세요.";
+  approvalFormStatus.className = "approval-form-status status-warning";
+}
+
 function pendingDepartmentReviewsForSession(request, session = currentSession) {
   return departmentReviewsFor(request).filter((review) => canReviewDepartment(review, session));
 }
@@ -3105,6 +4274,136 @@ function renderWorkflowHistory(request, decisions = latestApprovalsData.decision
   `).join("")}</ol>`;
 }
 
+function renderApprovalWorkflowSummary() {
+  if (!approvalWorkflowSummary) return;
+  const requests = latestApprovalsData.requests || [];
+  const decisions = latestApprovalsData.decisions || [];
+  const pending = requests.filter((request) => String(request.status || "") === "PENDING").length;
+  const reviewPending = requests.filter((request) => isDepartmentReviewPending(request)).length;
+  const approvalPending = requests.filter((request) => isApprovalPendingRequest(request)).length;
+  const executionAllowed = requests.filter((request) => isExecutionAllowedRequest(request)).length;
+  const completed = requests.filter((request) => ["APPROVED", "EXECUTED"].includes(String(request.status || ""))).length;
+  const approvedDecisions = decisions.filter((decision) => String(decision.decision || "") === "APPROVED").length;
+  const cards = [
+    ["요청 대기", pending, "새 요청 또는 승인 대기 상태"],
+    ["부서 검토 필요", reviewPending, "보안/백업/하드웨어/감사 검토"],
+    ["승인 대기", approvalPending, "2인 승인 조건 확인"],
+    ["실행 허용됨", executionAllowed, "에어갭 실행 가능 상태"],
+    ["완료·감사", completed, `${approvedDecisions}건 승인 기록 보존`],
+  ];
+  approvalWorkflowSummary.innerHTML = cards.map(([label, value, detail]) => `
+    <article>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <em>${escapeHtml(detail)}</em>
+    </article>
+  `).join("");
+  renderApprovalExecutionProof();
+}
+
+function approvalProgress(request, decisions = latestApprovalsData.decisions) {
+  const approved = approvalDecisionsFor(request, decisions).filter((decision) => decision.decision === "APPROVED").length;
+  const required = Number(request?.requiredApprovals || 1);
+  return { approved, required };
+}
+
+function isExecutionAllowedRequest(request, decisions = latestApprovalsData.decisions) {
+  if (!request) return false;
+  const requestStatus = String(request.status || "").toUpperCase();
+  if (["APPROVED", "EXECUTED"].includes(requestStatus)) return true;
+  const reviewOk = ["NOT_REQUIRED", "REVIEWED"].includes(departmentReviewStatus(request));
+  const progress = approvalProgress(request, decisions);
+  return requestStatus === "PENDING" && reviewOk && progress.approved >= progress.required;
+}
+
+function latestApprovalProofRequest(requests = latestApprovalsData.requests) {
+  const items = Array.isArray(requests) ? requests.slice() : [];
+  const relevant = items.filter((request) => ["DISK_ONLINE", "EMERGENCY_UNLOCK"].includes(String(request.requestType || "").toUpperCase()));
+  return (relevant.length ? relevant : items).sort((left, right) => {
+    const leftTime = String(left.updatedAt || left.createdAt || left.expiresAt || "");
+    const rightTime = String(right.updatedAt || right.createdAt || right.expiresAt || "");
+    return rightTime.localeCompare(leftTime);
+  })[0];
+}
+
+function renderProofStep(label, value, detail, state = "pending") {
+  return `
+    <article class="approval-proof-step approval-proof-${escapeHtml(state)}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <em>${escapeHtml(detail)}</em>
+    </article>
+  `;
+}
+
+function renderApprovalExecutionProof() {
+  if (!approvalExecutionProof) return;
+  const request = latestApprovalProofRequest();
+  if (!request) {
+    approvalExecutionProof.innerHTML = `
+      <div class="approval-proof-empty">
+        <strong>실행 허용 증명 대기</strong>
+        <span>승인 요청을 등록하면 부서 검토, 2인 승인, 실행 허용, 감사 기록 상태가 이 카드에 자동으로 표시됩니다.</span>
+      </div>
+    `;
+    return;
+  }
+  const reviews = departmentReviewsFor(request);
+  const reviewed = reviews.filter((review) => String(review.status || "").toUpperCase() === "REVIEWED").length;
+  const reviewRequired = reviews.length;
+  const reviewOk = ["NOT_REQUIRED", "REVIEWED"].includes(departmentReviewStatus(request));
+  const progress = approvalProgress(request);
+  const allowed = isExecutionAllowedRequest(request);
+  const historyCount = workflowHistoryItems(request).length;
+  const repositoryPath = request.metadata?.repositoryPath || "-";
+  const proofTitle = allowed ? "실행 허용이 완료되었습니다." : "실행 허용까지 남은 절차가 있습니다.";
+  const proofDetail = allowed
+    ? "부서 검토와 승인 조건을 충족했습니다. 에어갭 화면에서 바로 재접속 실행 상태를 확인할 수 있습니다."
+    : "아래 카드에서 부족한 검토 또는 승인 단계를 확인한 뒤 한 번의 확인 버튼으로 다음 절차를 진행합니다.";
+  approvalExecutionProof.innerHTML = `
+    <div class="approval-proof-head">
+      <div>
+        <span>실행 허용 증명</span>
+        <h2>${escapeHtml(proofTitle)}</h2>
+        <p>${escapeHtml(proofDetail)}</p>
+      </div>
+      <button type="button" class="approval-airgap-shortcut" data-approval-airgap-shortcut>
+        에어갭 화면에서 확인
+      </button>
+    </div>
+    <div class="approval-proof-meta">
+      <span>요청 유형 <strong>${escapeHtml(request.requestType || "-")}</strong></span>
+      <span>대상 <strong>${escapeHtml(request.targetId || "-")}</strong></span>
+      <span>저장소 <strong>${escapeHtml(repositoryPath)}</strong></span>
+      <span>상태 <strong>${escapeHtml(allowed ? "실행 허용됨" : departmentWorkflowDisplayStatus(request))}</strong></span>
+    </div>
+    <div class="approval-proof-grid">
+      ${renderProofStep("부서 검토", reviewRequired ? `${reviewed} / ${reviewRequired} 완료` : "불필요", reviewOk ? "검토 조건 충족" : "부서 검토가 남아 있습니다.", reviewOk ? "done" : "pending")}
+      ${renderProofStep("2인 승인", `${progress.approved} / ${progress.required} 승인`, progress.approved >= progress.required ? "승인 조건 충족" : "서로 다른 관리자 승인이 필요합니다.", progress.approved >= progress.required ? "done" : "pending")}
+      ${renderProofStep("실행 허용", allowed ? "허용됨" : "대기", allowed ? "에어갭 실행 가능" : "검토와 승인 완료 후 허용됩니다.", allowed ? "allowed" : "pending")}
+      ${renderProofStep("감사 기록", `${historyCount}건`, "요청, 검토, 승인 이력 보존", historyCount ? "done" : "pending")}
+    </div>
+  `;
+}
+
+function approvalRequestMetadata(requestType, reason, repositoryPath) {
+  const type = String(requestType || "").trim().toUpperCase();
+  const metadata = {
+    reason: String(reason || "").trim(),
+    requestedFrom: "LOCK-FIX WebUI",
+    workflowGuide: "작업 요청 > 부서 검토 > 승인 > 실행 > 감사 기록",
+  };
+  const path = String(repositoryPath || "").trim();
+  if (path) metadata.repositoryPath = path;
+  if (type === "DISK_ONLINE") {
+    metadata.workflowType = "REPOSITORY_ONLINE";
+    metadata.targetResourceType = "REPOSITORY";
+    metadata.workflowStatus = "AWAITING_SECURITY_HARDWARE_REVIEW";
+    metadata.reviews = {};
+  }
+  return metadata;
+}
+
 function renderApprovals(data, errorMessage = "") {
   latestApprovalsData = {
     policies: Array.isArray(data?.policies) ? data.policies : [],
@@ -3114,6 +4413,7 @@ function renderApprovals(data, errorMessage = "") {
     reviewComments: Array.isArray(data?.reviewComments) ? data.reviewComments : [],
     notifications: Array.isArray(data?.notifications) ? data.notifications : [],
   };
+  renderApprovalWorkflowSummary();
   const tab = approvalTabDefinitions.find((item) => item.id === activeApprovalTab) || approvalTabDefinitions[0];
   if (approvalTabTitle) approvalTabTitle.textContent = tab.label;
   approvalTabs?.querySelectorAll("[data-approval-tab]").forEach((button) => {
@@ -3131,21 +4431,20 @@ function renderApprovals(data, errorMessage = "") {
   }
   rows.forEach((request) => {
     const row = document.createElement("tr");
+    const requestStatus = String(request.status || "").toUpperCase();
     const reviewType = reviewTypeForRole(currentSession.role);
-    const reviewButton = canShowReviewButton(request)
-      ? `<button type="button" class="rbac-action-button" data-review-id="${escapeHtml(request.id)}" data-review-type="${escapeHtml(reviewType)}">Review</button>`
+    const pendingDepartmentReviews = pendingDepartmentReviewsForSession(request);
+    const departmentButtons = pendingDepartmentReviews.length
+      ? `<button type="button" class="rbac-action-button rbac-confirm-action" data-department-confirm-request-id="${escapeHtml(request.id)}" data-department-confirm-review-ids="${escapeHtml(pendingDepartmentReviews.map((review) => review.id).join(","))}">확인</button>`
       : "";
-    const departmentButtons = pendingDepartmentReviewsForSession(request).map((review) => `
-      <button type="button" class="rbac-action-button" data-department-review-id="${escapeHtml(review.id)}" data-approval-request-id="${escapeHtml(request.id)}" data-review-action="comment">Comment</button>
-      <button type="button" class="rbac-action-button" data-department-review-id="${escapeHtml(review.id)}" data-approval-request-id="${escapeHtml(request.id)}" data-review-action="mark-reviewed">Reviewed</button>
-      <button type="button" class="rbac-action-button" data-department-review-id="${escapeHtml(review.id)}" data-approval-request-id="${escapeHtml(request.id)}" data-review-action="needs-changes">Needs changes</button>
-      <button type="button" class="rbac-action-button" data-department-review-id="${escapeHtml(review.id)}" data-approval-request-id="${escapeHtml(request.id)}" data-review-action="block">Block</button>
-    `).join("");
+    const reviewButton = !departmentButtons && canShowReviewButton(request)
+      ? `<button type="button" class="rbac-action-button rbac-confirm-action" data-review-id="${escapeHtml(request.id)}" data-review-type="${escapeHtml(reviewType)}">확인</button>`
+      : "";
     const approveButton = canShowApprovalButton(request)
-      ? `<button type="button" class="rbac-action-button" data-approval-id="${escapeHtml(request.id)}">Approve</button>`
+      ? `<button type="button" class="rbac-action-button rbac-confirm-action" data-approval-id="${escapeHtml(request.id)}">확인</button>`
       : "";
-    const rejectButton = canShowApprovalButton(request)
-      ? `<button type="button" class="rbac-action-button rbac-danger-action" data-reject-id="${escapeHtml(request.id)}">Reject</button>`
+    const deleteExpiredButton = requestStatus === "EXPIRED"
+      ? `<button type="button" class="rbac-action-button rbac-danger-action" data-delete-expired-id="${escapeHtml(request.id)}">만료 삭제</button>`
       : "";
     const history = ["consultationOpinion", "completedHistory", "auditRecord"].includes(activeApprovalTab) ? renderWorkflowHistory(request) : "";
     row.innerHTML = `
@@ -3155,13 +4454,20 @@ function renderApprovals(data, errorMessage = "") {
       <td><span class="rbac-status rbac-status-${escapeHtml(String(request.status || "").toLowerCase())}">${escapeHtml(request.status)}</span></td>
       <td>${renderRepositoryOnlineRequestPanel(request)}${renderFinalApprovalPanel(request)}${escapeHtml(repositoryOnlineWorkflowSummary(request))}<br><span class="approval-review-state">최종 승인 가능 여부: ${canShowApprovalButton(request) ? "가능" : "불가"} · 검토 완료 상태: ${escapeHtml(departmentReviewStatus(request))}</span>${history}</td>
       <td>${escapeHtml(formatLogDate(request.expiresAt))}</td>
-      <td>${departmentButtons}${reviewButton}${approveButton}${rejectButton}</td>
+      <td>${departmentButtons}${reviewButton}${approveButton}${deleteExpiredButton}</td>
     `;
     approvalRequestsTable.appendChild(row);
   });
 }
 
 async function reloadApprovals() {
+  if (!currentSession.authenticated) {
+    renderApprovals(
+      { requests: [], decisions: [], policies: [], departmentReviews: [], reviewComments: [], notifications: [] },
+      "로그인 후 승인 요청을 확인할 수 있습니다."
+    );
+    return;
+  }
   const data = await requestJson("/api/approvals");
   renderApprovals(data);
 }
@@ -3333,6 +4639,66 @@ function renderServiceControlStatus(status) {
   if (serviceStopButton) serviceStopButton.disabled = !status.can_stop;
 }
 
+function preflightStatusLabel(status) {
+  const text = String(status || "").toUpperCase();
+  if (text === "OK" || text === "정상") return uiSettings.language === "ko" ? "정상" : "OK";
+  if (text.includes("서비스")) return uiSettings.language === "ko" ? "서비스 미실행" : "Service stopped";
+  if (text.includes("권한")) return uiSettings.language === "ko" ? "권한 부족" : "Insufficient permission";
+  return uiSettings.language === "ko" ? "고객사 정책 확인 필요" : "Customer policy review";
+}
+
+function renderServicePreflight(data = {}) {
+  if (!servicePreflightStatus) return;
+  const restricted = Array.isArray(data.restricted_features) ? data.restricted_features : [];
+  const service = data.service || {};
+  servicePreflightStatus.textContent = preflightStatusLabel(data.status);
+  servicePreflightStatus.className = `settings-preflight-status ${data.ok ? "is-ok" : "is-warning"}`;
+  if (servicePreflightMode) servicePreflightMode.textContent = data.mode_label || data.operation_mode || "-";
+  if (servicePreflightAccount) {
+    const account = service.account || "-";
+    const admin = service.local_admin ? "Admin" : (uiSettings.language === "ko" ? "권한 부족" : "Limited");
+    servicePreflightAccount.textContent = `${account} · ${admin}`;
+  }
+  if (servicePreflightRestricted) servicePreflightRestricted.textContent = restricted.length ? `${restricted.length}` : "0";
+  if (servicePreflightChecks) {
+    const diskChecks = Array.isArray(data.disk_commands) ? data.disk_commands : [];
+    const rows = [
+      { label: "Service", ok: Boolean(service.running), detail: data.service_status?.state || "" },
+      { label: "Local Admin", ok: Boolean(service.local_admin), detail: service.account || "" },
+      ...diskChecks.map((item) => ({ label: item.name || item.command || "PowerShell", ok: Boolean(item.ok), detail: item.error || item.output || "" })),
+      { label: "Veeam REST", ok: Boolean(data.veeam_api?.ok), detail: data.veeam_api?.diagnostics?.error || "" },
+      { label: "UAC", ok: Boolean(data.uac?.ok), detail: data.uac?.detail || "" },
+      { label: "ExecutionPolicy", ok: Boolean(data.execution_policy?.ok), detail: data.execution_policy?.detail || "" },
+      { label: "Firewall", ok: Boolean(data.firewall?.ok), detail: data.firewall?.detail || "" },
+      { label: "WinRM", ok: Boolean(data.winrm?.ok), detail: data.winrm?.detail || "" },
+    ];
+    servicePreflightChecks.innerHTML = rows.map((row) => `
+      <li class="${row.ok ? "is-ok" : "is-warning"}">
+        <span>${escapeHtml(row.label)}</span>
+        <strong>${row.ok ? "OK" : "CHECK"}</strong>
+      </li>
+    `).join("");
+  }
+}
+
+async function reloadServicePreflight() {
+  if (!servicePreflightStatus) return;
+  servicePreflightStatus.textContent = uiSettings.language === "ko" ? "권한 진단 중..." : "Checking permissions...";
+  try {
+    const data = await requestJson("/api/service/preflight");
+    renderServicePreflight(data);
+  } catch (error) {
+    renderServicePreflight({
+      status: "서비스 미실행",
+      ok: false,
+      service: { running: false, account: "-", local_admin: false },
+      restricted_features: [error.message],
+      disk_commands: [],
+      veeam_api: { ok: false, diagnostics: { error: error.message } },
+    });
+  }
+}
+
 function setSettingsShortcutStatus(target, key, replacements = {}) {
   if (!target) return;
   let text = t(key);
@@ -3436,6 +4802,34 @@ async function pollSourcesLive() {
     finalizeEmergencyReconnectFromSources(sources);
   } catch (error) {
     console.warn("Unable to poll Air-Gap live status", error);
+  }
+}
+
+async function syncVeeamExecutionConfig(button) {
+  const originalText = button?.textContent || "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = uiSettings.language === "ko" ? "갱신 중" : "Syncing";
+  }
+  try {
+    const result = await requestJson("/api/veeam-config/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: "network_port_card" }),
+    });
+    if (button) button.textContent = uiSettings.language === "ko" ? "완료" : "Done";
+    await pollSourcesLive();
+    return result;
+  } catch (error) {
+    if (button) button.textContent = uiSettings.language === "ko" ? "실패" : "Failed";
+    console.warn("Unable to sync Veeam execution config", error);
+    setTimeout(() => {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }, 1200);
+    return null;
   }
 }
 
@@ -3623,7 +5017,7 @@ function setEmergencyReconnectStatusPolling(enabled) {
             ? "다른 긴급 재접속 작업이 등록되어 현재 작업 상태를 확인할 수 없습니다."
             : "재접속 작업이 현재 서비스에 등록되어 있지 않습니다. 버튼 요청이 서비스까지 도달했는지 확인 필요";
           appendEmergencyReconnectDetail(message);
-          appendEmergencyReconnectDetail("해결 안내: WebUI 로그인 세션, 서비스 상태, 관리자 권한을 확인한 뒤 다시 검증 후 긴급 접속을 실행하세요.");
+          appendEmergencyReconnectDetail("해결 안내: WebUI 로그인 세션, 서비스 상태, 관리자 권한을 확인한 뒤 다시 데이터 무결성 확인 후 긴급 접속을 실행하세요.");
           stopEmergencyReconnectWatch(message);
           renderSources(latestSourcesData || { air_gap: fallbackAirGapSummary(true) });
         } else if (status === "not_started") {
@@ -3838,7 +5232,7 @@ function fallbackAirGapSummary(loading = false) {
     emergency_access: {
       title: "Emergency Volume Access",
       description: "Unmount 이후 긴급 접속이 필요한 경우 인증 해시값을 확인한 뒤 UID와 SHA-256 검증을 다시 수행하고 볼륨을 즉시 접속합니다.",
-      primary: "검증 후 긴급 접속",
+      primary: "무결성 검증 후 재접속",
       secondary: "C:\\ OS 볼륨은 어떤 경우에도 작업 대상이 될 수 없습니다.",
       slot: {
         slot_id: "BAY-01",
@@ -3913,6 +5307,9 @@ function renderSources(data) {
     .flatMap((log) => Array.isArray(log.actions) ? log.actions : [log.action || log.message || ""])
     .map((item) => String(item || ""))
     .join("\n");
+  if (apiSynced && Number(veeam.current_step || 1) <= 1 && apiPercent < 100) {
+    airgapStepEvidenceCache = {};
+  }
   const stepEvidencePatterns = {
     2: {
       start: [/LOCK-FIX Flush START/i, /LOCK-FIX Flush TICK/i, /LOCK-FIX Flush OK/i, /LOCK-FIX STEP 2 COMPLETE/i],
@@ -3947,6 +5344,14 @@ function renderSources(data) {
     isStepLive(item) &&
     hasStepEvidence(Number(item.step) + 1, "start")
   );
+  const stepIsPreparingTransfer = (item) => {
+    const step = Number(item?.step);
+    if (!apiSynced || step >= 5) return false;
+    const currentStep = Number(veeam.current_step || 1);
+    if (step !== currentStep) return false;
+    const state = String(item?.state || "").toUpperCase();
+    return ["DONE", "COMPLETED", "SUCCESS"].includes(state) || (step === 1 && apiPercent >= 100);
+  };
   const stepTransferClass = (item) => {
     const step = Number(item.step);
     if (step >= 5) return "";
@@ -3954,10 +5359,15 @@ function renderSources(data) {
     const currentStep = Number(veeam.current_step || 1);
     const canTransfer = apiSynced && currentStep > step;
     const complete = canTransfer && hasStepEvidence(nextStep, "complete");
-    const running = canTransfer && !complete && hasStepEvidence(nextStep, "start");
+    const running = stepIsPreparingTransfer(item) || (canTransfer && !complete && hasStepEvidence(nextStep, "start"));
     if (complete) return "veeam-step-transfer-arrow veeam-step-transfer-complete";
     if (running) return "veeam-step-transfer-arrow veeam-step-transfer-running";
     return "veeam-step-transfer-arrow";
+  };
+  const stepIncomingClass = (item) => {
+    const step = Number(item.step);
+    const previous = timelineItems.find((candidate) => Number(candidate.step) === step - 1);
+    return previous && stepIsPreparingTransfer(previous) ? "veeam-step-visual-incoming" : "";
   };
   const stepVisualClass = (item) => {
     const step = Number(item.step);
@@ -4031,17 +5441,53 @@ function renderSources(data) {
       return `<span class="${isSection ? "veeam-action-section" : `veeam-action-line veeam-action-line-${level}`}">${icon}<b>${escapeHtml(actionLabel(text))}</b><small>${escapeHtml(actionBody(text))}</small></span>`;
     }).join("");
   };
+  const stepEvidenceLines = (step) => {
+    const patterns = {
+      2: [/LOCK-FIX STEP 2/i, /LOCK-FIX Flush/i, /disk\.flush/i, /disk\.cache\.flush/i],
+      3: [/LOCK-FIX STEP 3/i, /LOCK-FIX I\/O/i, /io quiet/i, /disk\.io/i],
+      4: [/LOCK-FIX STEP 4/i, /LOCK-FIX Unmount/i, /disk\.unmount/i],
+      5: [/LOCK-FIX STEP 5/i, /LOCK-FIX Offline/i, /disk\.offline/i, /OFFLINE_COMPLETE/i],
+    }[Number(step)] || [];
+    if (!patterns.length) return [];
+    const lines = veeamSessionLogs
+      .flatMap((log) => Array.isArray(log.actions) ? log.actions : [log.action || log.message || ""])
+      .map((item) => String(item || "").trim())
+      .filter((item) => item && patterns.some((pattern) => pattern.test(item)));
+    const unique = [...new Set(lines)];
+    if (unique.length) {
+      airgapStepEvidenceCache[String(step)] = [
+        ...new Set([...(airgapStepEvidenceCache[String(step)] || []), ...unique]),
+      ].slice(-40);
+    }
+    return (airgapStepEvidenceCache[String(step)] || unique).slice(-12);
+  };
+  const stepFallbackEvidence = (step) => {
+    if (Number(step) === 2) {
+      return [
+        "LOCK-FIX STEP 2 DETAIL - Flush operation flow is monitored from audit records.",
+        "LOCK-FIX Flush TARGET - configured backup volume only; C:\\ OS volume remains protected.",
+        "LOCK-FIX Flush RESULT - waiting until disk.flush / disk.cache.flush audit result is recorded.",
+      ];
+    }
+    if (Number(step) === 3) {
+      return [
+        "LOCK-FIX STEP 3 DETAIL - I/O quiet verification flow is monitored from audit records.",
+        "LOCK-FIX I/O Check WINDOW - no-write quiet window must be satisfied before Unmount.",
+        "LOCK-FIX I/O Check RESULT - waiting until disk.io_quiet audit result is recorded.",
+      ];
+    }
+    return [];
+  };
   sourceList.replaceChildren();
 
   sourceRoot.className = "source-root airgap-procedure-root";
   sourceRoot.innerHTML = `
     <div class="veeam-step-grid airgap-procedure-steps">
       ${timelineItems.map((item) => `
-        <article class="veeam-step-card veeam-step-${String(item.state || "PENDING").toLowerCase()} ${stepVisualClass(item)} ${stepHasAdvanced(item) ? "veeam-step-arrow-visible" : ""} ${stepTransferClass(item)}">
+        <article class="veeam-step-card veeam-step-${String(item.state || "PENDING").toLowerCase()} ${stepVisualClass(item)} ${stepIncomingClass(item)} ${stepHasAdvanced(item) ? "veeam-step-arrow-visible" : ""} ${stepTransferClass(item)}">
           <b>${item.step}</b>
           <div class="veeam-step-copy">
             <strong class="step-label-main">${stepLabel(item)}</strong>
-            ${Number(item.step) === 1 ? `<em class="step-api-badge ${apiPercent === 100 ? "api-ok" : "api-wait"}">${apiPercent}%</em>` : ""}
           </div>
         </article>
       `).join("")}
@@ -4050,10 +5496,17 @@ function renderSources(data) {
 
   const procedureLogs = document.createElement("section");
   procedureLogs.className = "veeam-panel veeam-monitoring-panel airgap-monitoring-panel";
+  const sessionMetaParts = [
+    `${veeamSessionLogs.length} sessions`,
+    veeam.job,
+    veeam.last_checked,
+  ].map((item) => String(item || "").trim()).filter((item) => item && item !== "-");
   procedureLogs.innerHTML = `
-    <h2>${t("veeam.logs")}</h2>
-    <div class="veeam-log-meta">
-      <span>${veeamSessionLogs.length} sessions · ${veeam.job || "-"} · ${veeam.last_checked || "-"}</span>
+    <div class="veeam-log-header">
+      <h2>${t("veeam.logs")}</h2>
+      <div class="veeam-log-meta">
+        <span>${escapeHtml(sessionMetaParts.join(" · "))}</span>
+      </div>
     </div>
     <div class="veeam-log-wrap">
       <table class="veeam-log-table">
@@ -4098,7 +5551,19 @@ function renderSources(data) {
   // The customer-facing Air-Gap screen keeps those background decisions hidden.
 
   const emergencyPanel = document.createElement("section");
-  const emergencyEligible = Boolean(emergencySlot.eligible);
+  const emergencyVolumePath = String(emergencySlot.mount_point || emergencySlot.device || "").trim();
+  const emergencyVolumeNormalized = emergencyVolumePath.replaceAll("/", "\\").trim().toUpperCase();
+  const emergencyStateText = [
+    emergencySlot.state,
+    emergencySlot.hash_status,
+    emergencySlot.blocked_reason,
+    emergencySlot.last_unmount,
+    emergencySlot.last_power_off,
+  ].map((item) => String(item || "")).join(" ").toUpperCase();
+  const emergencyIsOsVolume = emergencyVolumeNormalized === "C:" || emergencyVolumeNormalized.startsWith("C:\\");
+  const emergencyLooksDisconnected = /ISOLATED|OFFLINE|DISK_OFFLINE|OFFLINE_COMPLETE|UNMOUNT|DISMOUNT|WAITING_DISK|WAITING_FOR_MOUNT|MOUNT_ACCESS_ERROR|QUARANTINE|ERROR/.test(emergencyStateText);
+  const emergencyAlreadyOnline = /ONLINE_VERIFIED_RW|ONLINE_VERIFIED|READY/.test(emergencyStateText) && !emergencyLooksDisconnected;
+  const emergencyEligible = !emergencyIsOsVolume && !emergencyAlreadyOnline && (Boolean(emergencySlot.eligible) || emergencyLooksDisconnected);
   const emergencyHashOk = String(emergencySlot.hash_status || "").toUpperCase() === "VALID";
   const emergencyStateValue = String(emergencySlot.state || "-");
   const emergencyStateUpper = emergencyStateValue.toUpperCase();
@@ -4134,6 +5599,10 @@ function renderSources(data) {
     ...(hasCurrentReconnectError ? reconnectRecentLogs : []),
     ...(reconnectHistoryExpanded ? reconnectOlderLogs : []),
   ];
+  const reconnectLiveLogLines = [
+    ...(emergencyReconnectDetailLogs.length ? emergencyReconnectDetailLogs : []),
+    ...reconnectRecentLogs,
+  ].filter(Boolean).slice(-8);
   const showReconnectDetailLogs = hasLiveReconnectLogs || hasCurrentReconnectError || reconnectHistoryExpanded;
   const reconnectStepClass = (state) => {
     if (!reconnectFlowIsActive) return "pending";
@@ -4172,28 +5641,28 @@ function renderSources(data) {
     `;
   }).join("");
   emergencyPanel.className = `airgap-panel emergency-access-panel ${emergencyEligible ? "emergency-access-ready" : "emergency-access-wait"} ${emergencyReconnectRunning ? "emergency-reconnect-running" : ""}`;
+  const emergencyCtaText = emergencyReconnectRunning ? "작업 시작됨" : (emergencyAccess.primary || "무결성 검증 후 재접속");
+  const emergencyStatusText = emergencyReconnectRunning
+    ? "RUNNING"
+    : emergencyEligible
+      ? "READY"
+      : "WAITING";
+  const emergencyLogMessage = emergencyActionStatus || emergencySlot.blocked_reason || emergencyAccess.secondary || "-";
+  const emergencyLiveLogMarkup = reconnectLiveLogLines.length
+    ? reconnectLiveLogLines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")
+    : `<li>${escapeHtml(emergencyLogMessage)}</li>`;
   emergencyPanel.innerHTML = `
-    <div class="airgap-panel-head">
-      <h2>${escapeHtml(emergencyAccess.title || "Emergency Volume Access")}</h2>
-      <span>${escapeHtml(emergencyEligible ? "READY" : "WAITING")}</span>
-    </div>
-    <p>${escapeHtml(emergencyAccess.description || "-")}</p>
-    <button class="emergency-access-button" type="button" data-slot="${escapeHtml(emergencySlot.slot_id || "")}" data-volume="${escapeHtml(emergencySlot.mount_point || emergencySlot.device || "")}" data-lock-disabled="${emergencyEligible ? "false" : "true"}" ${emergencyEligible && !emergencyReconnectRunning ? "" : "disabled"}>
-      ${escapeHtml(emergencyReconnectRunning ? "작업 시작됨" : (emergencyAccess.primary || "검증 후 긴급 접속"))}
-    </button>
-    <div class="emergency-access-grid">
-      <div><span>Slot</span><strong>${escapeHtml(emergencySlot.slot_id || "-")}</strong></div>
-      <div><span>Volume</span><strong>${escapeHtml(emergencySlot.mount_point || emergencySlot.device || "-")}</strong></div>
-      <div class="emergency-state-card ${emergencyStateClass}"><span>State</span><strong>${escapeHtml(emergencyStateValue)}</strong></div>
-      <div><span>Auth Hash</span><code>${escapeHtml(emergencySlot.authorization_hash_short || "-")}</code></div>
-      <div><span>Disk UID</span><code>${escapeHtml(emergencySlot.current_uid_short || "-")}</code></div>
-      <div><span>Hash Check</span><strong class="${emergencyHashOk ? "emergency-ok" : "emergency-wait"}">${escapeHtml(emergencySlot.hash_status || "-")}</strong></div>
-      <div class="wide emergency-last-reconnect">
-        <span>Last Reconnect</span>
-        <em>${escapeHtml(emergencySlot.last_reconnect || "-")}</em>
-        ${hasReconnectMore ? `<button class="emergency-more-button" type="button" data-reconnect-more="true">${reconnectHistoryExpanded ? "less" : "more"}</button>` : ""}
+    <div class="emergency-access-card-head">
+      <div class="emergency-access-copy">
+        <h2>${escapeHtml(emergencyAccess.title || "Emergency Volume Access")}</h2>
+        <p>${escapeHtml(emergencyAccess.description || "-")}</p>
       </div>
-      ${showReconnectDetailLogs ? `<div class="wide emergency-history"><span>Reconnect Detail Logs</span><em class="emergency-history-log">${(reconnectDetailLogs.length ? reconnectDetailLogs : ["-"]).map((item) => escapeHtml(item)).join("<br>")}</em></div>` : ""}
+      <div class="emergency-access-control-card">
+        <span>${escapeHtml(emergencyStatusText)}</span>
+        <button class="emergency-access-button" type="button" data-slot="${escapeHtml(emergencySlot.slot_id || "")}" data-volume="${escapeHtml(emergencyVolumePath)}" data-lock-disabled="${emergencyEligible ? "false" : "true"}" ${emergencyEligible && !emergencyReconnectRunning ? "" : "disabled"}>
+          ${escapeHtml(emergencyCtaText)}
+        </button>
+      </div>
     </div>
     <div class="emergency-reconnect-flow-wrap">
       <span>Reconnect State Flow</span>
@@ -4201,9 +5670,18 @@ function renderSources(data) {
         ${reconnectFlowMarkup}
       </div>
     </div>
-    <strong>${escapeHtml(emergencyActionStatus || emergencySlot.blocked_reason || emergencyAccess.secondary || "-")}</strong>
+    <div class="emergency-live-log-card">
+      <span>실시간 작업 로그</span>
+      <strong>${escapeHtml(emergencyLogMessage)}</strong>
+      <ul class="emergency-live-log-list" data-emergency-live-log>
+        ${emergencyLiveLogMarkup}
+      </ul>
+      <em>1초 단위로 재접속 단계 진행 상태와 백그라운드 작업 결과가 이 영역에 유지됩니다.</em>
+    </div>
   `;
   sourceList.appendChild(emergencyPanel);
+  const emergencyLiveLog = emergencyPanel.querySelector("[data-emergency-live-log]");
+  if (emergencyLiveLog) emergencyLiveLog.scrollTop = emergencyLiveLog.scrollHeight;
   const emergencyHistory = emergencyPanel.querySelector(".emergency-history-log");
   if (emergencyHistory && hasLiveReconnectLogs) {
     emergencyHistory.scrollTop = emergencyHistory.scrollHeight;
@@ -4214,6 +5692,7 @@ function renderSources(data) {
   });
   emergencyPanel.querySelector(".emergency-access-button")?.addEventListener("click", (event) => {
     const button = event.currentTarget;
+    button.classList.add("emergency-access-button-pending");
     const slotId = button.dataset.slot || "";
     const volumePath = button.dataset.volume || "";
     runEmergencyReconnect(slotId, volumePath);
@@ -4293,6 +5772,12 @@ function renderSources(data) {
             <div><dt>색상 전환</dt><dd>${log.transition_allowed ? "허용" : "대기"}</dd></div>
           </dl>
           <p>${log.detail || "-"}</p>
+          ${[2, 3].includes(Number(log.step)) || stepEvidenceLines(log.step).length ? `
+            <div class="step-log-evidence">
+              <strong>근거 로그</strong>
+              ${(stepEvidenceLines(log.step).length ? stepEvidenceLines(log.step) : stepFallbackEvidence(log.step)).map((line) => `<span>${escapeHtml(line)}</span>`).join("")}
+            </div>
+          ` : ""}
         </article>
       `).join("")}
     </div>
@@ -4790,6 +6275,7 @@ async function loadAll() {
     report: requestJson("/api/report"),
     notification: requestJson("/api/notification"),
     detect: requestJson("/api/detect"),
+    threat: requestJson("/api/threat-detection"),
     networkStatus: requestJson("/api/network-status"),
     logs: requestJson(logsUrl()),
     license: requestJson("/api/license"),
@@ -4871,6 +6357,79 @@ function requestEmergencyApprovalPassword() {
   });
 }
 
+function showEmergencyReconnectApprovalRequired(error, slotId, volumePath = "") {
+  return new Promise((resolve) => {
+    const payload = error?.payload || {};
+    const missing = Array.isArray(payload.missing_approvals) && payload.missing_approvals.length
+      ? payload.missing_approvals
+      : ["EMERGENCY_UNLOCK", "DISK_ONLINE"];
+    const overlay = document.createElement("div");
+    overlay.className = "emergency-approval-modal";
+    overlay.innerHTML = `
+      <section class="emergency-approval-card emergency-approval-required-card" role="dialog" aria-modal="true" aria-labelledby="emergencyApprovalRequiredTitle">
+        <span class="emergency-approval-kicker">Approval Required</span>
+        <h2 id="emergencyApprovalRequiredTitle">재접속 승인이 필요합니다</h2>
+        <p>격리된 백업 볼륨을 온라인 상태로 전환하려면 보안 해제 승인과 디스크 온라인 승인이 먼저 완료되어야 합니다.</p>
+        <div class="emergency-approval-required-list">
+          ${missing.map((item) => `<strong>${escapeHtml(item)}</strong>`).join("")}
+        </div>
+        <em class="emergency-approval-error" aria-live="polite"></em>
+        <div class="emergency-approval-actions">
+          <button type="button" data-approval-cancel="true">취소</button>
+          <button type="button" data-approval-open="true">승인 화면으로 이동</button>
+          <button type="button" data-approval-create="true">승인 요청 생성</button>
+        </div>
+      </section>
+    `;
+    const status = overlay.querySelector(".emergency-approval-error");
+    const createButton = overlay.querySelector("[data-approval-create]");
+    const close = (value) => {
+      document.removeEventListener("keydown", onKey);
+      overlay.remove();
+      resolve(value);
+    };
+    function onKey(event) {
+      if (event.key === "Escape") close("");
+    }
+    overlay.querySelector("[data-approval-cancel]").addEventListener("click", () => close(""));
+    overlay.querySelector("[data-approval-open]").addEventListener("click", () => {
+      close("open");
+      showView("approvals");
+    });
+    createButton.addEventListener("click", async () => {
+      createButton.disabled = true;
+      status.textContent = "필요한 승인 요청을 생성하는 중입니다.";
+      try {
+        await requestJson("/api/emergency-reconnect/approval-requests", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            slot_id: slotId,
+            repository_path: volumePath,
+            reason: "긴급 재접속을 위해 EMERGENCY_UNLOCK 및 DISK_ONLINE 승인이 필요합니다.",
+          }),
+        });
+        status.textContent = "승인 요청이 생성되었습니다. 부서 검토와 2인 승인 완료 후 다시 재접속할 수 있습니다.";
+        activeApprovalTab = "approvalRequestBox";
+        await reloadApprovals();
+        setTimeout(() => {
+          close("created");
+          showView("approvals");
+        }, 650);
+      } catch (createError) {
+        status.textContent = createError.message || "승인 요청 생성에 실패했습니다.";
+        createButton.disabled = false;
+      }
+    });
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) close("");
+    });
+    document.addEventListener("keydown", onKey);
+    document.body.appendChild(overlay);
+    setTimeout(() => createButton.focus(), 0);
+  });
+}
+
 async function runEmergencyReconnect(slotId, volumePath = "") {
   const approvalPassword = await requestEmergencyApprovalPassword();
   if (!approvalPassword) {
@@ -4902,6 +6461,14 @@ async function runEmergencyReconnect(slotId, volumePath = "") {
     setEmergencyReconnectStatusPolling(true);
     await loadAll();
   } catch (error) {
+    if (error?.payload?.approval_required) {
+      emergencyActionStatus = "긴급 재접속에 필요한 승인이 아직 완료되지 않았습니다.";
+      appendEmergencyReconnectDetail(`approval required: ${(error.payload.missing_approvals || []).join(", ") || "EMERGENCY_UNLOCK, DISK_ONLINE"}`);
+      stopEmergencyReconnectWatch();
+      await showEmergencyReconnectApprovalRequired(error, slotId, volumePath);
+      await loadAll();
+      return;
+    }
     emergencyActionStatus = Number(error.status || 0) === 401
       ? "로그인 세션이 만료되어 긴급 재접속 요청이 서비스에 전달되지 않았습니다. 다시 로그인 후 실행하세요."
       : friendlyEmergencyError(error);
@@ -4919,13 +6486,26 @@ function setBusy(busy) {
 
 refreshButton.addEventListener("click", loadAll);
 loginForm.addEventListener("submit", login);
+registerAccountButton?.addEventListener("click", openAccountGuide);
+accountGuideClose?.addEventListener("click", closeAccountGuide);
+accountGuideOk?.addEventListener("click", closeAccountGuide);
+accountGuideModal?.addEventListener("click", (event) => {
+  if (event.target === accountGuideModal) closeAccountGuide();
+});
 qrLoginButton.addEventListener("click", startQrLogin);
 qrCodeBox.addEventListener("click", confirmQrLogin);
 logoutButton.addEventListener("click", logout);
-logoutSideButton.addEventListener("click", logout);
+logoutSideButton.addEventListener("click", (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  logout();
+});
 licenseForm.addEventListener("submit", registerLicense);
 sidebarToggle?.addEventListener("click", toggleSidebar);
-sideItems.forEach((item) => item.addEventListener("click", () => showView(item.dataset.view)));
+sideItems.forEach((item) => item.addEventListener("click", () => {
+  if (item.classList.contains("logout-side")) return;
+  showView(item.dataset.view);
+}));
 settingsShortcutItems.forEach((item) => item.addEventListener("click", () => showView(item.dataset.settingsView)));
 approvalTabs?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-approval-tab]");
@@ -4933,7 +6513,136 @@ approvalTabs?.addEventListener("click", (event) => {
   activeApprovalTab = button.dataset.approvalTab || "approvalRequestBox";
   renderApprovals(latestApprovalsData);
 });
+approvalRequestForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!currentSession.authenticated) {
+    if (approvalFormStatus) {
+      approvalFormStatus.textContent = "요청 등록 불가: 로그인 세션이 만료되었습니다. 다시 로그인 후 승인 요청을 등록하세요.";
+      approvalFormStatus.className = "approval-form-status status-error";
+    }
+    setAuthenticated(false);
+    return;
+  }
+  const requestType = String(approvalRequestType?.value || "DISK_ONLINE").trim().toUpperCase();
+  const targetId = String(approvalTargetId?.value || "").trim() || "BAY-01";
+  const repositoryPath = String(approvalRepositoryPath?.value || "").trim();
+  const reason = String(approvalReason?.value || "").trim();
+  if (!reason) {
+    if (approvalFormStatus) {
+      approvalFormStatus.textContent = "요청 등록 불가: 요청 사유를 입력해야 합니다.";
+      approvalFormStatus.className = "approval-form-status status-error";
+    }
+    approvalReason?.focus();
+    return;
+  }
+  const submitButton = approvalRequestForm.querySelector("button[type='submit']");
+  if (submitButton) submitButton.disabled = true;
+  if (approvalFormStatus) {
+    approvalFormStatus.textContent = "승인 요청을 등록하는 중입니다.";
+    approvalFormStatus.className = "approval-form-status status-pending";
+  }
+  try {
+    await requestJson("/api/approvals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      timeoutMs: 30000,
+      body: JSON.stringify({
+        requestType,
+        targetId,
+        metadata: approvalRequestMetadata(requestType, reason, repositoryPath),
+      }),
+    });
+    if (approvalFormStatus) {
+      approvalFormStatus.textContent = "승인 요청이 등록되었습니다. 필요한 부서 검토와 승인 단계가 자동 생성되었습니다.";
+      approvalFormStatus.className = "approval-form-status status-success";
+    }
+    if (approvalReason) approvalReason.value = "";
+    activeApprovalTab = "approvalRequestBox";
+    await reloadApprovals();
+  } catch (error) {
+    if (approvalFormStatus) {
+      const rawDetail = error?.payload?.message || error?.payload?.error || error.message || "알 수 없는 오류입니다.";
+      const detail = String(rawDetail).replace(/^요청 등록 불가:\s*/i, "");
+      if (error?.code === "UNAUTHENTICATED" || error?.status === 401) {
+        approvalFormStatus.textContent = `요청 등록 불가: ${detail}`;
+        approvalFormStatus.className = "approval-form-status status-error";
+        setAuthenticated(false);
+      } else if (error?.code === "REQUEST_TIMEOUT") {
+        approvalFormStatus.textContent = `등록 결과 확인 필요: ${detail} 요청이 서버에 저장되었을 수 있으니 승인 요청함을 새로고침해 확인하세요.`;
+        approvalFormStatus.className = "approval-form-status status-warning";
+      } else {
+        approvalFormStatus.textContent = `요청 등록 불가: ${detail}`;
+        approvalFormStatus.className = "approval-form-status status-error";
+      }
+    }
+  } finally {
+    if (submitButton) submitButton.disabled = false;
+  }
+});
 approvalRequestsTable?.addEventListener("click", async (event) => {
+  const deleteExpiredButton = event.target.closest("[data-delete-expired-id]");
+  if (deleteExpiredButton) {
+    const confirmed = window.confirm("만료된 승인 요청을 삭제하시겠습니까? 감사로그는 보존되며, 해당 요청/검토/승인 대기 레코드만 정리됩니다.");
+    if (!confirmed) return;
+    deleteExpiredButton.disabled = true;
+    try {
+      await requestJson(`/api/approvals/${encodeURIComponent(deleteExpiredButton.dataset.deleteExpiredId)}`, {
+        method: "DELETE",
+      });
+      await reloadApprovals();
+    } catch (error) {
+      alert(error.message);
+      deleteExpiredButton.disabled = false;
+    }
+    return;
+  }
+  const departmentConfirmButton = event.target.closest("[data-department-confirm-request-id]");
+  if (departmentConfirmButton) {
+    const requestId = departmentConfirmButton.dataset.departmentConfirmRequestId || "";
+    if (!requestId) return;
+    const request = latestApprovalsData.requests.find((item) => String(item.id || "") === String(requestId));
+    if (!request || !pendingDepartmentReviewsForSession(request).length) {
+      showNoPendingDepartmentReviewNotice();
+      await reloadApprovals();
+      return;
+    }
+    const originalText = departmentConfirmButton.textContent;
+    approvalActionInProgress = true;
+    departmentConfirmButton.disabled = true;
+    departmentConfirmButton.textContent = "확인 중...";
+    if (approvalFormStatus) {
+      approvalFormStatus.textContent = "승인 검토를 확인하는 중입니다.";
+      approvalFormStatus.className = "approval-form-status status-pending";
+    }
+    try {
+      const result = await requestJson(`/api/approval-requests/${encodeURIComponent(requestId)}/reviews/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        timeoutMs: 30000,
+        body: JSON.stringify({ comment: "확인 완료" }),
+      });
+      if (approvalFormStatus) {
+        approvalFormStatus.textContent = `확인 완료: ${Number(result.confirmed || 1)}건의 검토가 처리되었습니다.`;
+        approvalFormStatus.className = "approval-form-status status-success";
+      }
+      await reloadApprovals();
+    } catch (error) {
+      if (approvalFormStatus) {
+        if (isNoPendingDepartmentReviewError(error)) {
+          showNoPendingDepartmentReviewNotice();
+          await reloadApprovals();
+        } else {
+          approvalFormStatus.textContent = `확인 실패: ${error.message}`;
+          approvalFormStatus.className = "approval-form-status status-error";
+        }
+      }
+      departmentConfirmButton.disabled = false;
+      departmentConfirmButton.textContent = originalText || "확인";
+    } finally {
+      approvalActionInProgress = false;
+    }
+    return;
+  }
   const departmentReviewButton = event.target.closest("[data-department-review-id]");
   if (departmentReviewButton) {
     const action = departmentReviewButton.dataset.reviewAction || "comment";
@@ -4956,36 +6665,102 @@ approvalRequestsTable?.addEventListener("click", async (event) => {
   }
   const reviewButton = event.target.closest("[data-review-id]");
   if (reviewButton) {
-    const comment = window.prompt("Review comment") || "";
-    if (!comment.trim()) return;
+    const originalText = reviewButton.textContent;
+    approvalActionInProgress = true;
     reviewButton.disabled = true;
+    reviewButton.textContent = "확인 중...";
+    if (approvalFormStatus) {
+      approvalFormStatus.textContent = "승인 검토를 확인하는 중입니다.";
+      approvalFormStatus.className = "approval-form-status status-pending";
+    }
     try {
       await requestJson(`/api/approvals/${encodeURIComponent(reviewButton.dataset.reviewId)}/reviews`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reviewType: reviewButton.dataset.reviewType, comment }),
+        timeoutMs: 30000,
+        body: JSON.stringify({ reviewType: reviewButton.dataset.reviewType, comment: "확인 완료" }),
       });
+      if (approvalFormStatus) {
+        approvalFormStatus.textContent = "확인 완료: 검토가 처리되었습니다.";
+        approvalFormStatus.className = "approval-form-status status-success";
+      }
       await reloadApprovals();
     } catch (error) {
-      alert(error.message);
+      if (approvalFormStatus) {
+        if (isNoPendingDepartmentReviewError(error)) {
+          showNoPendingDepartmentReviewNotice();
+          await reloadApprovals();
+        } else {
+          approvalFormStatus.textContent = `확인 실패: ${error.message}`;
+          approvalFormStatus.className = "approval-form-status status-error";
+        }
+      }
       reviewButton.disabled = false;
+      reviewButton.textContent = originalText || "확인";
+    } finally {
+      approvalActionInProgress = false;
     }
     return;
   }
   const button = event.target.closest("[data-approval-id]");
   if (!button) return;
+  const originalText = button.textContent;
+  approvalActionInProgress = true;
   button.disabled = true;
-  try {
-    await requestJson(`/api/approvals/${encodeURIComponent(button.dataset.approvalId)}/decisions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision: "APPROVED", comment: "Approved from LOCK-FIX Web UI" }),
-    });
-    await reloadApprovals();
-  } catch (error) {
-    alert(error.message);
-    button.disabled = false;
+  button.textContent = "확인 중...";
+  if (approvalFormStatus) {
+    approvalFormStatus.textContent = "승인을 확인하는 중입니다.";
+    approvalFormStatus.className = "approval-form-status status-pending";
   }
+    try {
+      await requestJson(`/api/approvals/${encodeURIComponent(button.dataset.approvalId)}/decisions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        timeoutMs: 30000,
+        body: JSON.stringify({ decision: "APPROVED", comment: "Approved from LOCK-FIX Web UI" }),
+      });
+      if (approvalFormStatus) {
+        approvalFormStatus.textContent = "확인 완료: 승인 처리가 완료되었습니다.";
+        approvalFormStatus.className = "approval-form-status status-success";
+      }
+      await reloadApprovals();
+      maybeOpenAirgapConfirmation(button.dataset.approvalId);
+    } catch (error) {
+    if (/not pending:\s*EXPIRED|EXPIRED/i.test(error.message || "") && window.confirm("이미 만료된 승인 요청입니다. 이 요청을 삭제하시겠습니까?")) {
+      try {
+        await requestJson(`/api/approvals/${encodeURIComponent(button.dataset.approvalId)}`, { method: "DELETE" });
+        await reloadApprovals();
+        return;
+      } catch (deleteError) {
+        alert(deleteError.message);
+      }
+    } else {
+      if (approvalFormStatus) {
+        approvalFormStatus.textContent = `확인 실패: ${error.message}`;
+        approvalFormStatus.className = "approval-form-status status-error";
+      }
+    }
+    button.disabled = false;
+    button.textContent = originalText || "확인";
+  } finally {
+    approvalActionInProgress = false;
+  }
+});
+
+approvalExecutionProof?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-approval-airgap-shortcut]");
+  if (!button) return;
+  closeAirgapConfirmation();
+  showView("sources");
+});
+
+airgapConfirmClose?.addEventListener("click", closeAirgapConfirmation);
+airgapConfirmModal?.addEventListener("click", (event) => {
+  if (event.target === airgapConfirmModal) closeAirgapConfirmation();
+});
+airgapConfirmOk?.addEventListener("click", () => {
+  closeAirgapConfirmation();
+  showView("sources");
 });
 
 approvalRequestsTable?.addEventListener("click", async (event) => {
@@ -5021,6 +6796,23 @@ detectFingerprintRoot?.addEventListener("click", (event) => {
   if (action === "airgap") showView("sources");
   if (action === "settings") showView("settings");
 });
+threatResultTable?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-threat-id]");
+  if (!button) return;
+  requestJson("/api/threat-detection")
+    .then((data) => {
+      const item = (Array.isArray(data.results) ? data.results : []).find((entry) => entry.id === button.dataset.threatId);
+      renderThreatDetail(item || null);
+    })
+    .catch((error) => {
+      console.warn("Unable to open threat detail", error);
+    });
+});
+threatManualScanButton?.addEventListener("click", () => {
+  reloadThreatDetection().catch((error) => {
+    console.warn("Unable to run manual threat refresh", error);
+  });
+});
 chartMenuButton.addEventListener("click", () => downloadMenu.classList.toggle("open"));
 chartZoomInButton.addEventListener("click", () => {
   monitoringZoom = Math.min(3, monitoringZoom + 0.5);
@@ -5041,8 +6833,32 @@ monitoringRangeApply.addEventListener("click", async () => {
   monitoringRange.end = end;
   await reloadMonitoring();
 });
-monitoringRangeDownload.addEventListener("click", () => {
-  window.location.href = monitoringCsvUrl();
+  monitoringRangeDownload.addEventListener("click", () => {
+    window.location.href = monitoringCsvUrl();
+  });
+  networkInterfaceSelect?.addEventListener("change", () => {
+    selectedNetworkInterface = networkInterfaceSelect.value;
+    if (latestNetworkStatusData) renderNetworkStatus(latestNetworkStatusData);
+  });
+networkPortTable?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-veeam-sync]");
+  if (!button) return;
+  syncVeeamExecutionConfig(button);
+});
+networkPortToggle?.addEventListener("click", () => {
+  networkPortsCollapsed = !networkPortsCollapsed;
+  updateNetworkPortToggle();
+});
+networkPathToggle?.addEventListener("click", () => {
+  networkPathCollapsed = !networkPathCollapsed;
+  updateNetworkPathToggle();
+});
+networkInsightToggle?.addEventListener("click", () => {
+  networkInsightsCollapsed = !networkInsightsCollapsed;
+  updateNetworkInsightToggle();
+});
+networkFlowModeButtons.forEach((button) => {
+  button.addEventListener("click", () => setNetworkFlowMode(button.dataset.networkFlowMode));
 });
 logsRangeApply.addEventListener("click", async () => {
   let start = logsStart.value;
@@ -5053,6 +6869,7 @@ logsRangeApply.addEventListener("click", async () => {
   }
   logsRange.start = start;
   logsRange.end = end;
+  logsRange.type = logsTypeFilter?.value || "";
   logsRange.severity = logsSeverityFilter?.value || "";
   logsRange.source = logsSourceFilter?.value || "";
   logsRange.q = logsSearch?.value.trim() || "";
@@ -5065,8 +6882,24 @@ logsRangeDownload?.addEventListener("click", () => {
 logsSearch?.addEventListener("keydown", async (event) => {
   if (event.key !== "Enter") return;
   logsRange.q = logsSearch.value.trim();
+  logsRange.type = logsTypeFilter?.value || "";
   logsRange.severity = logsSeverityFilter?.value || "";
   logsRange.source = logsSourceFilter?.value || "";
+  logsRange.page = 1;
+  await reloadLogs();
+});
+logsTypeFilter?.addEventListener("change", async () => {
+  logsRange.type = logsTypeFilter.value || "";
+  logsRange.page = 1;
+  await reloadLogs();
+});
+logsSourceFilter?.addEventListener("change", async () => {
+  logsRange.source = logsSourceFilter.value || "";
+  logsRange.page = 1;
+  await reloadLogs();
+});
+logsSeverityFilter?.addEventListener("change", async () => {
+  logsRange.severity = logsSeverityFilter.value || "";
   logsRange.page = 1;
   await reloadLogs();
 });
@@ -5116,11 +6949,26 @@ themeSelect.addEventListener("change", () => {
 logRetentionSelect?.addEventListener("change", () => {
   settingsApplyStatus.textContent = translations[pendingUiSettings.language]?.["settings.pending"] || translations.en["settings.pending"];
 });
-settingsApplyButton.addEventListener("click", applyPendingUiSettings);
+[
+  notificationChannel,
+  notificationTargetEmail,
+  notificationSmtpHost,
+  notificationSmtpPort,
+  notificationSmtpFrom,
+  notificationSmtpUser,
+  notificationSmtpPassword,
+  notificationUseTls,
+  notificationUseSsl,
+].forEach((field) => field?.addEventListener("input", () => {
+  settingsApplyStatus.textContent = translations[pendingUiSettings.language]?.["settings.pending"] || translations.en["settings.pending"];
+}));
+settingsApplyButton.addEventListener("click", () => applyPendingUiSettings());
 serviceStartButton?.addEventListener("click", () => controlLockfixService("start"));
 serviceStopButton?.addEventListener("click", () => controlLockfixService("stop"));
+servicePreflightButton?.addEventListener("click", () => reloadServicePreflight());
 applySidebarState();
 applyUiSettings();
+setupNetworkCardDragDrop();
 setupReportSignatures();
 checkSession();
 updateOpsClock();

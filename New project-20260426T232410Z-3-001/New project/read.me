@@ -1,0 +1,56 @@
+# Air-Gap 2단계 전환 오류 정리
+
+## 증상
+
+에어갭 화면에서 Veeam 백업 완료는 확인되지만 1단계 `Backup Done` 이후 2단계 `Flush`로 넘어가지 않습니다.
+
+현재 화면에서는 다음과 같이 보일 수 있습니다.
+
+- 1단계: ACTIVE
+- 2단계: PENDING
+- 3단계: PENDING
+- 자동 격리 메시지: `Veeam backup success detected, but automatic isolate failed.`
+
+## 확인된 원인
+
+Veeam REST API 연결과 백업 완료 세션 확인은 정상입니다.
+
+문제는 백업 완료 후 자동 격리 실행 단계에서 `DISK_OFFLINE` 승인 조건이 충족되지 않아 차단되는 것입니다.
+
+확인된 오류:
+
+```text
+approval required: DISK_OFFLINE
+```
+
+즉, REST API 장애나 9419 포트 장애가 아니라, 에어갭 자동 격리 정책상 디스크 오프라인 실행 전에 필요한 승인 조건이 충족되지 않아 2단계 전환 표시가 멈춘 상태입니다.
+
+## 영향
+
+- Veeam API 연결: 정상
+- Veeam 세션 조회: 정상
+- 백업 완료 감지: 정상
+- 자동 격리 실행: DISK_OFFLINE 승인 필요로 대기
+- 2단계 Flush 표시: 기존 로직에서는 진행되지 않음
+- 3단계 I/O Check 표시: 기존 로직에서는 진행되지 않음
+
+## 보완 방향
+
+보안 정책은 유지해야 합니다.
+
+따라서 `DISK_OFFLINE` 승인이 필요한 4단계 `Unmount`, 5단계 `Offline`은 승인 전까지 대기시키고, 백업 완료 후 검증 가능한 단계는 아래처럼 표시되도록 보완합니다.
+
+- 1단계 Backup Done: 완료
+- 2단계 Flush: 완료 또는 진행 가능 상태
+- 3단계 I/O Check: 활성 상태
+- 4단계 Unmount: DISK_OFFLINE 승인 대기
+- 5단계 Offline: DISK_OFFLINE 승인 대기
+
+## 조치 상태
+
+코드에는 보완 로직을 반영했습니다.
+
+다만 실행 중인 WebUI/Python 서버가 이전 코드 상태이면 화면에는 아직 1단계로 남아 보일 수 있습니다.
+
+수정 반영을 위해서는 WebUI/Python 서버 재시작이 필요합니다.
+
