@@ -2364,13 +2364,15 @@ function enableDashboardKpiDrag(board) {
   });
 
   board.addEventListener("mousedown", (event) => {
-    const handle = event.target.closest?.(".dashboard-kpi-resize-handle");
+    const handle = event.target.closest?.(".dashboard-kpi-resize-handle, .dashboard-kpi-resize-line");
     if (!handle) return;
     const card = handle.closest("[data-dashboard-kpi]");
     if (!card) return;
     event.preventDefault();
+    const axis = handle.dataset.resizeAxis || "both";
     resizing = {
       card,
+      axis,
       startX: event.clientX,
       startY: event.clientY,
       startCols: Number(card.dataset.cols || 1),
@@ -2382,8 +2384,12 @@ function enableDashboardKpiDrag(board) {
       if (!resizing) return;
       const dx = event.clientX - resizing.startX;
       const dy = event.clientY - resizing.startY;
-      const nextCols = Math.max(1, Math.min(3, resizing.startCols + Math.round(dx / 140)));
-      const nextRows = Math.max(1, Math.min(2, resizing.startRows + Math.round(dy / 70)));
+      const nextCols = resizing.axis === "y"
+        ? resizing.startCols
+        : Math.max(1, Math.min(3, resizing.startCols + Math.round(dx / 140)));
+      const nextRows = resizing.axis === "x"
+        ? resizing.startRows
+        : Math.max(1, Math.min(2, resizing.startRows + Math.round(dy / 70)));
       resizing.card.dataset.cols = String(nextCols);
       resizing.card.dataset.rows = String(nextRows);
       resizing.card.style.gridColumnEnd = `span ${nextCols}`;
@@ -2488,13 +2494,15 @@ function enableDashboardPanelDrag(board) {
   });
 
   board.addEventListener("mousedown", (event) => {
-    const handle = event.target.closest?.(".dashboard-panel-resize-handle");
+    const handle = event.target.closest?.(".dashboard-panel-resize-handle, .dashboard-panel-resize-line");
     if (!handle) return;
     const panel = handle.closest("[data-dashboard-panel][data-panel-resizable='true']");
     if (!panel) return;
     event.preventDefault();
+    const axis = handle.dataset.resizeAxis || "both";
     resizing = {
       panel,
+      axis,
       startX: event.clientX,
       startY: event.clientY,
       startCols: Number(panel.dataset.cols || 4),
@@ -2506,8 +2514,12 @@ function enableDashboardPanelDrag(board) {
       if (!resizing) return;
       const dx = event.clientX - resizing.startX;
       const dy = event.clientY - resizing.startY;
-      const nextCols = Math.max(3, Math.min(12, resizing.startCols + Math.round(dx / 120)));
-      const nextRows = Math.max(1, Math.min(5, resizing.startRows + Math.round(dy / 72)));
+      const nextCols = resizing.axis === "y"
+        ? resizing.startCols
+        : Math.max(3, Math.min(12, resizing.startCols + Math.round(dx / 120)));
+      const nextRows = resizing.axis === "x"
+        ? resizing.startRows
+        : Math.max(1, Math.min(5, resizing.startRows + Math.round(dy / 72)));
       applyPanelSize(resizing.panel, { cols: nextCols, rows: nextRows });
     };
 
@@ -2738,8 +2750,10 @@ function renderDashboard(data) {
     <div class="security-kpi-grid" id="dashboardKpiBoard" aria-label="Dashboard summary cards">
       ${orderedKpis.map(({ icon, label, value, tone, meta, key }) => `
         <article class="security-kpi security-kpi-${icon}" data-dashboard-kpi="${escapeHtml(key)}" data-cols="${escapeHtml(String(kpiSizes[key]?.cols || 1))}" data-rows="${escapeHtml(String(kpiSizes[key]?.rows || 1))}">
-          <span class="dashboard-kpi-grip" draggable="true" aria-hidden="true" title="Drag to reorder"></span>
-          <span class="dashboard-kpi-resize-handle" aria-hidden="true" title="Resize card"></span>
+          <span class="dashboard-kpi-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag to reorder"></span>
+          <span class="dashboard-kpi-resize-line dashboard-kpi-resize-line-x" data-resize-axis="x" aria-hidden="true" title="Resize width"></span>
+          <span class="dashboard-kpi-resize-line dashboard-kpi-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>
+          <span class="dashboard-kpi-resize-handle" data-resize-axis="both" aria-hidden="true" title="Resize card"></span>
           <i class="security-icon security-icon-${icon} security-tone-${tone}" ${meta ? `title="${escapeHtml(meta)}" aria-label="${escapeHtml(meta)}"` : 'aria-hidden="true"'}></i>
           <div><span>${escapeHtml(label || "-")}</span><strong class="security-value-${tone}">${escapeHtml(value || "-")}</strong></div>
         </article>
@@ -2766,8 +2780,8 @@ function renderDashboard(data) {
     </section>
 
     <div class="security-dashboard-grid dashboard-content-grid" id="dashboardContentBoard">
-      <section class="security-panel security-flow-panel" data-dashboard-panel="protection">
-        <header><h2><i class="panel-title-icon protection-title-icon" aria-hidden="true"></i>${copy.liveProtection}</h2><span>ⓘ</span></header>
+      <section class="security-panel security-flow-panel" data-dashboard-panel="protection" data-panel-resizable="true" data-cols="8" data-rows="3">
+        <header><h2><i class="panel-title-icon protection-title-icon" aria-hidden="true"></i>${copy.liveProtection}</h2><span class="dashboard-panel-info">ⓘ</span><span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span></header>
         <div class="panel-body">
           <p>${copy.protectedMessage.replace("Offline", "<b>Offline</b>").replace("offline", "<b>offline</b>")}</p>
           <div class="security-flow">
@@ -2779,10 +2793,13 @@ function renderDashboard(data) {
             `).join("")}
           </div>
         </div>
+        <span class="dashboard-panel-resize-line dashboard-panel-resize-line-x" data-resize-axis="x" aria-hidden="true" title="Resize width"></span>
+        <span class="dashboard-panel-resize-line dashboard-panel-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>
+        <span class="dashboard-panel-resize-handle" data-resize-axis="both" aria-hidden="true" title="Resize card"></span>
       </section>
 
-      <section class="security-panel backup-panel" data-dashboard-panel="backup">
-        <header><h2><i class="panel-title-icon backup-title-icon" aria-hidden="true"></i>${copy.backupLink}</h2></header>
+      <section class="security-panel backup-panel" data-dashboard-panel="backup" data-panel-resizable="true" data-cols="4" data-rows="3">
+        <header><h2><i class="panel-title-icon backup-title-icon" aria-hidden="true"></i>${copy.backupLink}</h2><span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span></header>
         <div class="panel-body">
           <dl>
             <div><dt>연동 백업 솔루션</dt><dd>${escapeHtml(backup.solution || "Veeam Backup & Replication")}</dd></div>
@@ -2793,37 +2810,44 @@ function renderDashboard(data) {
             <div><dt>차단 결과</dt><dd class="backup-result ${String(backup.result || "").includes("Failed") ? "backup-result-failed" : "backup-result-success"}">${escapeHtml(backup.result || "-")}</dd></div>
           </dl>
         </div>
+        <span class="dashboard-panel-resize-line dashboard-panel-resize-line-x" data-resize-axis="x" aria-hidden="true" title="Resize width"></span>
+        <span class="dashboard-panel-resize-line dashboard-panel-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>
+        <span class="dashboard-panel-resize-handle" data-resize-axis="both" aria-hidden="true" title="Resize card"></span>
       </section>
 
       <section class="security-panel event-panel ${dashboardEventsVisible ? "event-panel-visible" : "event-panel-hidden"}" data-dashboard-panel="events" data-panel-resizable="true" data-cols="4" data-rows="${dashboardEventsVisible ? "3" : "1"}">
         <header class="event-panel-header">
           <h2><i class="panel-title-icon event-title-icon" aria-hidden="true"></i>${copy.event}</h2>
           <button type="button" class="dashboard-reveal-button" id="dashboardEventsToggle">${dashboardEventsVisible ? "Hide" : "More"}</button>
-          <span class="dashboard-panel-grip" draggable="true" aria-hidden="true" title="Drag card"></span>
+          <span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span>
         </header>
         <div class="panel-body dashboard-event-body">
           ${eventRows}
           <a>${copy.detail} ›</a>
         </div>
-        <span class="dashboard-panel-resize-handle" aria-hidden="true" title="Resize card"></span>
+        <span class="dashboard-panel-resize-line dashboard-panel-resize-line-x" data-resize-axis="x" aria-hidden="true" title="Resize width"></span>
+        <span class="dashboard-panel-resize-line dashboard-panel-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>
+        <span class="dashboard-panel-resize-handle" data-resize-axis="both" aria-hidden="true" title="Resize card"></span>
       </section>
 
       <section class="security-panel alert-panel ${dashboardAlertsVisible ? "alert-panel-visible" : "alert-panel-hidden"}" data-dashboard-panel="alerts" data-panel-resizable="true" data-cols="4" data-rows="${dashboardAlertsVisible ? "3" : "1"}">
         <header class="alert-panel-header">
           <h2><i class="panel-title-icon alert-title-icon" aria-hidden="true"></i>${copy.alert}</h2>
           <button type="button" class="dashboard-reveal-button" id="dashboardAlertsToggle">${dashboardAlertsVisible ? "Hide" : "More"}</button>
-          <span class="dashboard-panel-grip" draggable="true" aria-hidden="true" title="Drag card"></span>
+          <span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span>
         </header>
         <div class="panel-body dashboard-alert-body">
           <div class="alert-ok"><span>${alerts.some((item) => String(item.value || "").match(/Failed|Detected|Error/i)) ? "확인 필요" : copy.noCritical}</span></div>
           ${alertRows}
           <a>${copy.detail} ›</a>
         </div>
-        <span class="dashboard-panel-resize-handle" aria-hidden="true" title="Resize card"></span>
+        <span class="dashboard-panel-resize-line dashboard-panel-resize-line-x" data-resize-axis="x" aria-hidden="true" title="Resize width"></span>
+        <span class="dashboard-panel-resize-line dashboard-panel-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>
+        <span class="dashboard-panel-resize-handle" data-resize-axis="both" aria-hidden="true" title="Resize card"></span>
       </section>
 
       <section class="security-panel audit-summary-panel" data-dashboard-panel="audit" data-panel-resizable="true" data-cols="4" data-rows="3">
-        <header><h2><i class="panel-title-icon audit-title-icon" aria-hidden="true"></i>${copy.audit}</h2><span class="dashboard-panel-grip" draggable="true" aria-hidden="true" title="Drag card"></span></header>
+        <header><h2><i class="panel-title-icon audit-title-icon" aria-hidden="true"></i>${copy.audit}</h2><span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span></header>
         <div class="panel-body">
           <div class="audit-count-grid">
             ${auditCounts.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}건</strong></div>`).join("")}
@@ -2836,7 +2860,9 @@ function renderDashboard(data) {
             <button><i class="file-icon file-word" aria-hidden="true"></i>${copy.word}</button>
           </div>
         </div>
-        <span class="dashboard-panel-resize-handle" aria-hidden="true" title="Resize card"></span>
+        <span class="dashboard-panel-resize-line dashboard-panel-resize-line-x" data-resize-axis="x" aria-hidden="true" title="Resize width"></span>
+        <span class="dashboard-panel-resize-line dashboard-panel-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>
+        <span class="dashboard-panel-resize-handle" data-resize-axis="both" aria-hidden="true" title="Resize card"></span>
       </section>
 
   </div>

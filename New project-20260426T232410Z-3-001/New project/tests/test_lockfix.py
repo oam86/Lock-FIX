@@ -678,7 +678,7 @@ class LockFixTests(unittest.TestCase):
             'id="userManagementForm"',
             'id="userManagementBackButton"',
             'data-i18n="userManagement.actions"',
-            'v=20260517-sidebar-user-menu',
+            'v=20260517-dashboard-card-controls',
             '<option value="backup-operation">Backup Operation</option>',
             '<option value="SECURITY_ADMIN">SECURITY_ADMIN</option>',
             '<span>Hardware Control</span>',
@@ -1542,7 +1542,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".sidebar-user-menu", css_source)
         self.assertIn(".sidebar-user-chevron::before", css_source)
         self.assertIn(".sidebar-user-panel[hidden]", css_source)
-        self.assertIn("20260517-sidebar-user-menu", index_source)
+        self.assertIn("20260517-dashboard-card-controls", index_source)
 
     def test_isolate_reaches_isolated(self) -> None:
         tmp_path = self.make_workspace()
@@ -2265,7 +2265,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("content: none !important;", css_source)
         self.assertIn("font-weight: 400 !important;", css_source)
         self.assertIn("opacity: 0.6 !important;", css_source)
-        self.assertIn("20260517-sidebar-user-menu", html_source)
+        self.assertIn("20260517-dashboard-card-controls", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -2284,7 +2284,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260517-sidebar-user-menu", html_source)
+        self.assertIn("20260517-dashboard-card-controls", html_source)
 
     def test_monitoring_header_copy_is_hidden_while_polling_remains(self) -> None:
         root = Path.cwd()
@@ -2369,11 +2369,21 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("enableDashboardPanelDrag", app_source)
         self.assertIn('class="dashboard-kpi-grip" draggable="true"', app_source)
         self.assertIn('class="dashboard-panel-grip" draggable="true"', app_source)
+        self.assertIn('data-drag-axis="xy"', app_source)
         self.assertIn('data-dashboard-panel="events"', app_source)
         self.assertIn('data-dashboard-panel="alerts"', app_source)
         self.assertIn('data-dashboard-panel="audit"', app_source)
+        self.assertIn('data-dashboard-panel="protection" data-panel-resizable="true"', app_source)
+        self.assertIn('data-dashboard-panel="backup" data-panel-resizable="true"', app_source)
         self.assertIn('data-panel-resizable="true"', app_source)
         self.assertIn("dashboard-panel-resize-handle", app_source)
+        self.assertIn("dashboard-kpi-resize-line-x", app_source)
+        self.assertIn("dashboard-kpi-resize-line-y", app_source)
+        self.assertIn("dashboard-panel-resize-line-x", app_source)
+        self.assertIn("dashboard-panel-resize-line-y", app_source)
+        self.assertIn('data-resize-axis="x"', app_source)
+        self.assertIn('data-resize-axis="y"', app_source)
+        self.assertIn('data-resize-axis="both"', app_source)
         self.assertIn("dashboard-empty-row", app_source)
         self.assertIn("auditSummary", app_source)
         self.assertIn("audit-link-state", app_source)
@@ -2382,9 +2392,22 @@ class LockFixTests(unittest.TestCase):
         self.assertNotIn("편집 열기", app_source)
         self.assertIn(".dashboard-panel-grip", css_source)
         self.assertIn(".dashboard-panel-resize-handle", css_source)
+        self.assertIn(".dashboard-kpi-resize-line-x", css_source)
+        self.assertIn(".dashboard-kpi-resize-line-y", css_source)
+        self.assertIn(".dashboard-panel-resize-line-x", css_source)
+        self.assertIn(".dashboard-panel-resize-line-y", css_source)
+        self.assertIn("cursor: ew-resize;", css_source)
+        self.assertIn("cursor: ns-resize;", css_source)
         self.assertIn(".dashboard-panel-drop-target", css_source)
+        self.assertIn(".security-kpi:hover .dashboard-kpi-grip", css_source)
+        self.assertIn(".security-panel[data-dashboard-panel]:hover .dashboard-panel-resize-handle", css_source)
+        self.assertIn(".security-panel[data-dashboard-panel]:hover .dashboard-panel-resize-line", css_source)
+        self.assertIn("border-right: 2px solid rgba(55, 102, 201", css_source)
+        self.assertIn("event-panel-hidden", css_source)
+        self.assertIn("min-height: 46px;", css_source)
+        self.assertIn("opacity: 0.66;", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260517-sidebar-user-menu", html_source)
+        self.assertIn("20260517-dashboard-card-controls", html_source)
 
     def test_dashboard_route_does_not_show_legacy_notification_markup(self) -> None:
         root = Path.cwd()
@@ -2402,7 +2425,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260517-sidebar-user-menu", html_source)
+        self.assertIn("20260517-dashboard-card-controls", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()
