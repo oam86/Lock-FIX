@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LOCK-FIX PoC</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260517-dashboard-route-fix" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260517-network-show-buttons" />
   </head>
   <body>
     <section class="login-screen" id="loginScreen">
@@ -585,7 +585,7 @@
               <section class="network-detail-card network-draggable-card" data-network-card="path">
                 <div class="network-ops-summary-head">
                   <strong data-i18n="network.pathTitle">네트워크 경로 상태</strong>
-                  <button type="button" class="network-section-toggle network-path-toggle" id="networkPathToggle" data-i18n="network.pathBadgeCollapsed">보기</button>
+                  <button type="button" class="network-section-toggle network-path-toggle" id="networkPathToggle" data-i18n="network.pathBadgeCollapsed">Show</button>
                   <span class="network-card-grip network-card-drag-handle" draggable="true" role="button" tabindex="0" aria-label="카드 위치 이동" title="카드 위치 이동"></span>
                 </div>
                 <div class="network-path-list" id="networkPathStatus"></div>
@@ -593,7 +593,7 @@
               <section class="network-analysis-card network-draggable-card" data-network-card="ports">
                 <div class="network-analysis-head">
                   <span data-i18n="network.portTitle">포트 허용/차단 분석</span>
-                  <button type="button" class="network-section-toggle network-port-toggle" id="networkPortToggle" data-i18n="network.portBadgeCollapsed">보기</button>
+                  <button type="button" class="network-section-toggle network-port-toggle" id="networkPortToggle" data-i18n="network.portBadgeCollapsed">Show</button>
                   <span class="network-card-grip network-card-drag-handle" draggable="true" role="button" tabindex="0" aria-label="카드 위치 이동" title="카드 위치 이동"></span>
                 </div>
                 <div class="network-port-list" id="networkPortTable"></div>
@@ -601,6 +601,7 @@
               <section class="network-analysis-card network-insight-strip network-draggable-card" data-network-card="insights">
                 <div class="network-analysis-head">
                   <span data-i18n="network.insightTitle">네트워크 분석</span>
+                  <button type="button" class="network-section-toggle network-insight-toggle" id="networkInsightToggle" data-i18n="network.insightBadgeCollapsed">Show</button>
                   <span class="network-card-grip network-card-drag-handle" draggable="true" role="button" tabindex="0" aria-label="카드 위치 이동" title="카드 위치 이동"></span>
                 </div>
                 <div class="network-insight-list" id="networkInsights"></div>
@@ -1168,7 +1169,7 @@
       </div>
     </template>
 
-    <script src="/static/app.js?v=20260517-dashboard-route-fix"></script>
+    <script src="/static/app.js?v=20260517-network-show-buttons"></script>
   </body>
 </html>
 

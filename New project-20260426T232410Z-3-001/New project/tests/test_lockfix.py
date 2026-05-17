@@ -2104,6 +2104,31 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("font-weight: 400", css_source)
         self.assertIn("opacity: 0.58", css_source)
 
+    def test_network_detail_cards_use_subtle_show_toggles(self) -> None:
+        root = Path.cwd()
+        html_source = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        app_source = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
+        css_source = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="networkPathToggle" data-i18n="network.pathBadgeCollapsed">Show</button>', html_source)
+        self.assertIn('id="networkPortToggle" data-i18n="network.portBadgeCollapsed">Show</button>', html_source)
+        self.assertIn('id="networkInsightToggle" data-i18n="network.insightBadgeCollapsed">Show</button>', html_source)
+        self.assertNotIn('data-i18n="network.pathBadgeCollapsed">보기</button>', html_source)
+        self.assertNotIn('data-i18n="network.portBadgeCollapsed">보기</button>', html_source)
+        self.assertIn('"network.pathBadgeCollapsed": "Show"', app_source)
+        self.assertIn('"network.portBadgeCollapsed": "Show"', app_source)
+        self.assertIn('"network.insightBadgeCollapsed": "Show"', app_source)
+        self.assertIn('"network.pathBadge": "Hide"', app_source)
+        self.assertIn('"network.portBadge": "Hide"', app_source)
+        self.assertIn('"network.insightBadgeExpanded": "Hide"', app_source)
+        self.assertNotIn('"network.pathBadgeCollapsed": "보기"', app_source)
+        self.assertNotIn('"network.portBadgeCollapsed": "보기"', app_source)
+        self.assertIn(".network-insight-toggle::after", css_source)
+        self.assertIn("content: none !important;", css_source)
+        self.assertIn("font-weight: 400 !important;", css_source)
+        self.assertIn("opacity: 0.6 !important;", css_source)
+        self.assertIn("20260517-network-show-buttons", html_source)
+
     def test_dashboard_cards_drag_resize_without_edit_button(self) -> None:
         root = Path.cwd()
         html_source = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -2130,7 +2155,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".dashboard-panel-resize-handle", css_source)
         self.assertIn(".dashboard-panel-drop-target", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260517-dashboard-route-fix", html_source)
+        self.assertIn("20260517-network-show-buttons", html_source)
 
     def test_dashboard_route_does_not_show_legacy_notification_markup(self) -> None:
         root = Path.cwd()
@@ -2148,7 +2173,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260517-dashboard-route-fix", html_source)
+        self.assertIn("20260517-network-show-buttons", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()
