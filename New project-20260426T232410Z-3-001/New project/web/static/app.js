@@ -5711,7 +5711,6 @@ function renderSources(data) {
       <ul class="emergency-live-log-list" data-emergency-live-log>
         ${emergencyLiveLogMarkup}
       </ul>
-      <em>재접속 진행 결과는 백그라운드에서만 갱신되며, 이 화면에는 최종 상태만 표시됩니다.</em>
     </div>
   `;
   sourceList.appendChild(emergencyPanel);
