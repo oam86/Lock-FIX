@@ -678,13 +678,16 @@ class LockFixTests(unittest.TestCase):
             'id="userManagementForm"',
             'id="userManagementBackButton"',
             'data-i18n="userManagement.actions"',
-            'v=20260517-ops-events-align',
+            'v=20260517-user-department-fallback',
         ]:
             self.assertIn(token, html)
         for token in [
             '"/api/admin/windows-admin-status"',
             '"/api/account/password"',
             '"/api/admin/users"',
+            '"/api/admin/departments"',
+            "Promise.allSettled",
+            "USER_MANAGEMENT_DEFAULT_DEPARTMENTS",
             'data-user-archive',
             '"userManagement.title": "사용자/권한 관리"',
             '"userManagement.title": "User & Role Management"',
@@ -2235,7 +2238,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("content: none !important;", css_source)
         self.assertIn("font-weight: 400 !important;", css_source)
         self.assertIn("opacity: 0.6 !important;", css_source)
-        self.assertIn("20260517-ops-events-align", html_source)
+        self.assertIn("20260517-user-department-fallback", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -2254,7 +2257,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260517-ops-events-align", html_source)
+        self.assertIn("20260517-user-department-fallback", html_source)
 
     def test_monitoring_header_copy_is_hidden_while_polling_remains(self) -> None:
         root = Path.cwd()
@@ -2354,7 +2357,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".dashboard-panel-resize-handle", css_source)
         self.assertIn(".dashboard-panel-drop-target", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260517-ops-events-align", html_source)
+        self.assertIn("20260517-user-department-fallback", html_source)
 
     def test_dashboard_route_does_not_show_legacy_notification_markup(self) -> None:
         root = Path.cwd()
@@ -2372,7 +2375,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260517-ops-events-align", html_source)
+        self.assertIn("20260517-user-department-fallback", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()

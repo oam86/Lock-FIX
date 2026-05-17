@@ -322,6 +322,15 @@ const USER_MANAGEMENT_ROLES = [
   "UI_DESIGNER",
   "DEVELOPER",
 ];
+const USER_MANAGEMENT_DEFAULT_DEPARTMENTS = [
+  { id: "management", name: "Management" },
+  { id: "security", name: "Security" },
+  { id: "backup-operation", name: "Backup Operation" },
+  { id: "hardware-control", name: "Hardware Control" },
+  { id: "audit", name: "Audit" },
+  { id: "development", name: "Development" },
+  { id: "web-design", name: "Web Design" },
+];
 const REALTIME_VIEW_IDS = new Set(["sourcesView", "dashboardView", "monitoringView"]);
 let activeMonitoringMetric = "cpu";
 let monitoringRange = {
@@ -5140,8 +5149,9 @@ function templateText(key, values = {}) {
 }
 
 function renderUserManagementOptions(departments = []) {
+  const options = departments.length ? departments : USER_MANAGEMENT_DEFAULT_DEPARTMENTS;
   if (userManagementDepartment) {
-    userManagementDepartment.innerHTML = departments.map((department) => (
+    userManagementDepartment.innerHTML = options.map((department) => (
       `<option value="${escapeHtml(department.id || "")}">${escapeHtml(department.name || department.id || "")}</option>`
     )).join("");
   }
@@ -5172,6 +5182,14 @@ function userManagementStatusText(user) {
 
 function renderWindowsAdminStatus(status) {
   if (!userManagementWindowsStatus) return;
+  if (status?.error) {
+    userManagementWindowsStatus.innerHTML = `
+      <strong class="status-warning">${escapeHtml(t("userManagement.windowsStandard"))}</strong>
+      <span>${escapeHtml(status.error)}</span>
+      <em>${escapeHtml(t("userManagement.windowsStatusDesc"))}</em>
+    `;
+    return;
+  }
   const checkedAt = status?.checkedAt ? formatLogDate(status.checkedAt) : "-";
   const stateLabel = status?.isAdministrator ? t("userManagement.windowsAdmin") : t("userManagement.windowsStandard");
   const stateClass = status?.isAdministrator ? "status-success" : "status-warning";
@@ -5183,8 +5201,11 @@ function renderWindowsAdminStatus(status) {
 }
 
 function renderUserManagement(data, errorMessage = "") {
-  const departments = Array.isArray(data?.departments) ? data.departments : [];
+  const loadedDepartments = Array.isArray(data?.departments) ? data.departments : [];
+  const departments = loadedDepartments.length ? loadedDepartments : USER_MANAGEMENT_DEFAULT_DEPARTMENTS;
   const users = Array.isArray(data?.users) ? data.users : [];
+  const usersError = errorMessage || data?.usersError || "";
+  const departmentError = data?.departmentError || "";
   latestUserManagementData = {
     users,
     departments,
@@ -5198,14 +5219,14 @@ function renderUserManagement(data, errorMessage = "") {
   if (userManagementDepartments) {
     userManagementDepartments.innerHTML = departments.length
       ? departments.map((department) => `<span>${escapeHtml(department.name || department.id)}</span>`).join("")
-      : `<em>${escapeHtml(errorMessage || t("userManagement.noDepartments"))}</em>`;
+      : `<em>${escapeHtml(departmentError || t("userManagement.noDepartments"))}</em>`;
   }
   if (userManagementCount) userManagementCount.textContent = templateText("userManagement.count", { count: users.length });
   if (!userManagementTable) return;
   userManagementTable.replaceChildren();
-  if (errorMessage || !users.length) {
+  if (usersError || !users.length) {
     const row = document.createElement("tr");
-    row.innerHTML = `<td colspan="5">${escapeHtml(errorMessage || t("userManagement.noUsers"))}</td>`;
+    row.innerHTML = `<td colspan="5">${escapeHtml(usersError || t("userManagement.noUsers"))}</td>`;
     userManagementTable.appendChild(row);
     return;
   }
@@ -5228,12 +5249,28 @@ function renderUserManagement(data, errorMessage = "") {
 }
 
 async function reloadUserManagement() {
-  const [users, departments, windowsAdminStatus] = await Promise.all([
-    requestJson("/api/admin/users"),
-    requestJson("/api/admin/departments"),
-    requestJson("/api/admin/windows-admin-status"),
+  const [usersResult, departmentsResult, windowsResult] = await Promise.allSettled([
+    requestJson("/api/admin/users", { timeoutMs: 30000 }),
+    requestJson("/api/admin/departments", { timeoutMs: 30000 }),
+    requestJson("/api/admin/windows-admin-status", { timeoutMs: 30000 }),
   ]);
-  renderUserManagement({ users: users.items || [], departments: departments.items || [], windowsAdminStatus });
+  const users = usersResult.status === "fulfilled" ? usersResult.value.items || [] : latestUserManagementData.users;
+  const departments = departmentsResult.status === "fulfilled"
+    ? departmentsResult.value.items || []
+    : (latestUserManagementData.departments.length ? latestUserManagementData.departments : USER_MANAGEMENT_DEFAULT_DEPARTMENTS);
+  const windowsAdminStatus = windowsResult.status === "fulfilled"
+    ? windowsResult.value
+    : {
+      ...(latestUserManagementData.windowsAdminStatus || {}),
+      error: windowsResult.reason?.message || "Windows administrator status check failed.",
+    };
+  renderUserManagement({
+    users,
+    departments,
+    windowsAdminStatus,
+    usersError: usersResult.status === "rejected" ? usersResult.reason?.message || "User list load failed." : "",
+    departmentError: departmentsResult.status === "rejected" ? departmentsResult.reason?.message || "Department list load failed." : "",
+  });
 }
 
 async function submitUserManagementForm(event) {
