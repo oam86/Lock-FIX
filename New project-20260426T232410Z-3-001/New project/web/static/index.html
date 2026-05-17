@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LOCK-FIX PoC</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260517-monitoring-textless" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260517-network-textless" />
   </head>
   <body>
     <section class="login-screen" id="loginScreen">
@@ -490,10 +490,7 @@
       <section class="view network-status-view" id="network2View">
         <section class="network-chart-panel">
               <div class="network-panel-header">
-                <div>
-                  <h1 id="networkStatusTitle">실시간 네트워크</h1>
-                  <p data-i18n="network.subtitle">송신/수신 속도와 포트 정책, 손실 분석을 한 화면에서 확인합니다.</p>
-                </div>
+                <div class="network-heading-spacer" aria-hidden="true"></div>
                 <div class="network-header-badge">
                   <span data-i18n="network.badge">실시간 트래픽</span>
                   <strong id="networkSelectedNic">-</strong>
@@ -1162,7 +1159,7 @@
       </div>
     </template>
 
-    <script src="/static/app.js?v=20260517-monitoring-textless"></script>
+    <script src="/static/app.js?v=20260517-network-textless"></script>
   </body>
 </html>
 
