@@ -5711,7 +5711,7 @@ function renderSources(data) {
       <ul class="emergency-live-log-list" data-emergency-live-log>
         ${emergencyLiveLogMarkup}
       </ul>
-      <em>1초 단위로 재접속 단계 진행 상태와 백그라운드 작업 결과가 이 영역에 유지됩니다.</em>
+      <em>재접속 진행 결과는 백그라운드에서만 갱신되며, 이 화면에는 최종 상태만 표시됩니다.</em>
     </div>
   `;
   sourceList.appendChild(emergencyPanel);
