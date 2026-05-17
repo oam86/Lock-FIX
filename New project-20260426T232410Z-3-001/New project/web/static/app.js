@@ -2247,9 +2247,9 @@ function renderDashboard(data) {
       </section>
 
       <section class="security-panel event-panel ${dashboardEventsVisible ? "event-panel-visible" : "event-panel-hidden"}">
-        <header>
+        <header class="event-panel-header">
           <h2><i class="panel-title-icon event-title-icon" aria-hidden="true"></i>${copy.event}</h2>
-          <button type="button" class="dashboard-reveal-button" id="dashboardEventsToggle">${dashboardEventsVisible ? "Hide" : "Show"}</button>
+          <button type="button" class="dashboard-reveal-button" id="dashboardEventsToggle">${dashboardEventsVisible ? "Hide" : "More"}</button>
         </header>
         <div class="panel-body dashboard-event-body">
         ${events.map((event) => `<div class="event-row"><span><i class="event-clock" aria-hidden="true"></i>${escapeHtml(event.date || "-")}</span><strong>${escapeHtml(event.content || "-")}</strong></div>`).join("")}
@@ -2519,7 +2519,7 @@ function renderDetectFallback(message = "탐지 내역을 불러오는 중입니
     const visible = !eventPanel?.classList.contains("event-panel-visible");
     eventPanel?.classList.toggle("event-panel-visible", visible);
     eventPanel?.classList.toggle("event-panel-hidden", !visible);
-    dashboardEventsToggle.textContent = visible ? "Hide" : "Show";
+    dashboardEventsToggle.textContent = visible ? "Hide" : "More";
     saveDashboardEventsVisible(visible);
   });
 }
