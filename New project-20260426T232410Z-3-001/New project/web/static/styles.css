@@ -1513,36 +1513,46 @@ button {
 }
 
 .ops-events-head {
-  position: relative;
+  display: grid;
+  grid-template-columns: max-content auto;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 6px;
   min-height: 34px;
-  padding-right: 72px;
 }
 
 .ops-events-head strong {
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
   color: #0b1f37;
   font-size: 15px;
   font-weight: 900;
+  line-height: 1;
 }
 
 .ops-events-description {
   display: block;
+  grid-column: 1 / -1;
   margin-top: 6px;
   font-weight: 700;
   transition: opacity 160ms ease, max-height 160ms ease;
 }
 
 .ops-events-toggle {
-  position: absolute;
-  top: 0;
-  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+  min-height: 30px;
   border: 1px solid rgba(144, 170, 205, 0.45);
   border-radius: 999px;
   background: rgba(247, 251, 255, 0.52);
   color: rgba(31, 77, 216, 0.64);
-  padding: 6px 13px;
+  padding: 0 13px;
   font-size: 12px;
   font-weight: 400;
+  line-height: 1;
   cursor: pointer;
   box-shadow: none;
   opacity: 0.58;
