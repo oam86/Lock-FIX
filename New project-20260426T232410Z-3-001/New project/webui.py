@@ -6650,7 +6650,7 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             return
 
 
-def run(host: str = "127.0.0.1", port: int = 8088, config_path: Path = DEFAULT_CONFIG) -> None:
+def run(host: str = "0.0.0.0", port: int = 8088, config_path: Path = DEFAULT_CONFIG) -> None:
     LockFixWebHandler.context = WebContext(config_path)
     server = ThreadingHTTPServer((host, port), LockFixWebHandler)
     print(f"LOCK-FIX PoC UI: http://{host}:{port}")
@@ -6662,7 +6662,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8088)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     args = parser.parse_args()

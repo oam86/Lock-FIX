@@ -67,7 +67,7 @@ namespace LockFix
         private string veeamHostAutoMode = "manual";
         private string veeamHostAutoMessage = "";
         private List<string> localIpv4Candidates = new List<string>();
-        private readonly string webUiUrl = "http://127.0.0.1:8088";
+        private readonly string webUiUrl = "http://0.0.0.0:8088";
 
         public SetupWizardForm()
         {
@@ -329,7 +329,7 @@ namespace LockFix
             pageTitle.Text = "Component Selection";
             pageBody.Text = "설치할 LOCK-FIX 구성 요소를 선택합니다.";
             AddCheckCard(coreService, "디스크 격리 상태 머신과 로컬 제어 로직", 38, 140);
-            AddCheckCard(webUi, "http://127.0.0.1:8088 접속용 관리 화면", 416, 140);
+            AddCheckCard(webUi, "http://0.0.0.0:8088 원격 접속용 관리 화면", 416, 140);
             AddCheckCard(veeamConnector, "Veeam 백업 완료 신호 및 상태 연동", 38, 244);
             AddCheckCard(agent, "현장 서버 상태 수집 및 제어 에이전트", 416, 244);
             AddCheckCard(database, "설정, 상태, 감사 로그 저장소", 38, 348);
@@ -1070,9 +1070,9 @@ namespace LockFix
             RunServiceCommand("delete", "LOCKFIXWebUI", false);
             string binPath = "\"" + serviceExe + "\"";
             RunSc(new string[] { "create", "LOCKFIXWebUI", "binPath=", binPath, "start=", "auto", "DisplayName=", "LOCK-FIX Web UI" }, true);
-            RunSc(new string[] { "description", "LOCKFIXWebUI", "Keeps LOCK-FIX Web UI listening on http://127.0.0.1:8088 using the bundled offline Python runtime." }, false);
+            RunSc(new string[] { "description", "LOCKFIXWebUI", "Keeps LOCK-FIX Web UI listening on http://0.0.0.0:8088 using the bundled offline Python runtime." }, false);
             RunServiceCommand("start", "LOCKFIXWebUI", true);
-            AddLog("Windows service registered: LOCKFIXWebUI (http://127.0.0.1:8088)");
+            AddLog("Windows service registered: LOCKFIXWebUI (http://0.0.0.0:8088)");
         }
 
         private void RunServiceCommand(string action, string serviceName, bool required)
