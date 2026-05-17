@@ -5117,6 +5117,14 @@ function emergencyReconnectTimestamp() {
   ].join(":");
 }
 
+function sanitizeEmergencyReconnectMessage(message) {
+  const text = String(message || "").trim();
+  if (!text) return "";
+  if (text.includes("1초 단위로 재접속 단계 진행 상태와 백그라운드 작업 결과가 이 영역에 유지됩니다.")) return "";
+  if (text.includes("백그라운드 상에서만 이력을 남깁니다.")) return "";
+  return text;
+}
+
 function appendEmergencyReconnectDetail(message) {
   const slot = emergencyReconnectDetailSlot || "-";
   emergencyReconnectDetailLogs.push(`${emergencyReconnectTimestamp()} - LOCK-FIX Reconnect DETAIL - slot ${slot}, ${message}`);
@@ -5881,7 +5889,10 @@ function renderSources(data) {
     : emergencyEligible
       ? "READY"
       : "WAITING";
-  const emergencyLogMessage = emergencyActionStatus || emergencySlot.blocked_reason || emergencyAccess.secondary || "-";
+  const emergencyLogMessage = sanitizeEmergencyReconnectMessage(emergencyActionStatus)
+    || sanitizeEmergencyReconnectMessage(emergencySlot.blocked_reason)
+    || sanitizeEmergencyReconnectMessage(emergencyAccess.secondary)
+    || "-";
   const emergencyLiveLogMarkup = reconnectLiveLogLines.length
     ? reconnectLiveLogLines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")
     : `<li>${escapeHtml(emergencyLogMessage)}</li>`;
