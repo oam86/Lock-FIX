@@ -62,7 +62,9 @@ const dashboardNotificationTable = document.querySelector("#dashboardNotificatio
 const dashboardLogsTable = document.querySelector("#dashboardLogsTable");
 const dashboardTotalLogs = document.querySelector("#dashboardTotalLogs");
 const dashboardKpiOrderKey = "lockfix.dashboard.kpiOrder.v1";
+const dashboardKpiSizeKey = "lockfix.dashboard.kpiSize.v1";
 const dashboardEventsKey = "lockfix.dashboard.eventsVisible.v1";
+let dashboardKpiInteractionBound = false;
 const reportOverallStatus = document.querySelector("#reportOverallStatus");
 const reportAnalysis = document.querySelector("#reportAnalysis");
 const reportGeneratedAt = document.querySelector("#reportGeneratedAt");
@@ -1936,6 +1938,25 @@ function saveDashboardKpiOrder(order) {
   }
 }
 
+function loadDashboardKpiSizes() {
+  try {
+    const raw = localStorage.getItem(dashboardKpiSizeKey);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveDashboardKpiSizes(sizes) {
+  try {
+    localStorage.setItem(dashboardKpiSizeKey, JSON.stringify(sizes));
+  } catch {
+    // Ignore storage failures in locked-down browser contexts.
+  }
+}
+
 function loadDashboardEventsVisible() {
   try {
     return localStorage.getItem(dashboardEventsKey) === "1";
@@ -1967,10 +1988,20 @@ function enableDashboardKpiDrag(board) {
   if (!board || board.dataset.dragReady === "true") return;
   board.dataset.dragReady = "true";
   let dragging = null;
+  let resizing = null;
+  const sizes = loadDashboardKpiSizes();
 
   const syncOrder = () => {
     const order = [...board.querySelectorAll("[data-dashboard-kpi]")].map((item) => item.dataset.dashboardKpi || "").filter(Boolean);
     saveDashboardKpiOrder(order);
+  };
+
+  const applyCardSize = (card, size) => {
+    if (!card || !size) return;
+    const cols = Math.max(1, Math.min(3, Number(size.cols || 1)));
+    const rows = Math.max(1, Math.min(2, Number(size.rows || 1)));
+    card.style.gridColumnEnd = `span ${cols}`;
+    card.style.gridRowEnd = `span ${rows}`;
   };
 
   const getCard = (target) => target?.closest?.("[data-dashboard-kpi]");
@@ -2012,6 +2043,56 @@ function enableDashboardKpiDrag(board) {
     event.preventDefault();
     syncOrder();
   });
+
+  board.querySelectorAll("[data-dashboard-kpi]").forEach((card) => {
+    applyCardSize(card, sizes[card.dataset.dashboardKpi || ""]);
+  });
+
+  if (!dashboardKpiInteractionBound) {
+    board.addEventListener("mousedown", (event) => {
+      const handle = event.target.closest?.(".dashboard-kpi-resize-handle");
+      if (!handle) return;
+      const card = handle.closest("[data-dashboard-kpi]");
+      if (!card) return;
+      event.preventDefault();
+      resizing = {
+        card,
+        startX: event.clientX,
+        startY: event.clientY,
+        startCols: Number(card.dataset.cols || 1),
+        startRows: Number(card.dataset.rows || 1),
+      };
+      board.classList.add("dashboard-kpi-board-resizing");
+    });
+
+    window.addEventListener("mousemove", (event) => {
+      if (!resizing) return;
+      const dx = event.clientX - resizing.startX;
+      const dy = event.clientY - resizing.startY;
+      const nextCols = Math.max(1, Math.min(3, resizing.startCols + Math.round(dx / 140)));
+      const nextRows = Math.max(1, Math.min(2, resizing.startRows + Math.round(dy / 70)));
+      resizing.card.dataset.cols = String(nextCols);
+      resizing.card.dataset.rows = String(nextRows);
+      resizing.card.style.gridColumnEnd = `span ${nextCols}`;
+      resizing.card.style.gridRowEnd = `span ${nextRows}`;
+    });
+
+    window.addEventListener("mouseup", () => {
+      if (!resizing) return;
+      const sizes = loadDashboardKpiSizes();
+      board.querySelectorAll("[data-dashboard-kpi]").forEach((card) => {
+        const key = card.dataset.dashboardKpi || "";
+        if (!key) return;
+        const cols = Number(card.dataset.cols || 1);
+        const rows = Number(card.dataset.rows || 1);
+        sizes[key] = { cols, rows };
+      });
+      saveDashboardKpiSizes(sizes);
+      resizing = null;
+      board.classList.remove("dashboard-kpi-board-resizing");
+    });
+    dashboardKpiInteractionBound = true;
+  }
 }
 
 function renderMount(node, slot) {
@@ -2173,6 +2254,7 @@ function renderDashboard(data) {
     ...item,
     key: item.key || item.id || item.label || `kpi-${index}`,
   })));
+  const kpiSizes = loadDashboardKpiSizes();
   const flowItems = Array.isArray(data.flow) && data.flow.length
     ? data.flow
     : [
@@ -2198,8 +2280,9 @@ function renderDashboard(data) {
     ` : ""}
     <div class="security-kpi-grid" id="dashboardKpiBoard" aria-label="Dashboard summary cards">
       ${orderedKpis.map(({ icon, label, value, tone, meta, key }) => `
-        <article class="security-kpi security-kpi-${icon}" data-dashboard-kpi="${escapeHtml(key)}" draggable="true">
+        <article class="security-kpi security-kpi-${icon}" data-dashboard-kpi="${escapeHtml(key)}" data-cols="${escapeHtml(String(kpiSizes[key]?.cols || 1))}" data-rows="${escapeHtml(String(kpiSizes[key]?.rows || 1))}" draggable="true">
           <span class="dashboard-kpi-grip" aria-hidden="true" title="Drag to reorder"></span>
+          <span class="dashboard-kpi-resize-handle" aria-hidden="true" title="Resize card"></span>
           <i class="security-icon security-icon-${icon} security-tone-${tone}" ${meta ? `title="${escapeHtml(meta)}" aria-label="${escapeHtml(meta)}"` : 'aria-hidden="true"'}></i>
           <div><span>${escapeHtml(label || "-")}</span><strong class="security-value-${tone}">${escapeHtml(value || "-")}</strong></div>
         </article>
