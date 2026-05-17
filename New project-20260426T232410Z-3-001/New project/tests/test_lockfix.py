@@ -2127,7 +2127,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("content: none !important;", css_source)
         self.assertIn("font-weight: 400 !important;", css_source)
         self.assertIn("opacity: 0.6 !important;", css_source)
-        self.assertIn("20260517-settings-wide-grid", html_source)
+        self.assertIn("20260517-dashboard-fast-cache", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -2146,7 +2146,54 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260517-settings-wide-grid", html_source)
+        self.assertIn("20260517-dashboard-fast-cache", html_source)
+
+    def test_dashboard_summary_uses_storage_snapshot_without_slow_powershell(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        (tmp_path / "state.json").write_text(json.dumps({"BAY-01": "ISOLATED"}), encoding="utf-8")
+        (tmp_path / "veeam_auto_isolate.json").write_text(json.dumps({"slot_id": "BAY-01", "state": "ISOLATED"}), encoding="utf-8")
+        (tmp_path / "storage-BAY-01.json").write_text(
+            json.dumps(
+                {
+                    "diskNumber": 1,
+                    "drive": "G",
+                    "accessPath": "G:\\",
+                    "isOffline": False,
+                    "offlineEquivalent": True,
+                    "pathReachable": False,
+                }
+            ),
+            encoding="utf-8",
+        )
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(config_path)
+        handler.threat_detection_summary = lambda: {"summary": {"status": "정상", "score": 0, "last_scan_at": "-", "suspicious_count": 0}}
+
+        with patch.object(webui.subprocess, "run", side_effect=AssertionError("PowerShell probe should not run")), patch.object(
+            webui.LockFixWebHandler,
+            "safe_text_lines",
+            side_effect=AssertionError("Dashboard should read an audit tail, not the full audit log"),
+        ):
+            summary = handler.dashboard_summary()
+
+        self.assertEqual(summary["security_kpis"][2]["value"], "Offline")
+        self.assertEqual(summary["alerts"][2]["value"], "Not visible")
+        self.assertEqual(summary["backup"]["result"], "Offline Complete")
+
+    def test_dashboard_reload_deduplicates_slow_requests(self) -> None:
+        app_source = (Path.cwd() / "web" / "static" / "app.js").read_text(encoding="utf-8")
+        webui_source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")
+
+        self.assertIn("let dashboardReloadInFlight = null;", app_source)
+        self.assertIn("if (dashboardReloadInFlight) return dashboardReloadInFlight;", app_source)
+        self.assertIn('requestJson("/api/dashboard", { timeoutMs: 30000 })', app_source)
+        self.assertIn("if (latestDashboardData)", app_source)
+        self.assertIn("DASHBOARD_CACHE_TTL_SECONDS = 2.0", webui_source)
+        self.assertIn("DASHBOARD_PROBE_TIMEOUT_SECONDS = 1.2", webui_source)
+        self.assertIn("dashboard_cache_by_key", webui_source)
+        self.assertIn("def audit_log_tail_lines", webui_source)
+        self.assertIn("audit_log_tail_lines(self, limit=1000", webui_source)
 
     def test_dashboard_cards_drag_resize_without_edit_button(self) -> None:
         root = Path.cwd()
@@ -2174,7 +2221,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".dashboard-panel-resize-handle", css_source)
         self.assertIn(".dashboard-panel-drop-target", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260517-settings-wide-grid", html_source)
+        self.assertIn("20260517-dashboard-fast-cache", html_source)
 
     def test_dashboard_route_does_not_show_legacy_notification_markup(self) -> None:
         root = Path.cwd()
@@ -2192,7 +2239,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260517-settings-wide-grid", html_source)
+        self.assertIn("20260517-dashboard-fast-cache", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()
@@ -3518,7 +3565,6 @@ class LockFixTests(unittest.TestCase):
         self.assertTrue(result["comparison"]["ok"])
         self.assertTrue(all(result["comparison"]["matches"].values()))
         self.assertEqual(summarize_webui_backup(webui_payload)["source"], "python_veeam_client")
-
 
 if __name__ == "__main__":
     unittest.main()

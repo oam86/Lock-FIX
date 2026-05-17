@@ -60,6 +60,8 @@ LOGIN_TEMP_PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 NETWORK_HISTORY_LOCK = threading.Lock()
 NETWORK_INTERFACE_HISTORY: dict[str, dict[str, list[float]]] = {}
 AIRGAP_AUTO_ISOLATE_LOCK = threading.Lock()
+DASHBOARD_CACHE_TTL_SECONDS = 2.0
+DASHBOARD_PROBE_TIMEOUT_SECONDS = 1.2
 
 
 class WebContext:
@@ -528,6 +530,8 @@ class WebContext:
 class LockFixWebHandler(BaseHTTPRequestHandler):
     context: WebContext
     session_ttl_seconds = 60 * 60 * 8
+    dashboard_cache_lock = threading.Lock()
+    dashboard_cache_by_key: dict[str, tuple[float, dict]] = {}
 
     def log_message(self, format: str, *args: object) -> None:
         print("[webui] " + format % args)
@@ -1597,6 +1601,27 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         except Exception:
             return []
         return LockFixWebHandler.safe_text_lines(self, path)
+
+    def audit_log_tail_lines(self, limit: int = 1000, max_bytes: int = 2 * 1024 * 1024) -> list[str]:
+        try:
+            path = self.context.config.audit_log_path
+            size = path.stat().st_size
+        except OSError:
+            return []
+        except Exception:
+            return []
+        try:
+            with path.open("rb") as handle:
+                offset = max(0, size - max_bytes)
+                handle.seek(offset)
+                data = handle.read(max_bytes)
+            text = data.decode("utf-8", errors="replace")
+            lines = text.splitlines()
+            if offset > 0 and lines:
+                lines = lines[1:]
+            return lines[-limit:]
+        except OSError:
+            return []
 
     def qr_status_response(self, token: str) -> dict:
         record = self.context.qr_tokens.get(token)
@@ -5187,6 +5212,12 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
 
     def dashboard_summary(self) -> dict:
         runtime_root = self.context.config.audit_log_path.parent
+        cache_key = str(self.context.config.audit_log_path)
+        now_monotonic = time.monotonic()
+        with LockFixWebHandler.dashboard_cache_lock:
+            cached = LockFixWebHandler.dashboard_cache_by_key.get(cache_key)
+            if cached and now_monotonic - cached[0] < DASHBOARD_CACHE_TTL_SECONDS:
+                return cached[1]
 
         def read_json(path: Path, fallback: object) -> object:
             try:
@@ -5200,7 +5231,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
                     capture_output=True,
                     text=True,
-                    timeout=10,
+                    timeout=DASHBOARD_PROBE_TIMEOUT_SECONDS,
                     check=False,
                 )
                 if output.returncode != 0:
@@ -5229,27 +5260,35 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         disk_number = str(storage_state.get("diskNumber") or "").strip() if isinstance(storage_state, dict) else ""
         configured_drive = str(storage_state.get("drive") or "").strip() if isinstance(storage_state, dict) else ""
         configured_path = str(storage_state.get("accessPath") or self.context.config.slot(slot_id).mount_point or "-") if isinstance(storage_state, dict) else "-"
+        storage_has_disk_snapshot = isinstance(storage_state, dict) and any(key in storage_state for key in ("isOffline", "offlineEquivalent"))
+        storage_offline_equivalent = bool(
+            isinstance(storage_state, dict)
+            and (storage_state.get("isOffline") or storage_state.get("offlineEquivalent"))
+        )
+        storage_path_reachable = None
+        if isinstance(storage_state, dict) and "pathReachable" in storage_state:
+            storage_path_reachable = bool(storage_state.get("pathReachable"))
 
         disk_probe = {}
         volume_probe = {}
-        if disk_number:
+        if disk_number and not storage_has_disk_snapshot:
             disk_probe = ps_json(
                 "$disk=Get-Disk -Number %s -ErrorAction SilentlyContinue; "
                 "if ($disk) { $disk | Select-Object Number,FriendlyName,IsOffline,OperationalStatus,BusType,IsBoot,IsSystem | ConvertTo-Json -Compress }" % disk_number
             )
-        if configured_drive:
+        if configured_drive and storage_path_reachable is None:
             volume_probe = ps_json(
                 "$drive='%s'; "
                 "$vol=Get-Volume -DriveLetter $drive -ErrorAction SilentlyContinue; "
                 "if ($vol) { $vol | Select-Object DriveLetter,FileSystemLabel,FileSystem,DriveType,HealthStatus,OperationalStatus | ConvertTo-Json -Compress }" % configured_drive.replace("'", "")
             )
-        disk_is_offline = bool(disk_probe.get("IsOffline")) if isinstance(disk_probe, dict) else False
-        disk_status = "Offline" if disk_is_offline else ("Online" if disk_probe else "Unknown")
+        disk_is_offline = storage_offline_equivalent if storage_has_disk_snapshot else (bool(disk_probe.get("IsOffline")) if isinstance(disk_probe, dict) else False)
+        disk_status = "Offline" if disk_is_offline else ("Online" if storage_has_disk_snapshot or disk_probe else "Unknown")
         disk_name = str(disk_probe.get("FriendlyName") or "-") if isinstance(disk_probe, dict) else "-"
-        volume_visible = bool(volume_probe)
+        volume_visible = storage_path_reachable if storage_path_reachable is not None else bool(volume_probe)
 
         offline_failed = False
-        audit_lines = LockFixWebHandler.audit_log_lines(self)
+        audit_lines = LockFixWebHandler.audit_log_tail_lines(self, limit=1000, max_bytes=2 * 1024 * 1024)
         audit_records: list[dict] = []
         for line in audit_lines:
             try:
@@ -5294,7 +5333,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         logs = recent_events or [{"type": "INFO", "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "content": "No recent LOCK-FIX events."}]
         result_label = "Offline Complete" if airgap_ok else ("Offline Failed" if offline_failed else airgap_state)
 
-        return {
+        payload = {
             "cards": [
                 {"id": "detect", "label": "Detect", "description": f"Disk {disk_number or '-'} {disk_name}", "value": 0 if disk_probe else 1},
                 {"id": "warning", "label": "Warning", "description": "Live operation issues", "value": warning_count},
@@ -5335,6 +5374,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "threat_detection": self.threat_detection_summary()["summary"],
             "total_logs": len(logs),
         }
+        with LockFixWebHandler.dashboard_cache_lock:
+            LockFixWebHandler.dashboard_cache_by_key[cache_key] = (time.monotonic(), payload)
+        return payload
 
     def notification_summary(self) -> dict:
         audit_alert = LockFixWebHandler.audit_anomaly_alert_summary(self)

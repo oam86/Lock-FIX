@@ -260,6 +260,7 @@ let networkLossSamples = [];
 let latestReportData = null;
 let latestSourcesData = null;
 let latestDashboardData = null;
+let dashboardReloadInFlight = null;
 let latestLogsData = null;
 let latestAuditData = [];
 let securityAuditSelectedId = "";
@@ -4423,15 +4424,25 @@ async function reloadMonitoring() {
 }
 
 async function reloadDashboard() {
-  try {
-    const dashboard = await requestJson("/api/dashboard");
-    renderDashboard(dashboard);
-    return dashboard;
-  } catch (error) {
-    console.warn("Unable to reload Dashboard view", error);
-    renderDashboardFallback(error?.message || "");
-    return null;
-  }
+  if (dashboardReloadInFlight) return dashboardReloadInFlight;
+  dashboardReloadInFlight = (async () => {
+    try {
+      const dashboard = await requestJson("/api/dashboard", { timeoutMs: 30000 });
+      renderDashboard(dashboard);
+      return dashboard;
+    } catch (error) {
+      console.warn("Unable to reload Dashboard view", error);
+      if (latestDashboardData) {
+        renderDashboard(latestDashboardData);
+      } else {
+        renderDashboardFallback(error?.message || "");
+      }
+      return null;
+    } finally {
+      dashboardReloadInFlight = null;
+    }
+  })();
+  return dashboardReloadInFlight;
 }
 
 async function reloadLogs() {
