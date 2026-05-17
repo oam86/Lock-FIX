@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LOCK-FIX PoC</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260517-dashboard-card-handles" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260517-dashboard-route-fix" />
   </head>
   <body>
     <section class="login-screen" id="loginScreen">
@@ -274,42 +274,9 @@
       </section>
 
       <section class="view dashboard-view" id="dashboardView">
-        <div class="dashboard-summary" id="dashboardCards"></div>
-
-        <section class="dashboard-panel">
-            <h2 data-i18n="dashboard.notification">Security Notification Gateway</h2>
-          <div class="dashboard-table-wrap">
-            <table class="dashboard-table">
-              <thead>
-                <tr>
-                  <th>Email</th>
-            <th>Gateway Status</th>
-                  <th>Network Connection</th>
-                  <th>Last Login</th>
-                </tr>
-              </thead>
-              <tbody id="dashboardNotificationTable"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <section class="dashboard-panel">
-          <div class="dashboard-panel-head">
-            <h2 data-i18n="dashboard.logs">Logs</h2>
-            <span id="dashboardTotalLogs">Total: 0 logs</span>
-          </div>
-          <div class="dashboard-table-wrap">
-            <table class="dashboard-table logs-table">
-              <thead>
-                <tr>
-                  <th data-i18n="dashboard.type">Type</th>
-                  <th data-i18n="dashboard.date">Date</th>
-                  <th data-i18n="dashboard.logs">Logs</th>
-                </tr>
-              </thead>
-              <tbody id="dashboardLogsTable"></tbody>
-            </table>
-          </div>
+        <section class="dashboard-load-state" aria-live="polite">
+          <strong>대시보드 데이터를 불러오는 중입니다.</strong>
+          <span>LOCK-FIX 상태, 백업 연동, 감사 로그 요약을 준비하고 있습니다.</span>
         </section>
       </section>
 
@@ -1201,7 +1168,7 @@
       </div>
     </template>
 
-    <script src="/static/app.js?v=20260517-dashboard-card-handles"></script>
+    <script src="/static/app.js?v=20260517-dashboard-route-fix"></script>
   </body>
 </html>
 

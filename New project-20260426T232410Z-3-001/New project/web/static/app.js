@@ -58,10 +58,6 @@ const veeamStepGrid = document.querySelector("#veeamStepGrid");
 const veeamLogCount = document.querySelector("#veeamLogCount");
 const veeamLogTable = document.querySelector("#veeamLogTable");
 const dashboardView = document.querySelector("#dashboardView");
-const dashboardCards = document.querySelector("#dashboardCards");
-const dashboardNotificationTable = document.querySelector("#dashboardNotificationTable");
-const dashboardLogsTable = document.querySelector("#dashboardLogsTable");
-const dashboardTotalLogs = document.querySelector("#dashboardTotalLogs");
 const dashboardKpiOrderKey = "lockfix.dashboard.kpiOrder.v1";
 const dashboardKpiSizeKey = "lockfix.dashboard.kpiSize.v2";
 const dashboardPanelOrderKey = "lockfix.dashboard.panelOrder.v1";
@@ -1727,6 +1723,9 @@ function showView(name) {
       renderSources({ air_gap: fallbackAirGapSummary() });
     });
   }
+  if (targetView === "dashboard") {
+    reloadDashboard();
+  }
   if (targetView === "detect2") {
     renderDetectFallback();
     requestJson("/api/detect")
@@ -2612,6 +2611,19 @@ function renderDashboard(data) {
   `;
   enableDashboardKpiDrag(document.querySelector("#dashboardKpiBoard"));
   enableDashboardPanelDrag(document.querySelector("#dashboardContentBoard"));
+}
+
+function renderDashboardFallback(message = "") {
+  if (!dashboardView) return;
+  const detail = message || "WebUI 서버 연결, 로그인 세션, 또는 DASHBOARD_VIEW 권한을 확인해 주세요.";
+  dashboardView.innerHTML = `
+    <section class="dashboard-load-state dashboard-load-error" aria-live="polite">
+      <strong>대시보드 데이터를 불러올 수 없습니다.</strong>
+      <span>${escapeHtml(detail)}</span>
+      <button type="button" id="dashboardRetryButton">다시 시도</button>
+    </section>
+  `;
+  document.querySelector("#dashboardRetryButton")?.addEventListener("click", () => reloadDashboard());
 }
 
 function renderReport(data) {
@@ -4410,6 +4422,18 @@ async function reloadMonitoring() {
   renderMonitoring(monitoring);
 }
 
+async function reloadDashboard() {
+  try {
+    const dashboard = await requestJson("/api/dashboard");
+    renderDashboard(dashboard);
+    return dashboard;
+  } catch (error) {
+    console.warn("Unable to reload Dashboard view", error);
+    renderDashboardFallback(error?.message || "");
+    return null;
+  }
+}
+
 async function reloadLogs() {
   const logs = await requestJson(logsUrl());
   renderLogs(logs);
@@ -5298,12 +5322,7 @@ function setAirGapLivePolling(enabled) {
 async function pollDashboardLive() {
   if (!currentSession.authenticated || appRoot.classList.contains("app-locked")) return;
   if (activeViewId() !== "dashboardView") return;
-  try {
-    const dashboard = await requestJson("/api/dashboard");
-    renderDashboard(dashboard);
-  } catch (error) {
-    console.warn("Unable to poll Dashboard live status", error);
-  }
+  await reloadDashboard();
 }
 
 function setDashboardLivePolling(enabled) {

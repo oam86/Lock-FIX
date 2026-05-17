@@ -9988,6 +9988,54 @@ td {
   color: #087a3d;
 }
 
+.dashboard-load-state {
+  display: grid;
+  gap: 8px;
+  align-content: center;
+  min-height: 180px;
+  border: 1px solid #dfe6ee;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f6f9fd 100%);
+  box-shadow: 0 4px 14px rgba(15, 31, 53, 0.07);
+  padding: 26px;
+  color: #52606d;
+}
+
+.dashboard-load-state strong {
+  color: #122033;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.dashboard-load-state span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.dashboard-load-error {
+  border-color: #f1c7c7;
+  background: linear-gradient(180deg, #ffffff 0%, #fff8f8 100%);
+}
+
+.dashboard-load-error button {
+  justify-self: start;
+  margin-top: 8px;
+  border: 1px solid #c9d8ea;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #1f4dd8;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dashboard-load-error button:hover {
+  border-color: #7db4f2;
+  background: #eaf2ff;
+}
+
 @media (max-width: 1120px) {
   .dashboard-status-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));

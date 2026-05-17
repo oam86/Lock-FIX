@@ -2130,7 +2130,25 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".dashboard-panel-resize-handle", css_source)
         self.assertIn(".dashboard-panel-drop-target", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260517-dashboard-card-handles", html_source)
+        self.assertIn("20260517-dashboard-route-fix", html_source)
+
+    def test_dashboard_route_does_not_show_legacy_notification_markup(self) -> None:
+        root = Path.cwd()
+        html_source = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        app_source = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
+        css_source = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
+        dashboard_html = html_source.split('id="dashboardView"', 1)[1].split('id="legacyView"', 1)[0]
+
+        self.assertNotIn("Security Notification Gateway", dashboard_html)
+        self.assertNotIn("dashboardNotificationTable", dashboard_html)
+        self.assertNotIn("dashboardLogsTable", dashboard_html)
+        self.assertIn("dashboard-load-state", dashboard_html)
+        self.assertIn("reloadDashboard", app_source)
+        self.assertIn('if (targetView === "dashboard")', app_source)
+        self.assertIn("renderDashboardFallback", app_source)
+        self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
+        self.assertIn(".dashboard-load-error", css_source)
+        self.assertIn("20260517-dashboard-route-fix", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()
