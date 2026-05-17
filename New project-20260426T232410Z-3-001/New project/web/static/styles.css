@@ -13939,6 +13939,34 @@ body,
   min-height: 0;
 }
 
+.network-status-view .network-card-board > [data-network-card="path"]:has(.network-path-list-collapsed),
+.network-status-view.view-active .network-card-board > [data-network-card="path"]:has(.network-path-list-collapsed),
+.network-status-view .network-card-board > [data-network-card="ports"]:has(.network-port-list-collapsed),
+.network-status-view.view-active .network-card-board > [data-network-card="ports"]:has(.network-port-list-collapsed),
+.network-status-view .network-card-board > [data-network-card="insights"]:has(.network-insight-list-collapsed),
+.network-status-view.view-active .network-card-board > [data-network-card="insights"]:has(.network-insight-list-collapsed) {
+  width: 100% !important;
+  max-width: none !important;
+  height: 68px !important;
+  min-height: 68px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+}
+
+.network-status-view .network-card-board > [data-network-card="path"]:has(.network-path-list-collapsed) .network-ops-summary-head,
+.network-status-view.view-active .network-card-board > [data-network-card="path"]:has(.network-path-list-collapsed) .network-ops-summary-head,
+.network-status-view .network-card-board > [data-network-card="ports"]:has(.network-port-list-collapsed) .network-analysis-head,
+.network-status-view.view-active .network-card-board > [data-network-card="ports"]:has(.network-port-list-collapsed) .network-analysis-head,
+.network-status-view .network-card-board > [data-network-card="insights"]:has(.network-insight-list-collapsed) .network-analysis-head,
+.network-status-view.view-active .network-card-board > [data-network-card="insights"]:has(.network-insight-list-collapsed) .network-analysis-head {
+  min-height: 36px !important;
+  margin: 0 !important;
+  padding-bottom: 0 !important;
+  border-bottom: 0 !important;
+}
+
 .network-status-view.view-active .network-card-board > .network-insight-strip {
   margin-top: 0;
 }

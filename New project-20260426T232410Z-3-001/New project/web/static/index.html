@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LOCK-FIX PoC</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260518-user-management-timeout-fix" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260518-log-network-layout" />
   </head>
   <body>
     <section class="login-screen" id="loginScreen">
@@ -465,6 +465,7 @@
           </div>
           <span id="logsTotal">Total: 0 logs</span>
         </div>
+        <div class="logs-summary-grid" id="logsSummaryCards"></div>
         <div class="logs-range">
           <label><span data-i18n="logs.startDate">Start Date</span><input id="logsStart" type="date" /></label>
           <label><span data-i18n="logs.endDate">End Date</span><input id="logsEnd" type="date" /></label>
@@ -475,7 +476,6 @@
           <button type="button" class="logs-apply-button" id="logsRangeApply" data-i18n="logs.apply">Apply</button>
           <button type="button" class="logs-apply-button" id="logsRangeDownload">CSV</button>
         </div>
-        <div class="logs-summary-grid" id="logsSummaryCards"></div>
 
         <section class="logs-panel">
           <div class="logs-panel-head">
@@ -1255,7 +1255,7 @@
       </div>
     </template>
 
-    <script src="/static/app.js?v=20260518-user-management-timeout-fix"></script>
+    <script src="/static/app.js?v=20260518-log-network-layout"></script>
   </body>
 </html>
 
