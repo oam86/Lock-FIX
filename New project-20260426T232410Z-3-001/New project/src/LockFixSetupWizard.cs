@@ -7,6 +7,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Management;
 using System.Text;
 using System.Web.Script.Serialization;
 using System.Threading;
@@ -899,6 +900,9 @@ namespace LockFix
             AddLog("Stopping existing LOCK-FIX Web UI service...");
             RunServiceCommand("stop", "LOCKFIXWebUI", false);
             Thread.Sleep(1500);
+            KillProcessesUsingTargetRoot(targetRoot, "LOCK-FIX WebUI Service.exe");
+            KillProcessesUsingTargetRoot(targetRoot, "python.exe");
+            Thread.Sleep(1500);
 
             for (int attempt = 0; attempt < 8; attempt++)
             {
@@ -917,6 +921,38 @@ namespace LockFix
 
             WaitForUnlocked(Path.Combine(targetRoot, "python", "python.exe"), "LOCK-FIX Python runtime");
             WaitForUnlocked(Path.Combine(targetRoot, "LOCK-FIX WebUI Service.exe"), "LOCK-FIX Web UI service executable");
+        }
+
+        private void KillProcessesUsingTargetRoot(string targetRoot, string fileName)
+        {
+            try
+            {
+                string filter = "name='" + fileName.Replace("'", "''") + "'";
+                string query = "SELECT ProcessId, ExecutablePath, CommandLine FROM Win32_Process WHERE " + filter;
+                ManagementObjectSearcher searcher = new ManagementObjectSearcher(query);
+                foreach (ManagementObject process in searcher.Get())
+                {
+                    string executablePath = Convert.ToString(process["ExecutablePath"] ?? "");
+                    string commandLine = Convert.ToString(process["CommandLine"] ?? "");
+                    bool matchesTarget =
+                        (!String.IsNullOrWhiteSpace(executablePath) && executablePath.StartsWith(targetRoot, StringComparison.OrdinalIgnoreCase)) ||
+                        (!String.IsNullOrWhiteSpace(commandLine) && commandLine.IndexOf(targetRoot, StringComparison.OrdinalIgnoreCase) >= 0);
+                    if (!matchesTarget)
+                    {
+                        continue;
+                    }
+                    string pid = Convert.ToString(process["ProcessId"] ?? "");
+                    if (!String.IsNullOrWhiteSpace(pid))
+                    {
+                        AddLog("Stopping locked process PID " + pid + " (" + fileName + ")");
+                        RunProcess("taskkill.exe", "/PID " + pid + " /F", false);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AddLog("Process cleanup warning for " + fileName + ": " + ex.Message);
+            }
         }
 
         private List<int> GetTcpListenerPids(int port)
