@@ -12073,6 +12073,171 @@ body,
   font-weight: 900;
 }
 
+.user-management-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.user-management-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(360px, 1.1fr);
+  gap: 16px;
+}
+
+.user-management-form {
+  display: grid;
+  gap: 12px;
+}
+
+.user-management-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.user-management-form label span,
+.user-management-windows-status span,
+.user-management-windows-status em,
+.rbac-table-muted {
+  color: #60758a;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.user-management-form input,
+.user-management-form select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid #cfdbe7;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #071c3d;
+  background: #ffffff;
+  font-weight: 800;
+}
+
+.user-management-checkbox {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  justify-content: start;
+}
+
+.user-management-checkbox input {
+  width: auto;
+  min-height: auto;
+}
+
+.user-management-actions,
+.rbac-action-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rbac-primary-button,
+.rbac-ghost-button,
+.rbac-mini-button {
+  border: 1px solid #c7d7ea;
+  border-radius: 999px;
+  padding: 8px 13px;
+  background: #ffffff;
+  color: #0b4fd9;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.rbac-primary-button {
+  border-color: #0b4fd9;
+  background: #0b4fd9;
+  color: #ffffff;
+}
+
+.rbac-ghost-button,
+.rbac-mini-button {
+  opacity: 0.72;
+  font-weight: 700;
+}
+
+.rbac-ghost-button:hover,
+.rbac-mini-button:hover {
+  opacity: 1;
+  border-color: #0b4fd9;
+  background: #eff6ff;
+  box-shadow: 0 8px 18px rgba(11, 79, 217, 0.12);
+}
+
+.rbac-danger-button {
+  color: #b42318;
+}
+
+.user-management-status {
+  min-height: 28px;
+  margin: 0;
+  border-radius: 999px;
+  padding: 7px 11px;
+  color: #60758a;
+  background: #f8fafc;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.user-management-status:empty {
+  display: none;
+}
+
+.user-management-status.status-error {
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+  color: #b91c1c;
+}
+
+.user-management-status.status-pending {
+  border: 1px solid #dbeafe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.user-management-status.status-success,
+.user-management-windows-status .status-success {
+  color: #047857;
+}
+
+.user-management-status.status-warning,
+.user-management-windows-status .status-warning {
+  color: #b45309;
+}
+
+.user-management-windows-status {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #e2ebf3;
+  border-radius: 10px;
+  padding: 14px;
+  background: #fbfdff;
+}
+
+.user-management-windows-status strong {
+  color: #071c3d;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.rbac-table td strong,
+.rbac-table-muted {
+  display: block;
+}
+
+@media (max-width: 980px) {
+  .user-management-header,
+  .user-management-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}
+
 .rbac-summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));

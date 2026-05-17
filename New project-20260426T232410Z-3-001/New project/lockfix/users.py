@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -38,6 +39,14 @@ class User:
     departmentId: str
     role: str
     disabled: bool
+    deleted: bool
+    deletedAt: str
+    deletedBy: str
+    passwordHash: str
+    passwordChangeRequired: bool
+    temporaryPasswordExpiresAt: str
+    temporaryPasswordUsedAt: str
+    passwordUpdatedAt: str
     createdAt: str
     updatedAt: str
 
@@ -68,6 +77,26 @@ class UserDirectory:
     def __init__(self, path: Path) -> None:
         self.path = path
 
+    def normalize_user_record(self, user: dict[str, Any]) -> dict[str, Any]:
+        record = dict(user)
+        record.setdefault("id", "")
+        record.setdefault("email", "")
+        record.setdefault("name", "")
+        record.setdefault("departmentId", "")
+        record.setdefault("role", Role.AUDITOR.value)
+        record["disabled"] = bool(record.get("disabled", False))
+        record["deleted"] = bool(record.get("deleted", False))
+        record.setdefault("deletedAt", "")
+        record.setdefault("deletedBy", "")
+        record.setdefault("passwordHash", "")
+        record["passwordChangeRequired"] = bool(record.get("passwordChangeRequired", False))
+        record.setdefault("temporaryPasswordExpiresAt", "")
+        record.setdefault("temporaryPasswordUsedAt", "")
+        record.setdefault("passwordUpdatedAt", "")
+        record.setdefault("createdAt", "")
+        record.setdefault("updatedAt", record.get("createdAt", ""))
+        return record
+
     def load(self) -> dict[str, Any]:
         if self.path.exists():
             try:
@@ -84,6 +113,7 @@ class UserDirectory:
         users = data.get("users")
         if not isinstance(users, list):
             users = []
+        users = [self.normalize_user_record(user) for user in users if isinstance(user, dict)]
         return {"departments": departments, "users": users}
 
     def save(self, data: dict[str, Any]) -> None:
@@ -93,8 +123,11 @@ class UserDirectory:
     def departments(self) -> list[dict[str, Any]]:
         return list(self.load()["departments"])
 
-    def users(self) -> list[dict[str, Any]]:
-        return list(self.load()["users"])
+    def users(self, include_deleted: bool = True) -> list[dict[str, Any]]:
+        users = list(self.load()["users"])
+        if include_deleted:
+            return users
+        return [user for user in users if not bool(user.get("deleted", False))]
 
     def create_user(self, payload: dict[str, Any]) -> dict[str, Any]:
         data = self.load()
@@ -114,7 +147,15 @@ class UserDirectory:
             name=name,
             departmentId=department_id,
             role=normalize_role(payload.get("role") or Role.AUDITOR.value).value,
-            disabled=False,
+            disabled=bool(payload.get("disabled", False)),
+            deleted=False,
+            deletedAt="",
+            deletedBy="",
+            passwordHash=str(payload.get("passwordHash") or ""),
+            passwordChangeRequired=bool(payload.get("passwordChangeRequired", False)),
+            temporaryPasswordExpiresAt=str(payload.get("temporaryPasswordExpiresAt") or ""),
+            temporaryPasswordUsedAt="",
+            passwordUpdatedAt=str(payload.get("passwordUpdatedAt") or ""),
             createdAt=now,
             updatedAt=now,
         )
@@ -148,6 +189,16 @@ class UserDirectory:
             user["role"] = normalize_role(payload.get("role")).value
         if "disabled" in payload:
             user["disabled"] = bool(payload.get("disabled"))
+        if "passwordHash" in payload:
+            user["passwordHash"] = str(payload.get("passwordHash") or "")
+        if "passwordChangeRequired" in payload:
+            user["passwordChangeRequired"] = bool(payload.get("passwordChangeRequired"))
+        if "temporaryPasswordExpiresAt" in payload:
+            user["temporaryPasswordExpiresAt"] = str(payload.get("temporaryPasswordExpiresAt") or "")
+        if "temporaryPasswordUsedAt" in payload:
+            user["temporaryPasswordUsedAt"] = str(payload.get("temporaryPasswordUsedAt") or "")
+        if "passwordUpdatedAt" in payload:
+            user["passwordUpdatedAt"] = str(payload.get("passwordUpdatedAt") or "")
         user["updatedAt"] = utc_now()
         self.save(data)
         user["previousEmail"] = before_email
@@ -160,6 +211,85 @@ class UserDirectory:
         user["updatedAt"] = utc_now()
         self.save(data)
         return dict(user)
+
+    def archive_user(self, user_id: str, deleted_by: str) -> dict[str, Any]:
+        data = self.load()
+        user = self.find_user(data, user_id)
+        now = utc_now()
+        user["disabled"] = True
+        user["deleted"] = True
+        user["deletedAt"] = now
+        user["deletedBy"] = str(deleted_by or "unknown")
+        user["updatedAt"] = now
+        self.save(data)
+        return dict(user)
+
+    def set_temporary_password(self, user_id: str, password_hash: str, expires_at: str) -> dict[str, Any]:
+        data = self.load()
+        user = self.find_user(data, user_id)
+        now = utc_now()
+        user["passwordHash"] = str(password_hash or "")
+        user["passwordChangeRequired"] = True
+        user["temporaryPasswordExpiresAt"] = str(expires_at or "")
+        user["temporaryPasswordUsedAt"] = ""
+        user["passwordUpdatedAt"] = ""
+        user["updatedAt"] = now
+        self.save(data)
+        return dict(user)
+
+    def change_password(self, user_id: str, password_hash: str) -> dict[str, Any]:
+        data = self.load()
+        user = self.find_user(data, user_id)
+        now = utc_now()
+        user["passwordHash"] = str(password_hash or "")
+        user["passwordChangeRequired"] = False
+        user["temporaryPasswordExpiresAt"] = ""
+        user["temporaryPasswordUsedAt"] = ""
+        user["passwordUpdatedAt"] = now
+        user["updatedAt"] = now
+        self.save(data)
+        return dict(user)
+
+    def find_user_by_email(self, data: dict[str, Any], email: str) -> dict[str, Any]:
+        lookup = str(email or "").strip().lower()
+        for user in data["users"]:
+            if str(user.get("email") or "").strip().lower() == lookup:
+                return user
+        raise KeyError(f"user not found: {email}")
+
+    def authenticate_password(self, email: str, password_hash: str) -> dict[str, Any]:
+        data = self.load()
+        try:
+            user = self.find_user_by_email(data, email)
+        except KeyError:
+            return {"ok": False, "reason": "not_found", "known_user": False}
+        if bool(user.get("deleted", False)):
+            return {"ok": False, "reason": "deleted", "known_user": True, "user": dict(user)}
+        if bool(user.get("disabled", False)):
+            return {"ok": False, "reason": "disabled", "known_user": True, "user": dict(user)}
+        stored_hash = str(user.get("passwordHash") or "")
+        if not stored_hash:
+            return {"ok": False, "reason": "password_not_set", "known_user": True, "user": dict(user)}
+        if not secrets.compare_digest(stored_hash, str(password_hash or "")):
+            return {"ok": False, "reason": "password_mismatch", "known_user": True, "user": dict(user)}
+        if bool(user.get("passwordChangeRequired", False)):
+            expires_at = str(user.get("temporaryPasswordExpiresAt") or "")
+            if expires_at:
+                try:
+                    expires = datetime.fromisoformat(expires_at)
+                    if expires.tzinfo is None:
+                        expires = expires.replace(tzinfo=timezone.utc)
+                    if expires <= datetime.now(timezone.utc):
+                        return {"ok": False, "reason": "temporary_password_expired", "known_user": True, "user": dict(user)}
+                except ValueError:
+                    return {"ok": False, "reason": "temporary_password_expired", "known_user": True, "user": dict(user)}
+            if str(user.get("temporaryPasswordUsedAt") or ""):
+                return {"ok": False, "reason": "temporary_password_used", "known_user": True, "user": dict(user)}
+            now = utc_now()
+            user["temporaryPasswordUsedAt"] = now
+            user["updatedAt"] = now
+            self.save(data)
+        return {"ok": True, "known_user": True, "user": dict(user)}
 
     def find_user(self, data: dict[str, Any], user_id: str) -> dict[str, Any]:
         for user in data["users"]:

@@ -578,6 +578,86 @@ class LockFixTests(unittest.TestCase):
         self.assertIn('"event": "admin.user.updated"', audit_text)
         self.assertIn('"event": "admin.user.disabled"', audit_text)
 
+    def test_managed_user_temporary_password_login_uses_assigned_role(self) -> None:
+        tmp_path = self.make_workspace()
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(write_config(tmp_path))
+        handler.context.user_directory_path = tmp_path / "users.json"
+        handler.headers = {"Cookie": "lockfix_session=admin-token"}
+        handler.context.sessions["admin-token"] = handler.session_record("admin", Role.SUPER_ADMIN)
+
+        created = handler.admin_create_user(
+            {
+                "email": "backup-login@example.com",
+                "name": "Backup Login",
+                "departmentId": "backup-operation",
+                "role": "BACKUP_OPERATOR",
+            }
+        )
+        temporary_password = created["temporaryPassword"]
+
+        authenticated = handler.authenticate_managed_user("backup-login@example.com", temporary_password, "127.0.0.1")
+        self.assertTrue(authenticated["ok"])
+        self.assertEqual(authenticated["user"]["role"], "BACKUP_OPERATOR")
+        self.assertTrue(authenticated["passwordChangeRequired"])
+        self.assertNotIn("passwordHash", created["user"])
+
+        reused = handler.authenticate_managed_user("backup-login@example.com", temporary_password, "127.0.0.1")
+        self.assertEqual(reused["reason"], "temporary_password_used")
+
+        handler.headers = {"Cookie": "lockfix_session=user-token"}
+        handler.context.sessions["user-token"] = handler.session_record(
+            "backup-login@example.com",
+            Role.BACKUP_OPERATOR,
+            user_id=created["user"]["id"],
+            department_id="backup-operation",
+            password_change_required=True,
+        )
+        changed = handler.change_current_account_password({"newPassword": "StrongPass1"})
+        self.assertFalse(changed["user"]["passwordChangeRequired"])
+        self.assertTrue(handler.authenticate_managed_user("backup-login@example.com", "StrongPass1", "127.0.0.1")["ok"])
+
+    def test_admin_archive_user_soft_deletes_and_redacts_sensitive_fields(self) -> None:
+        tmp_path = self.make_workspace()
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(write_config(tmp_path))
+        handler.context.user_directory_path = tmp_path / "users.json"
+        handler.headers = {"Cookie": "lockfix_session=admin-token"}
+        handler.context.sessions["admin-token"] = handler.session_record("admin", Role.SUPER_ADMIN)
+
+        created = handler.admin_create_user(
+            {
+                "email": "delete-me@example.com",
+                "name": "Delete Me",
+                "departmentId": "audit",
+                "role": "AUDITOR",
+            }
+        )
+        temporary_password = created["temporaryPassword"]
+        archived = handler.admin_archive_user(created["user"]["id"])["user"]
+
+        self.assertTrue(archived["deleted"])
+        self.assertTrue(archived["disabled"])
+        self.assertEqual(handler.admin_users(), [])
+        audit_text = (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
+        self.assertIn('"event": "admin.user.archived"', audit_text)
+        self.assertNotIn(temporary_password, audit_text)
+        self.assertNotIn("passwordHash", json.dumps(created["user"]))
+
+    def test_windows_admin_status_is_status_only_and_audited(self) -> None:
+        tmp_path = self.make_workspace()
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(write_config(tmp_path))
+        handler.headers = {"Cookie": "lockfix_session=admin-token"}
+        handler.context.sessions["admin-token"] = handler.session_record("admin", Role.SUPER_ADMIN)
+
+        status = handler.windows_admin_status()
+
+        self.assertEqual(status["mode"], "status_only")
+        self.assertIn("isAdministrator", status)
+        audit_text = (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
+        self.assertIn('"event": "admin.windows_admin_status.checked"', audit_text)
+
     def test_non_super_admin_cannot_manage_users(self) -> None:
         tmp_path = self.make_workspace()
         handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
@@ -587,6 +667,29 @@ class LockFixTests(unittest.TestCase):
 
         with self.assertRaises(AuthorizationError):
             handler.require_super_admin()
+
+    def test_user_management_ui_has_i18n_actions_and_cache_bust(self) -> None:
+        root = Path.cwd()
+        html = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        app = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
+
+        for token in [
+            'data-i18n="userManagement.title"',
+            'id="userManagementForm"',
+            'id="userManagementBackButton"',
+            'data-i18n="userManagement.actions"',
+            'v=20260517-user-rbac-management',
+        ]:
+            self.assertIn(token, html)
+        for token in [
+            '"/api/admin/windows-admin-status"',
+            '"/api/account/password"',
+            '"/api/admin/users"',
+            'data-user-archive',
+            '"userManagement.title": "사용자/권한 관리"',
+            '"userManagement.title": "User & Role Management"',
+        ]:
+            self.assertIn(token, app)
 
     def test_audit_log_model_normalizes_existing_jsonl_records(self) -> None:
         tmp_path = self.make_workspace()
@@ -2127,7 +2230,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("content: none !important;", css_source)
         self.assertIn("font-weight: 400 !important;", css_source)
         self.assertIn("opacity: 0.6 !important;", css_source)
-        self.assertIn("20260517-network-textless", html_source)
+        self.assertIn("20260517-user-rbac-management", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -2146,7 +2249,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260517-network-textless", html_source)
+        self.assertIn("20260517-user-rbac-management", html_source)
 
     def test_monitoring_header_copy_is_hidden_while_polling_remains(self) -> None:
         root = Path.cwd()
@@ -2246,7 +2349,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".dashboard-panel-resize-handle", css_source)
         self.assertIn(".dashboard-panel-drop-target", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260517-network-textless", html_source)
+        self.assertIn("20260517-user-rbac-management", html_source)
 
     def test_dashboard_route_does_not_show_legacy_notification_markup(self) -> None:
         root = Path.cwd()
@@ -2264,7 +2367,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260517-network-textless", html_source)
+        self.assertIn("20260517-user-rbac-management", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()

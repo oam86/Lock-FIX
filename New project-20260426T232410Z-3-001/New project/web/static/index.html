@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LOCK-FIX PoC</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260517-network-textless" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260517-user-rbac-management" />
   </head>
   <body>
     <section class="login-screen" id="loginScreen">
@@ -811,32 +811,74 @@
       </section>
 
       <section class="view rbac-page-view" id="userManagementView">
-        <div class="monitoring-header">
+        <div class="monitoring-header user-management-header">
           <div>
-            <h1>User & Role Management</h1>
-            <p>Super Admin controlled users, departments, roles, and disabled state.</p>
+            <h1 data-i18n="userManagement.title">User & Role Management</h1>
+            <p data-i18n="userManagement.subtitle">Super Admin controlled users, departments, roles, temporary passwords, and soft-deleted state.</p>
           </div>
+          <button type="button" class="rbac-ghost-button" id="userManagementBackButton" data-i18n="userManagement.backToSettings">Back to Settings</button>
         </div>
-        <section class="rbac-panel">
-          <div class="rbac-panel-head">
-            <h2>Departments</h2>
-            <span id="userManagementDepartmentCount">0 departments</span>
-          </div>
-          <div class="rbac-chip-list" id="userManagementDepartments"></div>
+        <section class="user-management-grid">
+          <article class="rbac-panel user-management-form-panel">
+            <div class="rbac-panel-head">
+              <h2 id="userManagementFormTitle" data-i18n="userManagement.newUser">New User</h2>
+              <span id="userManagementDepartmentCount">0 departments</span>
+            </div>
+            <form class="user-management-form" id="userManagementForm">
+              <input type="hidden" id="userManagementUserId" />
+              <label>
+                <span data-i18n="userManagement.email">Email</span>
+                <input id="userManagementEmail" type="email" autocomplete="off" required placeholder="operator@example.com" />
+              </label>
+              <label>
+                <span data-i18n="userManagement.name">Name</span>
+                <input id="userManagementName" type="text" autocomplete="off" required placeholder="Backup Operator" />
+              </label>
+              <label>
+                <span data-i18n="userManagement.department">Department</span>
+                <select id="userManagementDepartment" required></select>
+              </label>
+              <label>
+                <span data-i18n="userManagement.role">Role</span>
+                <select id="userManagementRole" required></select>
+              </label>
+              <label class="user-management-checkbox">
+                <input id="userManagementDisabled" type="checkbox" />
+                <span data-i18n="userManagement.disabled">Disabled</span>
+              </label>
+              <div class="user-management-actions">
+                <button type="submit" class="rbac-primary-button" id="userManagementSubmitButton" data-i18n="userManagement.create">Create User</button>
+                <button type="button" class="rbac-ghost-button" id="userManagementCancelButton" data-i18n="userManagement.cancel">Cancel</button>
+              </div>
+              <p class="user-management-status" id="userManagementStatus" aria-live="polite"></p>
+            </form>
+          </article>
+          <article class="rbac-panel user-management-security-panel">
+            <div class="rbac-panel-head">
+              <h2 data-i18n="userManagement.windowsAdminTitle">Windows Admin Status</h2>
+              <span data-i18n="userManagement.statusOnly">Status only</span>
+            </div>
+            <div class="user-management-windows-status" id="userManagementWindowsStatus">
+              <strong data-i18n="userManagement.windowsChecking">Checking</strong>
+              <span data-i18n="userManagement.windowsStatusDesc">Windows administrator status is displayed and audited, but does not grant LOCK-FIX roles.</span>
+            </div>
+            <div class="rbac-chip-list" id="userManagementDepartments"></div>
+          </article>
         </section>
-        <section class="rbac-panel">
+        <section class="rbac-panel user-management-users-panel">
           <div class="rbac-panel-head">
-            <h2>Users</h2>
+            <h2 data-i18n="userManagement.users">Users</h2>
             <span id="userManagementCount">0 users</span>
           </div>
           <div class="rbac-table-wrap">
             <table class="rbac-table">
               <thead>
                 <tr>
-                  <th>User</th>
-                  <th>Department</th>
-                  <th>Role</th>
-                  <th>Status</th>
+                  <th data-i18n="userManagement.user">User</th>
+                  <th data-i18n="userManagement.department">Department</th>
+                  <th data-i18n="userManagement.role">Role</th>
+                  <th data-i18n="userManagement.status">Status</th>
+                  <th data-i18n="userManagement.actions">Actions</th>
                 </tr>
               </thead>
               <tbody id="userManagementTable"></tbody>
@@ -1159,7 +1201,7 @@
       </div>
     </template>
 
-    <script src="/static/app.js?v=20260517-network-textless"></script>
+    <script src="/static/app.js?v=20260517-user-rbac-management"></script>
   </body>
 </html>
 

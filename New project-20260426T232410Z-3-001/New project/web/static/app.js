@@ -240,6 +240,19 @@ const userManagementDepartmentCount = document.querySelector("#userManagementDep
 const userManagementDepartments = document.querySelector("#userManagementDepartments");
 const userManagementCount = document.querySelector("#userManagementCount");
 const userManagementTable = document.querySelector("#userManagementTable");
+const userManagementForm = document.querySelector("#userManagementForm");
+const userManagementFormTitle = document.querySelector("#userManagementFormTitle");
+const userManagementUserId = document.querySelector("#userManagementUserId");
+const userManagementEmail = document.querySelector("#userManagementEmail");
+const userManagementName = document.querySelector("#userManagementName");
+const userManagementDepartment = document.querySelector("#userManagementDepartment");
+const userManagementRole = document.querySelector("#userManagementRole");
+const userManagementDisabled = document.querySelector("#userManagementDisabled");
+const userManagementSubmitButton = document.querySelector("#userManagementSubmitButton");
+const userManagementCancelButton = document.querySelector("#userManagementCancelButton");
+const userManagementStatus = document.querySelector("#userManagementStatus");
+const userManagementWindowsStatus = document.querySelector("#userManagementWindowsStatus");
+const userManagementBackButton = document.querySelector("#userManagementBackButton");
 const auditLogsCount = document.querySelector("#auditLogsCount");
 const auditLogsTable = document.querySelector("#auditLogsTable");
 const auditLogsSummary = document.querySelector("#auditLogsSummary");
@@ -262,6 +275,7 @@ let latestSourcesData = null;
 let latestDashboardData = null;
 let dashboardReloadInFlight = null;
 let latestLogsData = null;
+let latestUserManagementData = { users: [], departments: [], windowsAdminStatus: null };
 let latestAuditData = [];
 let securityAuditSelectedId = "";
 let securityAuditFilters = {
@@ -299,6 +313,15 @@ const NETWORK_CARD_ORDER_KEY = "lockfix.networkCardOrder";
 const NETWORK_CARD_ORDER_VERSION_KEY = "lockfix.networkCardOrderVersion";
 const NETWORK_CARD_ORDER_VERSION = "loss-insights-path-ports-v2";
 const NETWORK_CARD_DEFAULT_ORDER = ["loss", "insights", "path", "ports"];
+const USER_MANAGEMENT_ROLES = [
+  "SUPER_ADMIN",
+  "SECURITY_ADMIN",
+  "BACKUP_OPERATOR",
+  "HARDWARE_ADMIN",
+  "AUDITOR",
+  "UI_DESIGNER",
+  "DEVELOPER",
+];
 const REALTIME_VIEW_IDS = new Set(["sourcesView", "dashboardView", "monitoringView"]);
 let activeMonitoringMetric = "cpu";
 let monitoringRange = {
@@ -323,7 +346,7 @@ let uiSettings = {
 let pendingUiSettings = { ...uiSettings };
 let memoryThresholdAlertActive = false;
 let sidebarCollapsed = false;
-let currentSession = { authenticated: false, user: "", role: "", permissions: [] };
+let currentSession = { authenticated: false, user: "", role: "", userId: "", departmentId: "", passwordChangeRequired: false, permissions: [] };
 let latestApprovalsData = { policies: [], requests: [], decisions: [], departmentReviews: [], reviewComments: [], notifications: [] };
 let activeApprovalTab = "approvalRequestBox";
 let approvalActionInProgress = false;
@@ -468,6 +491,49 @@ const translations = {
     "settings.pending": "Select options, then click Apply.",
     "settings.applied": "Settings have been applied.",
     "settings.notificationSaved": "Security Notification Gateway settings have been saved.",
+    "userManagement.title": "User & Role Management",
+    "userManagement.subtitle": "Super Admin controlled users, departments, roles, temporary passwords, and soft-deleted state.",
+    "userManagement.backToSettings": "Back to Settings",
+    "userManagement.newUser": "New User",
+    "userManagement.editUser": "Edit User",
+    "userManagement.users": "Users",
+    "userManagement.user": "User",
+    "userManagement.email": "Email",
+    "userManagement.name": "Name",
+    "userManagement.department": "Department",
+    "userManagement.role": "Role",
+    "userManagement.status": "Status",
+    "userManagement.actions": "Actions",
+    "userManagement.disabled": "Disabled",
+    "userManagement.active": "Active",
+    "userManagement.passwordRequired": "Password change required",
+    "userManagement.create": "Create User",
+    "userManagement.save": "Save User",
+    "userManagement.cancel": "Cancel",
+    "userManagement.edit": "Edit",
+    "userManagement.delete": "Delete",
+    "userManagement.issueTemp": "Temp Password",
+    "userManagement.noUsers": "No users loaded.",
+    "userManagement.noDepartments": "No departments loaded.",
+    "userManagement.count": "{count} users",
+    "userManagement.departmentCount": "{count} departments",
+    "userManagement.created": "User created. Temporary password: {password} (expires {expires})",
+    "userManagement.updated": "User updated.",
+    "userManagement.archived": "User was soft-deleted and hidden from the active list.",
+    "userManagement.tempIssued": "Temporary password issued: {password} (expires {expires})",
+    "userManagement.confirmArchive": "Soft-delete this user? Audit history is retained.",
+    "userManagement.windowsAdminTitle": "Windows Admin Status",
+    "userManagement.statusOnly": "Status only",
+    "userManagement.windowsChecking": "Checking",
+    "userManagement.windowsStatusDesc": "Windows administrator status is displayed and audited, but does not grant LOCK-FIX roles.",
+    "userManagement.windowsAdmin": "Administrator",
+    "userManagement.windowsStandard": "Standard privileges",
+    "userManagement.windowsAudit": "Checked at {time}. RBAC remains the permission source.",
+    "account.newPasswordPrompt": "A new password is required. Enter a new password with at least 8 characters.",
+    "account.confirmPasswordPrompt": "Confirm the new password.",
+    "account.passwordMismatch": "Passwords do not match.",
+    "account.passwordChanged": "Password has been changed.",
+    "account.passwordChangeRequired": "Temporary password was accepted. Change the password before the next login.",
     "license.statusTitle": "License Status",
     "license.statusSubtitle": "Check customer license validity and expiration details.",
     "veeam.title": "Post-Backup Isolation Procedure",
@@ -649,6 +715,49 @@ const translations = {
     "settings.pending": "항목을 선택한 뒤 적용 버튼을 누르세요.",
     "settings.applied": "설정이 적용되었습니다.",
     "settings.notificationSaved": "Security Notification Gateway 설정이 저장되었습니다.",
+    "userManagement.title": "사용자/권한 관리",
+    "userManagement.subtitle": "Super Admin 기준으로 사용자, 부서, 역할, 임시 비밀번호, 소프트 삭제 상태를 관리합니다.",
+    "userManagement.backToSettings": "설정으로 돌아가기",
+    "userManagement.newUser": "신규 사용자",
+    "userManagement.editUser": "사용자 편집",
+    "userManagement.users": "사용자",
+    "userManagement.user": "사용자",
+    "userManagement.email": "이메일",
+    "userManagement.name": "이름",
+    "userManagement.department": "부서",
+    "userManagement.role": "역할",
+    "userManagement.status": "상태",
+    "userManagement.actions": "작업",
+    "userManagement.disabled": "비활성화",
+    "userManagement.active": "활성",
+    "userManagement.passwordRequired": "비밀번호 변경 필요",
+    "userManagement.create": "사용자 추가",
+    "userManagement.save": "저장",
+    "userManagement.cancel": "취소",
+    "userManagement.edit": "편집",
+    "userManagement.delete": "삭제",
+    "userManagement.issueTemp": "임시 비밀번호",
+    "userManagement.noUsers": "등록된 사용자가 없습니다.",
+    "userManagement.noDepartments": "부서 정보를 불러오지 못했습니다.",
+    "userManagement.count": "사용자 {count}명",
+    "userManagement.departmentCount": "부서 {count}개",
+    "userManagement.created": "사용자가 등록되었습니다. 임시 비밀번호: {password} (만료 {expires})",
+    "userManagement.updated": "사용자 정보가 저장되었습니다.",
+    "userManagement.archived": "사용자가 소프트 삭제되어 활성 목록에서 숨겨졌습니다.",
+    "userManagement.tempIssued": "임시 비밀번호가 발급되었습니다: {password} (만료 {expires})",
+    "userManagement.confirmArchive": "이 사용자를 삭제 처리하시겠습니까? 감사 이력은 보존됩니다.",
+    "userManagement.windowsAdminTitle": "Windows 관리자 권한 상태",
+    "userManagement.statusOnly": "상태 확인 전용",
+    "userManagement.windowsChecking": "확인 중",
+    "userManagement.windowsStatusDesc": "Windows 관리자 권한 상태는 표시 및 감사 기록만 하며 LOCK-FIX 역할을 자동 부여하지 않습니다.",
+    "userManagement.windowsAdmin": "관리자 권한",
+    "userManagement.windowsStandard": "일반 권한",
+    "userManagement.windowsAudit": "{time}에 확인됨. 권한 기준은 LOCK-FIX RBAC입니다.",
+    "account.newPasswordPrompt": "새 비밀번호가 필요합니다. 8자 이상 새 비밀번호를 입력하세요.",
+    "account.confirmPasswordPrompt": "새 비밀번호를 다시 입력하세요.",
+    "account.passwordMismatch": "비밀번호가 일치하지 않습니다.",
+    "account.passwordChanged": "비밀번호가 변경되었습니다.",
+    "account.passwordChangeRequired": "임시 비밀번호 로그인이 허용되었습니다. 다음 로그인 전 비밀번호를 변경하세요.",
     "license.statusTitle": "라이선스 상태",
     "license.statusSubtitle": "고객사 라이선스와 만료 정보를 확인합니다.",
     "veeam.title": "백업 완료 후 격리 절차",
@@ -1517,6 +1626,9 @@ async function applyPendingUiSettings() {
     if (latestDashboardData) {
       renderDashboard(latestDashboardData);
     }
+    if (latestUserManagementData.users.length || latestUserManagementData.departments.length || latestUserManagementData.windowsAdminStatus) {
+      renderUserManagement(latestUserManagementData);
+    }
     reloadLogs().catch((error) => console.warn("Unable to reload logs after retention change", error));
     reloadNotification().catch((error) => console.warn("Unable to reload notification view after settings change", error));
   } catch (error) {
@@ -1580,6 +1692,9 @@ async function checkSession() {
     authenticated: Boolean(session.authenticated),
     user: session.user || "",
     role: session.role || "",
+    userId: session.userId || "",
+    departmentId: session.departmentId || "",
+    passwordChangeRequired: Boolean(session.passwordChangeRequired),
     permissions: Array.isArray(session.permissions) ? session.permissions : [],
   };
   applyMenuVisibility();
@@ -1602,7 +1717,7 @@ function setAuthenticated(authenticated) {
     setEmergencyReconnectLivePolling(false);
     setVeeamLivePolling(false);
     licenseModal.classList.add("hidden");
-    currentSession = { authenticated: false, user: "", role: "", permissions: [] };
+    currentSession = { authenticated: false, user: "", role: "", userId: "", departmentId: "", passwordChangeRequired: false, permissions: [] };
     applyMenuVisibility();
   }
   if (authenticated) {
@@ -1623,6 +1738,9 @@ async function showLoginSplashThenEnter() {
     authenticated: Boolean(session.authenticated),
     user: session.user || "",
     role: session.role || "",
+    userId: session.userId || "",
+    departmentId: session.departmentId || "",
+    passwordChangeRequired: Boolean(session.passwordChangeRequired),
     permissions: Array.isArray(session.permissions) ? session.permissions : [],
   };
   applyMenuVisibility();
@@ -1648,12 +1766,44 @@ async function login(event) {
     });
     if (payload.authenticated) {
       await showLoginSplashThenEnter();
+      if (payload.passwordChangeRequired) {
+        await promptForRequiredPasswordChange();
+      }
     } else {
       setAuthenticated(false);
     }
   } catch (error) {
     loginError.textContent = error.message || "Account or password is not valid.";
   }
+}
+
+async function promptForRequiredPasswordChange() {
+  const first = window.prompt(t("account.newPasswordPrompt"), "");
+  if (!first) {
+    window.alert(t("account.passwordChangeRequired"));
+    return;
+  }
+  const second = window.prompt(t("account.confirmPasswordPrompt"), "");
+  if (first !== second) {
+    window.alert(t("account.passwordMismatch"));
+    return;
+  }
+  await requestJson("/api/account/password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ newPassword: first }),
+  });
+  window.alert(t("account.passwordChanged"));
+  const session = await requestJson("/api/session");
+  currentSession = {
+    authenticated: Boolean(session.authenticated),
+    user: session.user || "",
+    role: session.role || "",
+    userId: session.userId || "",
+    departmentId: session.departmentId || "",
+    passwordChangeRequired: Boolean(session.passwordChangeRequired),
+    permissions: Array.isArray(session.permissions) ? session.permissions : [],
+  };
 }
 
 async function logout() {
@@ -4981,21 +5131,81 @@ async function reloadVeeamIntegration() {
   renderVeeamIntegration(data);
 }
 
+function templateText(key, values = {}) {
+  let text = t(key);
+  Object.entries(values).forEach(([name, value]) => {
+    text = text.replaceAll(`{${name}}`, String(value));
+  });
+  return text;
+}
+
+function renderUserManagementOptions(departments = []) {
+  if (userManagementDepartment) {
+    userManagementDepartment.innerHTML = departments.map((department) => (
+      `<option value="${escapeHtml(department.id || "")}">${escapeHtml(department.name || department.id || "")}</option>`
+    )).join("");
+  }
+  if (userManagementRole) {
+    userManagementRole.innerHTML = USER_MANAGEMENT_ROLES.map((role) => (
+      `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`
+    )).join("");
+  }
+}
+
+function resetUserManagementForm() {
+  if (!userManagementForm) return;
+  userManagementForm.reset();
+  if (userManagementUserId) userManagementUserId.value = "";
+  if (userManagementFormTitle) userManagementFormTitle.textContent = t("userManagement.newUser");
+  if (userManagementSubmitButton) userManagementSubmitButton.textContent = t("userManagement.create");
+  if (userManagementStatus) {
+    userManagementStatus.textContent = "";
+    userManagementStatus.className = "user-management-status";
+  }
+}
+
+function userManagementStatusText(user) {
+  if (user.disabled) return t("userManagement.disabled");
+  if (user.passwordChangeRequired) return t("userManagement.passwordRequired");
+  return t("userManagement.active");
+}
+
+function renderWindowsAdminStatus(status) {
+  if (!userManagementWindowsStatus) return;
+  const checkedAt = status?.checkedAt ? formatLogDate(status.checkedAt) : "-";
+  const stateLabel = status?.isAdministrator ? t("userManagement.windowsAdmin") : t("userManagement.windowsStandard");
+  const stateClass = status?.isAdministrator ? "status-success" : "status-warning";
+  userManagementWindowsStatus.innerHTML = `
+    <strong class="${stateClass}">${escapeHtml(stateLabel)}</strong>
+    <span>${escapeHtml(templateText("userManagement.windowsAudit", { time: checkedAt }))}</span>
+    <em>${escapeHtml(t("userManagement.windowsStatusDesc"))}</em>
+  `;
+}
+
 function renderUserManagement(data, errorMessage = "") {
   const departments = Array.isArray(data?.departments) ? data.departments : [];
   const users = Array.isArray(data?.users) ? data.users : [];
-  if (userManagementDepartmentCount) userManagementDepartmentCount.textContent = `${departments.length} departments`;
+  latestUserManagementData = {
+    users,
+    departments,
+    windowsAdminStatus: data?.windowsAdminStatus || latestUserManagementData.windowsAdminStatus,
+  };
+  renderUserManagementOptions(departments);
+  renderWindowsAdminStatus(latestUserManagementData.windowsAdminStatus);
+  if (userManagementDepartmentCount) {
+    userManagementDepartmentCount.textContent = templateText("userManagement.departmentCount", { count: departments.length });
+  }
   if (userManagementDepartments) {
     userManagementDepartments.innerHTML = departments.length
       ? departments.map((department) => `<span>${escapeHtml(department.name || department.id)}</span>`).join("")
-      : `<em>${escapeHtml(errorMessage || "No departments loaded.")}</em>`;
+      : `<em>${escapeHtml(errorMessage || t("userManagement.noDepartments"))}</em>`;
   }
-  if (userManagementCount) userManagementCount.textContent = `${users.length} users`;
+  if (userManagementCount) userManagementCount.textContent = templateText("userManagement.count", { count: users.length });
   if (!userManagementTable) return;
   userManagementTable.replaceChildren();
   if (errorMessage || !users.length) {
     const row = document.createElement("tr");
-    row.innerHTML = `<td colspan="4">${escapeHtml(errorMessage || "No users loaded.")}</td>`;
+    row.innerHTML = `<td colspan="5">${escapeHtml(errorMessage || t("userManagement.noUsers"))}</td>`;
     userManagementTable.appendChild(row);
     return;
   }
@@ -5003,21 +5213,131 @@ function renderUserManagement(data, errorMessage = "") {
     const department = departments.find((item) => item.id === user.departmentId);
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td>${escapeHtml(user.username || user.id)}</td>
+      <td><strong>${escapeHtml(user.name || user.email || user.id)}</strong><span class="rbac-table-muted">${escapeHtml(user.email || "-")}</span></td>
       <td>${escapeHtml(department?.name || user.departmentId || "-")}</td>
       <td>${escapeHtml(user.role || "-")}</td>
-      <td>${escapeHtml(user.disabled ? "Disabled" : "Active")}</td>
+      <td>${escapeHtml(userManagementStatusText(user))}</td>
+      <td class="rbac-action-cell">
+        <button type="button" class="rbac-mini-button" data-user-edit="${escapeHtml(user.id || "")}">${escapeHtml(t("userManagement.edit"))}</button>
+        <button type="button" class="rbac-mini-button" data-user-temp="${escapeHtml(user.id || "")}">${escapeHtml(t("userManagement.issueTemp"))}</button>
+        <button type="button" class="rbac-mini-button rbac-danger-button" data-user-archive="${escapeHtml(user.id || "")}">${escapeHtml(t("userManagement.delete"))}</button>
+      </td>
     `;
     userManagementTable.appendChild(row);
   });
 }
 
 async function reloadUserManagement() {
-  const [users, departments] = await Promise.all([
+  const [users, departments, windowsAdminStatus] = await Promise.all([
     requestJson("/api/admin/users"),
     requestJson("/api/admin/departments"),
+    requestJson("/api/admin/windows-admin-status"),
   ]);
-  renderUserManagement({ users: users.items || [], departments: departments.items || [] });
+  renderUserManagement({ users: users.items || [], departments: departments.items || [], windowsAdminStatus });
+}
+
+async function submitUserManagementForm(event) {
+  event.preventDefault();
+  if (!userManagementForm) return;
+  const userId = userManagementUserId?.value || "";
+  const payload = {
+    email: userManagementEmail?.value.trim() || "",
+    name: userManagementName?.value.trim() || "",
+    departmentId: userManagementDepartment?.value || "",
+    role: userManagementRole?.value || "AUDITOR",
+    disabled: Boolean(userManagementDisabled?.checked),
+  };
+  if (userManagementSubmitButton) userManagementSubmitButton.disabled = true;
+  if (userManagementStatus) {
+    userManagementStatus.textContent = userId ? t("userManagement.save") : t("userManagement.create");
+    userManagementStatus.className = "user-management-status status-pending";
+  }
+  try {
+    const response = await requestJson(userId ? `/api/admin/users/${encodeURIComponent(userId)}` : "/api/admin/users", {
+      method: userId ? "PATCH" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const message = userId
+      ? t("userManagement.updated")
+      : templateText("userManagement.created", {
+        password: response.temporaryPassword || "-",
+        expires: response.temporaryPasswordExpiresAt || "-",
+      });
+    resetUserManagementForm();
+    if (userManagementStatus) {
+      userManagementStatus.textContent = message;
+      userManagementStatus.className = "user-management-status status-success";
+    }
+    await reloadUserManagement();
+  } catch (error) {
+    if (userManagementStatus) {
+      userManagementStatus.textContent = error.message || "User management request failed.";
+      userManagementStatus.className = "user-management-status status-error";
+    }
+  } finally {
+    if (userManagementSubmitButton) userManagementSubmitButton.disabled = false;
+  }
+}
+
+function editUserManagementUser(userId) {
+  const user = latestUserManagementData.users.find((item) => String(item.id || "") === String(userId || ""));
+  if (!user) return;
+  if (userManagementUserId) userManagementUserId.value = user.id || "";
+  if (userManagementEmail) userManagementEmail.value = user.email || "";
+  if (userManagementName) userManagementName.value = user.name || "";
+  if (userManagementDepartment) userManagementDepartment.value = user.departmentId || "";
+  if (userManagementRole) userManagementRole.value = user.role || "AUDITOR";
+  if (userManagementDisabled) userManagementDisabled.checked = Boolean(user.disabled);
+  if (userManagementFormTitle) userManagementFormTitle.textContent = t("userManagement.editUser");
+  if (userManagementSubmitButton) userManagementSubmitButton.textContent = t("userManagement.save");
+  userManagementEmail?.focus();
+}
+
+async function archiveUserManagementUser(userId) {
+  if (!window.confirm(t("userManagement.confirmArchive"))) return;
+  const response = await requestJson(`/api/admin/users/${encodeURIComponent(userId)}/archive`, { method: "POST" });
+  if (userManagementStatus) {
+    userManagementStatus.textContent = response.ok ? t("userManagement.archived") : "Archive failed.";
+    userManagementStatus.className = response.ok ? "user-management-status status-success" : "user-management-status status-error";
+  }
+  await reloadUserManagement();
+}
+
+async function issueUserManagementTemporaryPassword(userId) {
+  const response = await requestJson(`/api/admin/users/${encodeURIComponent(userId)}/temporary-password`, { method: "POST" });
+  if (userManagementStatus) {
+    userManagementStatus.textContent = templateText("userManagement.tempIssued", {
+      password: response.temporaryPassword || "-",
+      expires: response.temporaryPasswordExpiresAt || "-",
+    });
+    userManagementStatus.className = "user-management-status status-success";
+  }
+  await reloadUserManagement();
+}
+
+async function handleUserManagementTableClick(event) {
+  const editButton = event.target.closest("[data-user-edit]");
+  const archiveButton = event.target.closest("[data-user-archive]");
+  const tempButton = event.target.closest("[data-user-temp]");
+  try {
+    if (editButton) {
+      editUserManagementUser(editButton.dataset.userEdit);
+      return;
+    }
+    if (archiveButton) {
+      await archiveUserManagementUser(archiveButton.dataset.userArchive);
+      return;
+    }
+    if (tempButton) {
+      await issueUserManagementTemporaryPassword(tempButton.dataset.userTemp);
+    }
+  } catch (error) {
+    if (userManagementStatus) {
+      userManagementStatus.textContent = error.message || "User management action failed.";
+      userManagementStatus.className = "user-management-status status-error";
+    }
+  }
 }
 
 function renderAuditLogs(data, errorMessage = "") {
@@ -7433,6 +7753,10 @@ settingsApplyButton.addEventListener("click", () => applyPendingUiSettings());
 serviceStartButton?.addEventListener("click", () => controlLockfixService("start"));
 serviceStopButton?.addEventListener("click", () => controlLockfixService("stop"));
 servicePreflightButton?.addEventListener("click", () => reloadServicePreflight());
+userManagementForm?.addEventListener("submit", submitUserManagementForm);
+userManagementTable?.addEventListener("click", handleUserManagementTableClick);
+userManagementCancelButton?.addEventListener("click", resetUserManagementForm);
+userManagementBackButton?.addEventListener("click", () => showView("settings"));
 applySidebarState();
 applyUiSettings();
 setupNetworkCardDragDrop();

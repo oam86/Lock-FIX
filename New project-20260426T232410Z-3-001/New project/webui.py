@@ -20,7 +20,7 @@ import threading
 import time
 import uuid
 import zipfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -56,6 +56,7 @@ DEFAULT_CONFIG = ROOT / "config" / "lockfix.example.json"
 LOGIN_WARNING_THRESHOLD = 3
 LOGIN_LOCK_THRESHOLD = 5
 LOGIN_TEMP_PASSWORD_TTL_SECONDS = 15 * 60
+USER_TEMP_PASSWORD_TTL_SECONDS = 24 * 60 * 60
 LOGIN_TEMP_PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 NETWORK_HISTORY_LOCK = threading.Lock()
 NETWORK_INTERFACE_HISTORY: dict[str, dict[str, list[float]]] = {}
@@ -551,6 +552,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                         "authenticated": self.is_authenticated(),
                         "user": self.current_session_user() if self.is_authenticated() else "",
                         "role": self.current_role().value if self.is_authenticated() else "",
+                        "userId": self.current_session_user_id() if self.is_authenticated() else "",
+                        "departmentId": self.current_session_department_id() if self.is_authenticated() else "",
+                        "passwordChangeRequired": self.current_password_change_required() if self.is_authenticated() else False,
                         "permissions": self.current_permissions() if self.is_authenticated() else [],
                         "license": self.license_status(),
                     }
@@ -681,6 +685,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/admin/departments":
                 self.require_super_admin()
                 self.send_json({"items": self.admin_departments()})
+            elif parsed.path == "/api/admin/windows-admin-status":
+                self.require_super_admin()
+                self.send_json(self.windows_admin_status())
             elif parsed.path == "/api/approvals":
                 self.require_auth(Permission.APPROVAL_REQUEST_VIEW)
                 self.send_json(self.approval_summary())
@@ -714,7 +721,6 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 email = str(payload.get("email", "")).strip()
                 password = str(payload.get("password", ""))
                 client_ip = self.client_ip()
-                temp_login = self.context.verify_login_temp_password(email, password)
                 if secrets.compare_digest(email, "admin") and secrets.compare_digest(password, "1"):
                     self.context.reset_login_failures(email, client_ip, "primary_password")
                     self.context.controller.audit.write(
@@ -731,20 +737,78 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                         {"authenticated": True},
                         headers={"Set-Cookie": f"lockfix_session={token}; HttpOnly; SameSite=Lax; Path=/"},
                     )
-                elif temp_login.get("ok"):
+                elif (managed_login := self.authenticate_managed_user(email, password, client_ip)).get("ok"):
+                    user = managed_login["user"]
+                    self.context.reset_login_failures(email, client_ip, "managed_user_password")
+                    self.context.controller.audit.write(
+                        "auth.login.managed.success",
+                        user=email,
+                        user_id=str(user.get("id") or ""),
+                        client_ip=client_ip,
+                        role=str(user.get("role") or ""),
+                        password_change_required=bool(managed_login.get("passwordChangeRequired", False)),
+                        result="SUCCESS",
+                        message="LOCK-FIX managed user login succeeded with the assigned RBAC role.",
+                    )
+                    token = secrets.token_urlsafe(32)
+                    self.context.sessions[token] = self.session_record(
+                        email,
+                        normalize_role(user.get("role")),
+                        user_id=str(user.get("id") or ""),
+                        department_id=str(user.get("departmentId") or ""),
+                        password_change_required=bool(managed_login.get("passwordChangeRequired", False)),
+                    )
+                    self.send_json(
+                        {
+                            "authenticated": True,
+                            "role": str(user.get("role") or ""),
+                            "passwordChangeRequired": bool(managed_login.get("passwordChangeRequired", False)),
+                        },
+                        headers={"Set-Cookie": f"lockfix_session={token}; HttpOnly; SameSite=Lax; Path=/"},
+                    )
+                elif managed_login.get("known_user") and managed_login.get("reason") in {
+                    "disabled",
+                    "deleted",
+                    "temporary_password_expired",
+                    "temporary_password_used",
+                    "password_not_set",
+                }:
+                    self.context.controller.audit.write(
+                        "auth.login.managed.blocked",
+                        user=email or "unknown",
+                        client_ip=client_ip,
+                        reason=managed_login.get("reason", "unknown"),
+                        result="BLOCKED",
+                        message="LOCK-FIX managed user login was blocked by account state or temporary password policy.",
+                    )
+                    self.send_json(
+                        {
+                            "authenticated": False,
+                            "error": self.managed_login_error_message(str(managed_login.get("reason") or "")),
+                            "reason": managed_login.get("reason", "unknown"),
+                        },
+                        status=403,
+                    )
+                elif (temp_login := self.context.verify_login_temp_password(email, password)).get("ok"):
+                    managed_user = self.managed_user_by_email(email)
+                    login_role = normalize_role(managed_user.get("role")) if managed_user else Role.SUPER_ADMIN
+                    user_id = str(managed_user.get("id") or "") if managed_user else ""
+                    department_id = str(managed_user.get("departmentId") or "") if managed_user else ""
                     self.context.reset_login_failures(email, client_ip, "approved_temporary_password")
                     self.context.controller.audit.write(
                         "auth.login.temp.success",
                         user=email,
+                        user_id=user_id,
                         client_ip=client_ip,
                         approved_by=temp_login.get("approved_by", "administrator"),
                         approved_at=temp_login.get("approved_at", ""),
                         expires_at=temp_login.get("expires_at", ""),
+                        role=login_role.value,
                         result="SUCCESS",
                         message="LOCK-FIX login succeeded with an administrator-approved temporary password.",
                     )
                     token = secrets.token_urlsafe(32)
-                    self.context.sessions[token] = self.session_record(email, Role.SUPER_ADMIN)
+                    self.context.sessions[token] = self.session_record(email, login_role, user_id=user_id, department_id=department_id)
                     self.send_json(
                         {"authenticated": True},
                         headers={"Set-Cookie": f"lockfix_session={token}; HttpOnly; SameSite=Lax; Path=/"},
@@ -1029,10 +1093,22 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     },
                     status=202,
                 )
+            elif parsed.path == "/api/account/password":
+                self.require_auth()
+                payload = self.read_json_body()
+                self.send_json(self.change_current_account_password(payload))
             elif parsed.path == "/api/admin/users":
                 self.require_super_admin()
                 payload = self.read_json_body()
                 self.send_json(self.admin_create_user(payload), status=201)
+            elif (admin_user_action := re.fullmatch(r"/api/admin/users/([^/]+)/(archive|temporary-password)", parsed.path)):
+                self.require_super_admin()
+                user_id = admin_user_action.group(1)
+                action = admin_user_action.group(2)
+                if action == "archive":
+                    self.send_json(self.admin_archive_user(user_id))
+                else:
+                    self.send_json(self.admin_issue_user_temporary_password(user_id))
             elif parsed.path == "/api/approvals":
                 self.require_auth(Permission.APPROVAL_REQUEST_CREATE)
                 payload = self.read_json_body()
@@ -1642,11 +1718,21 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "session": session,
         }
 
-    def session_record(self, user: str, role: Role) -> dict:
+    def session_record(
+        self,
+        user: str,
+        role: Role,
+        user_id: str = "",
+        department_id: str = "",
+        password_change_required: bool = False,
+    ) -> dict:
         return {
             "created_at": time.time(),
             "user": str(user or "unknown"),
             "role": role.value,
+            "user_id": str(user_id or ""),
+            "department_id": str(department_id or ""),
+            "password_change_required": bool(password_change_required),
         }
 
     def session_created_at(self, record: object) -> float:
@@ -1664,6 +1750,20 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         if record:
             return Role.SUPER_ADMIN
         return Role.AUDITOR
+
+    def current_session_record(self) -> dict:
+        token = self.session_token()
+        record = self.context.sessions.get(token) if token else None
+        return dict(record) if isinstance(record, dict) else {}
+
+    def current_session_user_id(self) -> str:
+        return str(self.current_session_record().get("user_id") or "")
+
+    def current_session_department_id(self) -> str:
+        return str(self.current_session_record().get("department_id") or "")
+
+    def current_password_change_required(self) -> bool:
+        return bool(self.current_session_record().get("password_change_required", False))
 
     def permission_error_status(self, exc: PermissionError) -> int:
         return 401 if "authentication required" in str(exc).lower() else 403
@@ -1713,62 +1813,250 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             permission=exc.permission.value,
         )
 
+    def public_user_record(self, user: dict) -> dict:
+        record = dict(user)
+        record.pop("passwordHash", None)
+        record.pop("previousEmail", None)
+        return record
+
+    def managed_user_by_email(self, email: str) -> dict:
+        with self.context.user_directory_lock:
+            data = self.context.user_directory.load()
+            try:
+                user = self.context.user_directory.find_user_by_email(data, email)
+            except KeyError:
+                return {}
+            if bool(user.get("deleted", False)) or bool(user.get("disabled", False)):
+                return {}
+            return dict(user)
+
+    def authenticate_managed_user(self, email: str, password: str, client_ip: str) -> dict:
+        password_hash = self.context.login_security_hash(password)
+        with self.context.user_directory_lock:
+            result = self.context.user_directory.authenticate_password(email, password_hash)
+        if result.get("ok"):
+            user = result.get("user") if isinstance(result.get("user"), dict) else {}
+            return {
+                "ok": True,
+                "known_user": True,
+                "user": user,
+                "passwordChangeRequired": bool(user.get("passwordChangeRequired", False)),
+            }
+        reason = str(result.get("reason") or "unknown")
+        if result.get("known_user") and reason in {"disabled", "deleted", "temporary_password_expired", "temporary_password_used", "password_not_set"}:
+            self.context.controller.audit.write(
+                "auth.login.managed.denied",
+                user=email or "unknown",
+                client_ip=client_ip,
+                reason=reason,
+                result="BLOCKED",
+            )
+        return result
+
+    def managed_login_error_message(self, reason: str) -> str:
+        messages = {
+            "disabled": "비활성화된 계정입니다. 관리자에게 문의하세요.",
+            "deleted": "삭제 처리된 계정입니다. 관리자에게 문의하세요.",
+            "temporary_password_expired": "임시 비밀번호가 만료되었습니다. 관리자에게 재발급을 요청하세요.",
+            "temporary_password_used": "이미 사용된 임시 비밀번호입니다. 관리자에게 재발급을 요청하세요.",
+            "password_not_set": "비밀번호가 설정되지 않은 계정입니다. 관리자에게 임시 비밀번호 발급을 요청하세요.",
+        }
+        return messages.get(reason, "계정 상태 때문에 로그인이 차단되었습니다.")
+
     def admin_departments(self) -> list[dict]:
         with self.context.user_directory_lock:
             return self.context.user_directory.departments()
 
     def admin_users(self) -> list[dict]:
         with self.context.user_directory_lock:
-            return self.context.user_directory.users()
+            return [self.public_user_record(user) for user in self.context.user_directory.users(include_deleted=False)]
 
     def audit_user_change(self, event: str, user: dict, before: dict | None = None) -> None:
+        safe_user = self.public_user_record(user)
+        safe_before = self.public_user_record(before or {}) if before is not None else {}
         self.context.controller.audit.write(
             event,
             actor=self.current_session_user(),
             actor_role=self.current_role().value,
-            user_id=str(user.get("id") or ""),
-            user_email=str(user.get("email") or ""),
-            department_id=str(user.get("departmentId") or ""),
-            role=str(user.get("role") or ""),
-            disabled=bool(user.get("disabled")),
-            before=before or {},
-            beforeValue=before or {},
-            afterValue=user,
+            user_id=str(safe_user.get("id") or ""),
+            user_email=str(safe_user.get("email") or ""),
+            department_id=str(safe_user.get("departmentId") or ""),
+            role=str(safe_user.get("role") or ""),
+            disabled=bool(safe_user.get("disabled")),
+            deleted=bool(safe_user.get("deleted")),
+            before=safe_before,
+            beforeValue=safe_before,
+            afterValue=safe_user,
             result="SUCCESS",
         )
-        before_role = str((before or {}).get("role") or "")
-        after_role = str(user.get("role") or "")
+        before_role = str(safe_before.get("role") or "")
+        after_role = str(safe_user.get("role") or "")
         if before is not None and before_role and before_role != after_role:
             self.context.controller.audit.write(
                 "admin.role.changed",
                 actorUserId=self.current_session_user(),
                 resourceType="ROLE",
-                resourceId=str(user.get("id") or ""),
+                resourceId=str(safe_user.get("id") or ""),
                 beforeValue={"role": before_role},
                 afterValue={"role": after_role},
                 result="SUCCESS",
             )
 
+    def generated_user_temporary_password(self) -> tuple[str, str, str]:
+        temporary_password = self.context.generate_login_temp_password()
+        expires_at = (datetime.now(timezone.utc) + timedelta(seconds=USER_TEMP_PASSWORD_TTL_SECONDS)).isoformat(
+            timespec="seconds"
+        )
+        return temporary_password, self.context.login_security_hash(temporary_password), expires_at
+
     def admin_create_user(self, payload: dict) -> dict:
+        temporary_password, password_hash, expires_at = self.generated_user_temporary_password()
+        create_payload = dict(payload)
+        create_payload.update(
+            {
+                "passwordHash": password_hash,
+                "passwordChangeRequired": True,
+                "temporaryPasswordExpiresAt": expires_at,
+            }
+        )
         with self.context.user_directory_lock:
-            user = self.context.user_directory.create_user(payload)
+            user = self.context.user_directory.create_user(create_payload)
         self.audit_user_change("admin.user.created", user)
-        return {"ok": True, "user": user}
+        self.context.controller.audit.write(
+            "admin.user.temporary_password_issued",
+            actor=self.current_session_user(),
+            actor_role=self.current_role().value,
+            user_id=str(user.get("id") or ""),
+            user_email=str(user.get("email") or ""),
+            temporary_password_digest=password_hash[:16],
+            temporary_expires_at=expires_at,
+            result="SUCCESS",
+            message="Initial managed-user temporary password was issued. Plaintext is returned once in the API response only.",
+        )
+        return {
+            "ok": True,
+            "user": self.public_user_record(user),
+            "temporaryPassword": temporary_password,
+            "temporaryPasswordExpiresAt": expires_at,
+        }
 
     def admin_update_user(self, user_id: str, payload: dict) -> dict:
+        update_payload = {
+            key: value
+            for key, value in dict(payload).items()
+            if key in {"email", "name", "departmentId", "role", "disabled"}
+        }
         with self.context.user_directory_lock:
             before = next((dict(user) for user in self.context.user_directory.users() if str(user.get("id") or "") == user_id), {})
-            user = self.context.user_directory.update_user(user_id, payload)
-        user.pop("previousEmail", None)
+            user = self.context.user_directory.update_user(user_id, update_payload)
         self.audit_user_change("admin.user.updated", user, before=before)
-        return {"ok": True, "user": user}
+        return {"ok": True, "user": self.public_user_record(user)}
 
     def admin_disable_user(self, user_id: str) -> dict:
         with self.context.user_directory_lock:
             before = next((dict(user) for user in self.context.user_directory.users() if str(user.get("id") or "") == user_id), {})
             user = self.context.user_directory.disable_user(user_id)
         self.audit_user_change("admin.user.disabled", user, before=before)
-        return {"ok": True, "user": user}
+        return {"ok": True, "user": self.public_user_record(user)}
+
+    def admin_archive_user(self, user_id: str) -> dict:
+        with self.context.user_directory_lock:
+            before = next((dict(user) for user in self.context.user_directory.users() if str(user.get("id") or "") == user_id), {})
+            user = self.context.user_directory.archive_user(user_id, self.current_session_user())
+        self.audit_user_change("admin.user.archived", user, before=before)
+        return {"ok": True, "user": self.public_user_record(user)}
+
+    def admin_issue_user_temporary_password(self, user_id: str) -> dict:
+        temporary_password, password_hash, expires_at = self.generated_user_temporary_password()
+        with self.context.user_directory_lock:
+            before = next((dict(user) for user in self.context.user_directory.users() if str(user.get("id") or "") == user_id), {})
+            user = self.context.user_directory.set_temporary_password(user_id, password_hash, expires_at)
+        self.audit_user_change("admin.user.temporary_password_reset", user, before=before)
+        self.context.controller.audit.write(
+            "admin.user.temporary_password_issued",
+            actor=self.current_session_user(),
+            actor_role=self.current_role().value,
+            user_id=str(user.get("id") or ""),
+            user_email=str(user.get("email") or ""),
+            temporary_password_digest=password_hash[:16],
+            temporary_expires_at=expires_at,
+            result="SUCCESS",
+            message="Managed-user temporary password was reissued. Plaintext is returned once in the API response only.",
+        )
+        return {
+            "ok": True,
+            "user": self.public_user_record(user),
+            "temporaryPassword": temporary_password,
+            "temporaryPasswordExpiresAt": expires_at,
+        }
+
+    def change_current_account_password(self, payload: dict) -> dict:
+        record = self.current_session_record()
+        user_id = str(record.get("user_id") or "")
+        if not user_id:
+            raise ValueError("managed user account is required")
+        new_password = str(payload.get("newPassword") or "")
+        if len(new_password) < 8:
+            raise ValueError("new password must be at least 8 characters")
+        current_password = str(payload.get("currentPassword") or "")
+        new_hash = self.context.login_security_hash(new_password)
+        with self.context.user_directory_lock:
+            data = self.context.user_directory.load()
+            user = self.context.user_directory.find_user(data, user_id)
+            if bool(user.get("deleted", False)) or bool(user.get("disabled", False)):
+                raise PermissionError("account is disabled or deleted")
+            if not bool(record.get("password_change_required", False)):
+                if not current_password or not secrets.compare_digest(
+                    str(user.get("passwordHash") or ""),
+                    self.context.login_security_hash(current_password),
+                ):
+                    raise PermissionError("current password is required")
+            before = dict(user)
+            updated = self.context.user_directory.change_password(user_id, new_hash)
+        token = self.session_token()
+        if token and isinstance(self.context.sessions.get(token), dict):
+            self.context.sessions[token]["password_change_required"] = False
+        self.audit_user_change("admin.user.password_changed", updated, before=before)
+        return {"ok": True, "user": self.public_user_record(updated)}
+
+    def windows_admin_status(self) -> dict:
+        is_windows = os.name == "nt"
+        is_admin = False
+        error = ""
+        if is_windows:
+            try:
+                import ctypes
+
+                is_admin = bool(ctypes.windll.shell32.IsUserAnAdmin())
+            except Exception as exc:  # pragma: no cover - depends on host Windows APIs.
+                error = str(exc)
+        elif hasattr(os, "geteuid"):
+            is_admin = os.geteuid() == 0
+        status = {
+            "ok": True,
+            "platform": platform.platform(),
+            "isWindows": is_windows,
+            "isAdministrator": is_admin,
+            "checkedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "mode": "status_only",
+            "message": (
+                "LOCK-FIX WebUI process is running with Windows Administrator privileges."
+                if is_admin
+                else "LOCK-FIX WebUI process is not running with Windows Administrator privileges."
+            ),
+            "error": error,
+        }
+        self.context.controller.audit.write(
+            "admin.windows_admin_status.checked",
+            actor=self.current_session_user(),
+            actor_role=self.current_role().value,
+            is_windows=is_windows,
+            is_administrator=is_admin,
+            mode="status_only",
+            result="SUCCESS" if not error else "WARNING",
+            message="Windows Administrator status was checked for display only; LOCK-FIX RBAC remains the permission source.",
+        )
+        return status
 
     def approval_summary(self) -> dict:
         store = self.context.controller.approvals
