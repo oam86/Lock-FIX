@@ -20,7 +20,7 @@ from lockfix.hashcheck import manifest_digest
 from lockfix.identity import compute_uid, fingerprint_parts, slot_uid
 from lockfix.offline_reconnect_validation import run_offline_reconnect_validation
 from lockfix.approvals import ApprovalStore
-from lockfix.audit_log import AUDIT_LOG_FIELDS, audit_logs_to_csv, read_audit_logs
+from lockfix.audit_log import AUDIT_LOG_FIELDS, audit_logs_to_csv, read_audit_logs, tail_text_lines
 from lockfix.rbac import AuthorizationError, Permission, Role, default_policy_document, has_permission, load_role_permissions
 from lockfix.schema import (
     LOCKFIX_TABLE_SCHEMA,
@@ -679,7 +679,7 @@ class LockFixTests(unittest.TestCase):
             'id="userManagementForm"',
             'id="userManagementBackButton"',
             'data-i18n="userManagement.actions"',
-            'v=20260518-user-management-polish',
+            'v=20260518-user-management-timeout-fix',
             'class="rbac-chip-list user-management-department-list"',
             '<option value="backup-operation">Backup Operation</option>',
             '<option value="SECURITY_ADMIN">SECURITY_ADMIN</option>',
@@ -698,9 +698,12 @@ class LockFixTests(unittest.TestCase):
             '"userManagement.title": "User & Role Management"',
             '"userManagement.windowsUnavailable": "상태 확인 지연"',
             '"userManagement.errorDuplicateEmail": "이미 등록된 이메일입니다.',
+            '"userManagement.createdAfterTimeout": "{email} 사용자는 등록되었지만',
             "function userManagementErrorMessage",
             "function hasUserManagementDuplicateEmail",
             "setUserManagementStatus(t(\"userManagement.errorDuplicateEmail\"), \"error\")",
+            'timeoutMs: 60000',
+            'error?.code === "REQUEST_TIMEOUT"',
         ]:
             self.assertIn(token, app)
         for token in [
@@ -730,6 +733,27 @@ class LockFixTests(unittest.TestCase):
         self.assertEqual(logs[0]["action"], "auth.login.success")
         self.assertEqual(logs[0]["resourceType"], "AUTH")
         self.assertEqual(logs[0]["result"], "SUCCESS")
+
+    def test_audit_log_reader_tails_large_files_without_full_scan(self) -> None:
+        tmp_path = self.make_workspace()
+        audit_path = tmp_path / "audit.jsonl"
+        rows = [
+            json.dumps({"event": "old.event", "actorUserId": "old"}, ensure_ascii=False),
+            *[
+                json.dumps({"event": f"recent.event.{index}", "actorUserId": f"user-{index}"}, ensure_ascii=False)
+                for index in range(5)
+            ],
+        ]
+        audit_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+        tail = tail_text_lines(audit_path, limit=3, chunk_size=32)
+        logs = read_audit_logs(audit_path, limit=3)
+
+        self.assertEqual(len(tail), 3)
+        self.assertIn("recent.event.4", tail[-1])
+        self.assertEqual(len(logs), 3)
+        self.assertEqual(logs[0]["action"], "recent.event.4")
+        self.assertEqual(logs[-1]["action"], "recent.event.2")
 
     def test_audit_log_view_is_limited_to_auditor_security_and_super_admin(self) -> None:
         tmp_path = self.make_workspace()
@@ -1561,7 +1585,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("border: 0;", css_source)
         self.assertNotIn("border: 1px solid rgba(196, 211, 225, 0.72);", css_source)
         self.assertNotIn("border: 1px solid rgba(121, 158, 206, 0.48);", css_source)
-        self.assertIn("20260518-user-management-polish", index_source)
+        self.assertIn("20260518-user-management-timeout-fix", index_source)
 
     def test_isolate_reaches_isolated(self) -> None:
         tmp_path = self.make_workspace()
@@ -2284,7 +2308,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("content: none !important;", css_source)
         self.assertIn("font-weight: 400 !important;", css_source)
         self.assertIn("opacity: 0.6 !important;", css_source)
-        self.assertIn("20260518-user-management-polish", html_source)
+        self.assertIn("20260518-user-management-timeout-fix", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -2303,7 +2327,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260518-user-management-polish", html_source)
+        self.assertIn("20260518-user-management-timeout-fix", html_source)
 
     def test_monitoring_header_copy_is_hidden_while_polling_remains(self) -> None:
         root = Path.cwd()
@@ -2426,7 +2450,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("min-height: 46px;", css_source)
         self.assertIn("opacity: 0.66;", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260518-user-management-polish", html_source)
+        self.assertIn("20260518-user-management-timeout-fix", html_source)
 
     def test_dashboard_route_does_not_show_legacy_notification_markup(self) -> None:
         root = Path.cwd()
@@ -2444,7 +2468,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260518-user-management-polish", html_source)
+        self.assertIn("20260518-user-management-timeout-fix", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()

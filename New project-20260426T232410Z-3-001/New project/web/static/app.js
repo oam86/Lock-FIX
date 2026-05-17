@@ -543,6 +543,7 @@ const translations = {
     "userManagement.count": "{count} users",
     "userManagement.departmentCount": "{count} departments",
     "userManagement.created": "User created. Temporary password: {password} (expires {expires})",
+    "userManagement.createdAfterTimeout": "User {email} was created, but the one-time password response arrived late. Use Temp Password to reissue it.",
     "userManagement.updated": "User updated.",
     "userManagement.archived": "User was soft-deleted and hidden from the active list.",
     "userManagement.tempIssued": "Temporary password issued: {password} (expires {expires})",
@@ -778,6 +779,7 @@ const translations = {
     "userManagement.count": "사용자 {count}명",
     "userManagement.departmentCount": "부서 {count}개",
     "userManagement.created": "사용자가 등록되었습니다. 임시 비밀번호: {password} (만료 {expires})",
+    "userManagement.createdAfterTimeout": "{email} 사용자는 등록되었지만 1회성 임시 비밀번호 응답이 늦게 도착했습니다. 임시 비밀번호 버튼으로 재발급하세요.",
     "userManagement.updated": "사용자 정보가 저장되었습니다.",
     "userManagement.archived": "사용자가 소프트 삭제되어 활성 목록에서 숨겨졌습니다.",
     "userManagement.tempIssued": "임시 비밀번호가 발급되었습니다: {password} (만료 {expires})",
@@ -5424,6 +5426,7 @@ async function submitUserManagementForm(event) {
       method: userId ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      timeoutMs: 60000,
     });
     const message = userId
       ? t("userManagement.updated")
@@ -5435,6 +5438,14 @@ async function submitUserManagementForm(event) {
     setUserManagementStatus(message, "success");
     await reloadUserManagement();
   } catch (error) {
+    if (!userId && error?.code === "REQUEST_TIMEOUT") {
+      await reloadUserManagement();
+      if (latestUserManagementData.users.some((user) => String(user.email || "").trim().toLowerCase() === payload.email.toLowerCase())) {
+        resetUserManagementForm();
+        setUserManagementStatus(templateText("userManagement.createdAfterTimeout", { email: payload.email }), "warning");
+        return;
+      }
+    }
     setUserManagementStatus(userManagementErrorMessage(error), "error");
   } finally {
     if (userManagementSubmitButton) userManagementSubmitButton.disabled = false;

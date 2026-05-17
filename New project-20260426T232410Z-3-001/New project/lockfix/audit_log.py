@@ -51,13 +51,34 @@ def normalize_audit_log(record: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+def tail_text_lines(path: Path, limit: int = 1000, chunk_size: int = 64 * 1024) -> list[str]:
+    limit = max(1, int(limit or 1))
+    chunk_size = max(4096, int(chunk_size or 4096))
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, 2)
+            position = handle.tell()
+            data = bytearray()
+            newline_count = 0
+            while position > 0 and newline_count <= limit:
+                read_size = min(chunk_size, position)
+                position -= read_size
+                handle.seek(position)
+                chunk = handle.read(read_size)
+                data[:0] = chunk
+                newline_count += chunk.count(b"\n")
+    except OSError:
+        return []
+    return data.decode("utf-8", errors="replace").splitlines()[-limit:]
+
+
 def read_audit_logs(path: Path, limit: int = 1000) -> list[dict[str, Any]]:
     try:
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        lines = tail_text_lines(path, limit=limit)
     except OSError:
         return []
     items: list[dict[str, Any]] = []
-    for line in lines[-max(1, limit) :]:
+    for line in lines:
         try:
             raw = json.loads(line)
         except json.JSONDecodeError:

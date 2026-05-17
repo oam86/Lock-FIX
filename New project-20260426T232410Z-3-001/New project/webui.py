@@ -32,7 +32,7 @@ from xml.sax.saxutils import escape
 from lockfix.config import get_veeam_config, load_app_config, load_config, normalize_operation_mode
 from lockfix.agent_service import AgentServiceClient, AgentServiceUnavailable, AgentServiceWorker
 from lockfix.controller import LockFixController, repository_volume_root
-from lockfix.audit_log import audit_logs_to_csv, read_audit_logs
+from lockfix.audit_log import audit_logs_to_csv, read_audit_logs, tail_text_lines
 from lockfix.hashcheck import verify_manifest
 from lockfix.identity import fingerprint_formula, fingerprint_parts, slot_uid, verify_uid
 from lockfix.integrated import integrated_solution_summary
@@ -1676,28 +1676,14 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             path = self.context.config.audit_log_path
         except Exception:
             return []
-        return LockFixWebHandler.safe_text_lines(self, path)
+        return tail_text_lines(path, limit=5000, chunk_size=256 * 1024)
 
     def audit_log_tail_lines(self, limit: int = 1000, max_bytes: int = 2 * 1024 * 1024) -> list[str]:
         try:
             path = self.context.config.audit_log_path
-            size = path.stat().st_size
-        except OSError:
-            return []
         except Exception:
             return []
-        try:
-            with path.open("rb") as handle:
-                offset = max(0, size - max_bytes)
-                handle.seek(offset)
-                data = handle.read(max_bytes)
-            text = data.decode("utf-8", errors="replace")
-            lines = text.splitlines()
-            if offset > 0 and lines:
-                lines = lines[1:]
-            return lines[-limit:]
-        except OSError:
-            return []
+        return tail_text_lines(path, limit=limit, chunk_size=min(max(4096, max_bytes), 256 * 1024))
 
     def qr_status_response(self, token: str) -> dict:
         record = self.context.qr_tokens.get(token)
