@@ -2104,6 +2104,57 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("font-weight: 400", css_source)
         self.assertIn("opacity: 0.58", css_source)
 
+    def test_dashboard_cards_drag_resize_without_edit_button(self) -> None:
+        root = Path.cwd()
+        html_source = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        app_source = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
+        css_source = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn("dashboardPanelOrderKey", app_source)
+        self.assertIn("dashboardPanelSizeKey", app_source)
+        self.assertIn("enableDashboardPanelDrag", app_source)
+        self.assertIn('class="dashboard-kpi-grip" draggable="true"', app_source)
+        self.assertIn('class="dashboard-panel-grip" draggable="true"', app_source)
+        self.assertIn('data-dashboard-panel="events"', app_source)
+        self.assertIn('data-dashboard-panel="alerts"', app_source)
+        self.assertIn('data-dashboard-panel="audit"', app_source)
+        self.assertIn('data-panel-resizable="true"', app_source)
+        self.assertIn("dashboard-panel-resize-handle", app_source)
+        self.assertIn("dashboard-empty-row", app_source)
+        self.assertIn("auditSummary", app_source)
+        self.assertIn("audit-link-state", app_source)
+        self.assertNotIn("dashboardEditToggle", app_source)
+        self.assertNotIn("dashboard-edit-button", app_source)
+        self.assertNotIn("편집 열기", app_source)
+        self.assertIn(".dashboard-panel-grip", css_source)
+        self.assertIn(".dashboard-panel-resize-handle", css_source)
+        self.assertIn(".dashboard-panel-drop-target", css_source)
+        self.assertIn("font-weight: 400", css_source)
+        self.assertIn("20260517-dashboard-card-handles", html_source)
+
+    def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        audit = AuditLogger(tmp_path / "audit.jsonl")
+        audit.write("admin.manual_operation", actorUserId="admin")
+        audit.write("policy.change.requested", actorUserId="admin")
+        audit.write("approval.request.created", actorUserId="backup-operator", approvalRequestId="req-1")
+        audit.write("auth.login.failed", actorUserId="unknown", result="FAILED")
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(config_path)
+        handler.notification_items = lambda: []
+        handler.threat_detection_summary = lambda: {"summary": {"status": "정상", "score": 0, "last_scan_at": "-", "suspicious_count": 0}}
+
+        summary = handler.dashboard_summary()["audit_summary"]
+
+        self.assertTrue(summary["linked"])
+        self.assertGreaterEqual(summary["total_records"], 4)
+        self.assertEqual(summary["manual_operations"], 1)
+        self.assertEqual(summary["policy_changes"], 1)
+        self.assertEqual(summary["approval_requests"], 1)
+        self.assertEqual(summary["login_failures"], 1)
+        self.assertNotEqual(summary["latest_at"], "-")
+
     def test_admin_update_script_can_apply_live_operation_mode(self) -> None:
         source = (Path.cwd() / "tools" / "apply_latest_webui_update_admin.ps1").read_text(encoding="utf-8")
 

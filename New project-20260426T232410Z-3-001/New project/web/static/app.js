@@ -63,12 +63,12 @@ const dashboardNotificationTable = document.querySelector("#dashboardNotificatio
 const dashboardLogsTable = document.querySelector("#dashboardLogsTable");
 const dashboardTotalLogs = document.querySelector("#dashboardTotalLogs");
 const dashboardKpiOrderKey = "lockfix.dashboard.kpiOrder.v1";
-const dashboardKpiSizeKey = "lockfix.dashboard.kpiSize.v1";
-const dashboardEditModeKey = "lockfix.dashboard.editMode.v1";
+const dashboardKpiSizeKey = "lockfix.dashboard.kpiSize.v2";
+const dashboardPanelOrderKey = "lockfix.dashboard.panelOrder.v1";
+const dashboardPanelSizeKey = "lockfix.dashboard.panelSize.v1";
 const dashboardEventsKey = "lockfix.dashboard.eventsVisible.v1";
 const dashboardAlertsKey = "lockfix.dashboard.alertsVisible.v1";
 const opsEventsVisibleKey = "lockfix.ops.eventsVisible.v2";
-let dashboardKpiInteractionBound = false;
 const reportOverallStatus = document.querySelector("#reportOverallStatus");
 const reportAnalysis = document.querySelector("#reportAnalysis");
 const reportGeneratedAt = document.querySelector("#reportGeneratedAt");
@@ -1961,22 +1961,6 @@ function saveDashboardKpiSizes(sizes) {
   }
 }
 
-function loadDashboardEditMode() {
-  try {
-    return localStorage.getItem(dashboardEditModeKey) !== "0";
-  } catch {
-    return true;
-  }
-}
-
-function saveDashboardEditMode(enabled) {
-  try {
-    localStorage.setItem(dashboardEditModeKey, enabled ? "1" : "0");
-  } catch {
-    // Ignore storage failures in locked-down browser contexts.
-  }
-}
-
 function loadDashboardEventsVisible() {
   try {
     return localStorage.getItem(dashboardEventsKey) === "1";
@@ -2046,13 +2030,48 @@ function reorderDashboardKpis(cards) {
   });
 }
 
+function loadDashboardPanelOrder() {
+  try {
+    const raw = localStorage.getItem(dashboardPanelOrderKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map((item) => String(item || "")).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveDashboardPanelOrder(order) {
+  try {
+    localStorage.setItem(dashboardPanelOrderKey, JSON.stringify(order));
+  } catch {
+    // Ignore storage failures in locked-down browser contexts.
+  }
+}
+
+function loadDashboardPanelSizes() {
+  try {
+    const raw = localStorage.getItem(dashboardPanelSizeKey);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveDashboardPanelSizes(sizes) {
+  try {
+    localStorage.setItem(dashboardPanelSizeKey, JSON.stringify(sizes));
+  } catch {
+    // Ignore storage failures in locked-down browser contexts.
+  }
+}
+
 function enableDashboardKpiDrag(board) {
   if (!board || board.dataset.dragReady === "true") return;
   board.dataset.dragReady = "true";
   let dragging = null;
   let resizing = null;
   const sizes = loadDashboardKpiSizes();
-  const isEditMode = () => board.classList.contains("dashboard-kpi-edit-mode");
 
   const syncOrder = () => {
     const order = [...board.querySelectorAll("[data-dashboard-kpi]")].map((item) => item.dataset.dashboardKpi || "").filter(Boolean);
@@ -2070,9 +2089,9 @@ function enableDashboardKpiDrag(board) {
   const getCard = (target) => target?.closest?.("[data-dashboard-kpi]");
 
   board.addEventListener("dragstart", (event) => {
-    if (!isEditMode()) return;
-    if (event.target.closest?.(".dashboard-kpi-resize-handle")) return;
-    const card = getCard(event.target);
+    const handle = event.target.closest?.(".dashboard-kpi-grip");
+    if (!handle) return;
+    const card = getCard(handle);
     if (!card) return;
     dragging = card;
     card.classList.add("dashboard-kpi-dragging");
@@ -2088,7 +2107,6 @@ function enableDashboardKpiDrag(board) {
   });
 
   board.addEventListener("dragover", (event) => {
-    if (!isEditMode()) return;
     if (!dragging) return;
     event.preventDefault();
     const card = getCard(event.target);
@@ -2105,7 +2123,6 @@ function enableDashboardKpiDrag(board) {
   });
 
   board.addEventListener("drop", (event) => {
-    if (!isEditMode()) return;
     if (!dragging) return;
     event.preventDefault();
     syncOrder();
@@ -2115,26 +2132,22 @@ function enableDashboardKpiDrag(board) {
     applyCardSize(card, sizes[card.dataset.dashboardKpi || ""]);
   });
 
-  if (!dashboardKpiInteractionBound) {
-    board.addEventListener("mousedown", (event) => {
-      if (!isEditMode()) return;
-      const handle = event.target.closest?.(".dashboard-kpi-resize-handle");
-      if (!handle) return;
-      const card = handle.closest("[data-dashboard-kpi]");
-      if (!card) return;
-      event.preventDefault();
-      resizing = {
-        card,
-        startX: event.clientX,
-        startY: event.clientY,
-        startCols: Number(card.dataset.cols || 1),
-        startRows: Number(card.dataset.rows || 1),
-      };
-      board.classList.add("dashboard-kpi-board-resizing");
-    });
+  board.addEventListener("mousedown", (event) => {
+    const handle = event.target.closest?.(".dashboard-kpi-resize-handle");
+    if (!handle) return;
+    const card = handle.closest("[data-dashboard-kpi]");
+    if (!card) return;
+    event.preventDefault();
+    resizing = {
+      card,
+      startX: event.clientX,
+      startY: event.clientY,
+      startCols: Number(card.dataset.cols || 1),
+      startRows: Number(card.dataset.rows || 1),
+    };
+    board.classList.add("dashboard-kpi-board-resizing");
 
-    window.addEventListener("mousemove", (event) => {
-      if (!isEditMode()) return;
+    const onMouseMove = (event) => {
       if (!resizing) return;
       const dx = event.clientX - resizing.startX;
       const dy = event.clientY - resizing.startY;
@@ -2144,11 +2157,14 @@ function enableDashboardKpiDrag(board) {
       resizing.card.dataset.rows = String(nextRows);
       resizing.card.style.gridColumnEnd = `span ${nextCols}`;
       resizing.card.style.gridRowEnd = `span ${nextRows}`;
-    });
+    };
 
-    window.addEventListener("mouseup", () => {
-      if (!isEditMode()) return;
-      if (!resizing) return;
+    const onMouseUp = () => {
+      if (!resizing) {
+        window.removeEventListener("mousemove", onMouseMove);
+        window.removeEventListener("mouseup", onMouseUp);
+        return;
+      }
       const sizes = loadDashboardKpiSizes();
       board.querySelectorAll("[data-dashboard-kpi]").forEach((card) => {
         const key = card.dataset.dashboardKpi || "";
@@ -2160,9 +2176,135 @@ function enableDashboardKpiDrag(board) {
       saveDashboardKpiSizes(sizes);
       resizing = null;
       board.classList.remove("dashboard-kpi-board-resizing");
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  });
+}
+
+function enableDashboardPanelDrag(board) {
+  if (!board || board.dataset.panelDragReady === "true") return;
+  board.dataset.panelDragReady = "true";
+  let dragging = null;
+  let resizing = null;
+  const sizes = loadDashboardPanelSizes();
+
+  const panelsById = () => new Map(
+    [...board.querySelectorAll("[data-dashboard-panel]")]
+      .map((panel) => [panel.dataset.dashboardPanel, panel])
+      .filter(([id]) => Boolean(id))
+  );
+  const syncOrder = () => {
+    const order = [...board.querySelectorAll("[data-dashboard-panel]")].map((panel) => panel.dataset.dashboardPanel || "").filter(Boolean);
+    saveDashboardPanelOrder(order);
+  };
+  const getPanel = (target) => target?.closest?.("[data-dashboard-panel]");
+  const applyPanelSize = (panel, size) => {
+    if (!panel || !size || !panel.dataset.panelResizable) return;
+    const cols = Math.max(3, Math.min(12, Number(size.cols || panel.dataset.cols || 4)));
+    const rows = Math.max(1, Math.min(5, Number(size.rows || panel.dataset.rows || 3)));
+    panel.dataset.cols = String(cols);
+    panel.dataset.rows = String(rows);
+    panel.style.gridColumnEnd = `span ${cols}`;
+    panel.style.minHeight = `${Math.max(66, rows * 78)}px`;
+  };
+  const applyPanelOrder = () => {
+    const panels = panelsById();
+    loadDashboardPanelOrder().forEach((id) => {
+      const panel = panels.get(id);
+      if (panel) board.appendChild(panel);
     });
-    dashboardKpiInteractionBound = true;
-  }
+  };
+
+  applyPanelOrder();
+  board.querySelectorAll("[data-dashboard-panel]").forEach((panel) => {
+    applyPanelSize(panel, sizes[panel.dataset.dashboardPanel || ""]);
+  });
+  board.addEventListener("dragstart", (event) => {
+    const handle = event.target.closest?.(".dashboard-panel-grip");
+    if (!handle) return;
+    const panel = getPanel(handle);
+    if (!panel) return;
+    dragging = panel;
+    panel.classList.add("dashboard-panel-dragging");
+    event.dataTransfer?.setData("text/plain", panel.dataset.dashboardPanel || "");
+    event.dataTransfer?.setDragImage(panel, Math.min(90, panel.clientWidth / 2), Math.min(48, panel.clientHeight / 2));
+  });
+  board.addEventListener("dragend", () => {
+    if (dragging) dragging.classList.remove("dashboard-panel-dragging");
+    dragging = null;
+    board.querySelectorAll(".dashboard-panel-drop-target").forEach((node) => node.classList.remove("dashboard-panel-drop-target"));
+    syncOrder();
+  });
+  board.addEventListener("dragover", (event) => {
+    if (!dragging) return;
+    const panel = getPanel(event.target);
+    if (!panel || panel === dragging) return;
+    event.preventDefault();
+    const rect = panel.getBoundingClientRect();
+    const insertBefore = event.clientY < rect.top + rect.height / 2 || event.clientX < rect.left + rect.width / 2;
+    board.querySelectorAll(".dashboard-panel-drop-target").forEach((node) => node.classList.remove("dashboard-panel-drop-target"));
+    panel.classList.add("dashboard-panel-drop-target");
+    board.insertBefore(dragging, insertBefore ? panel : panel.nextSibling);
+  });
+  board.addEventListener("drop", (event) => {
+    if (!dragging) return;
+    event.preventDefault();
+    syncOrder();
+  });
+
+  board.addEventListener("mousedown", (event) => {
+    const handle = event.target.closest?.(".dashboard-panel-resize-handle");
+    if (!handle) return;
+    const panel = handle.closest("[data-dashboard-panel][data-panel-resizable='true']");
+    if (!panel) return;
+    event.preventDefault();
+    resizing = {
+      panel,
+      startX: event.clientX,
+      startY: event.clientY,
+      startCols: Number(panel.dataset.cols || 4),
+      startRows: Number(panel.dataset.rows || 3),
+    };
+    board.classList.add("dashboard-panel-board-resizing");
+
+    const onMouseMove = (event) => {
+      if (!resizing) return;
+      const dx = event.clientX - resizing.startX;
+      const dy = event.clientY - resizing.startY;
+      const nextCols = Math.max(3, Math.min(12, resizing.startCols + Math.round(dx / 120)));
+      const nextRows = Math.max(1, Math.min(5, resizing.startRows + Math.round(dy / 72)));
+      applyPanelSize(resizing.panel, { cols: nextCols, rows: nextRows });
+    };
+
+    const onMouseUp = () => {
+      if (!resizing) {
+        window.removeEventListener("mousemove", onMouseMove);
+        window.removeEventListener("mouseup", onMouseUp);
+        return;
+      }
+      const sizes = loadDashboardPanelSizes();
+      board.querySelectorAll("[data-dashboard-panel][data-panel-resizable='true']").forEach((panel) => {
+        const key = panel.dataset.dashboardPanel || "";
+        if (!key) return;
+        sizes[key] = {
+          cols: Number(panel.dataset.cols || 4),
+          rows: Number(panel.dataset.rows || 3),
+        };
+      });
+      saveDashboardPanelSizes(sizes);
+      resizing = null;
+      board.classList.remove("dashboard-panel-board-resizing");
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  });
 }
 
 function renderMount(node, slot) {
@@ -2337,12 +2479,24 @@ function renderDashboard(data) {
   const backup = data.backup || {};
   const events = Array.isArray(data.logs) ? data.logs.slice(0, 5) : [];
   const alerts = Array.isArray(data.alerts) ? data.alerts : [];
+  const auditSummary = data.audit_summary || {};
+  const eventRows = events.length
+    ? events.map((event) => `<div class="event-row"><span><i class="event-clock" aria-hidden="true"></i>${escapeHtml(event.date || "-")}</span><strong>${escapeHtml(event.content || "-")}</strong></div>`).join("")
+    : `<div class="dashboard-empty-row">최근 이벤트가 없습니다. Veeam, Air-Gap, 감사 로그가 수집되면 표시됩니다.</div>`;
+  const alertRows = alerts.length
+    ? alerts.map((item) => `<div class="health-row"><span>${escapeHtml(item.label || "-")}</span><b>${escapeHtml(item.value || "-")}</b></div>`).join("")
+    : `<div class="dashboard-empty-row">현재 표시할 경고 항목이 없습니다.</div>`;
+  const auditCounts = [
+    ["관리자 수동 조작", auditSummary.manual_operations ?? 0],
+    ["정책 변경", auditSummary.policy_changes ?? 0],
+    ["승인 요청", auditSummary.approval_requests ?? 0],
+    ["로그인 실패", auditSummary.login_failures ?? 0],
+  ];
   const threat = data.threat_detection || {};
   const threatStatus = String(threat.status || "정상");
   const threatDanger = threatTone(threatStatus) === "danger";
   const dashboardEventsVisible = loadDashboardEventsVisible();
   const dashboardAlertsVisible = loadDashboardAlertsVisible();
-  const dashboardEditMode = loadDashboardEditMode();
   dashboardView.innerHTML = `
     ${threatDanger ? `
       <section class="dashboard-threat-banner">
@@ -2350,15 +2504,10 @@ function renderDashboard(data) {
         <span>Repository 재연결이 차단되었으며 관리자 승인이 필요합니다.</span>
       </section>
     ` : ""}
-    <div class="dashboard-edit-hint">
-      <strong>대시보드 편집</strong>
-      <span>편집 모드에서만 카드 순서 변경과 크기 조절이 가능합니다.</span>
-      <button type="button" class="dashboard-edit-button" id="dashboardEditToggle">${dashboardEditMode ? "편집 잠금" : "편집 열기"}</button>
-    </div>
-    <div class="security-kpi-grid ${dashboardEditMode ? "dashboard-kpi-edit-mode" : ""}" id="dashboardKpiBoard" aria-label="Dashboard summary cards">
+    <div class="security-kpi-grid" id="dashboardKpiBoard" aria-label="Dashboard summary cards">
       ${orderedKpis.map(({ icon, label, value, tone, meta, key }) => `
-        <article class="security-kpi security-kpi-${icon}" data-dashboard-kpi="${escapeHtml(key)}" data-cols="${escapeHtml(String(kpiSizes[key]?.cols || 1))}" data-rows="${escapeHtml(String(kpiSizes[key]?.rows || 1))}" draggable="${dashboardEditMode ? "true" : "false"}">
-          <span class="dashboard-kpi-grip" draggable="${dashboardEditMode ? "true" : "false"}" aria-hidden="true" title="Drag to reorder"></span>
+        <article class="security-kpi security-kpi-${icon}" data-dashboard-kpi="${escapeHtml(key)}" data-cols="${escapeHtml(String(kpiSizes[key]?.cols || 1))}" data-rows="${escapeHtml(String(kpiSizes[key]?.rows || 1))}">
+          <span class="dashboard-kpi-grip" draggable="true" aria-hidden="true" title="Drag to reorder"></span>
           <span class="dashboard-kpi-resize-handle" aria-hidden="true" title="Resize card"></span>
           <i class="security-icon security-icon-${icon} security-tone-${tone}" ${meta ? `title="${escapeHtml(meta)}" aria-label="${escapeHtml(meta)}"` : 'aria-hidden="true"'}></i>
           <div><span>${escapeHtml(label || "-")}</span><strong class="security-value-${tone}">${escapeHtml(value || "-")}</strong></div>
@@ -2385,8 +2534,8 @@ function renderDashboard(data) {
       </article>
     </section>
 
-    <div class="security-dashboard-grid dashboard-content-grid">
-      <section class="security-panel security-flow-panel">
+    <div class="security-dashboard-grid dashboard-content-grid" id="dashboardContentBoard">
+      <section class="security-panel security-flow-panel" data-dashboard-panel="protection">
         <header><h2><i class="panel-title-icon protection-title-icon" aria-hidden="true"></i>${copy.liveProtection}</h2><span>ⓘ</span></header>
         <div class="panel-body">
           <p>${copy.protectedMessage.replace("Offline", "<b>Offline</b>").replace("offline", "<b>offline</b>")}</p>
@@ -2401,7 +2550,7 @@ function renderDashboard(data) {
         </div>
       </section>
 
-      <section class="security-panel backup-panel">
+      <section class="security-panel backup-panel" data-dashboard-panel="backup">
         <header><h2><i class="panel-title-icon backup-title-icon" aria-hidden="true"></i>${copy.backupLink}</h2></header>
         <div class="panel-body">
           <dl>
@@ -2415,38 +2564,40 @@ function renderDashboard(data) {
         </div>
       </section>
 
-      <section class="security-panel event-panel ${dashboardEventsVisible ? "event-panel-visible" : "event-panel-hidden"}">
+      <section class="security-panel event-panel ${dashboardEventsVisible ? "event-panel-visible" : "event-panel-hidden"}" data-dashboard-panel="events" data-panel-resizable="true" data-cols="4" data-rows="${dashboardEventsVisible ? "3" : "1"}">
         <header class="event-panel-header">
           <h2><i class="panel-title-icon event-title-icon" aria-hidden="true"></i>${copy.event}</h2>
           <button type="button" class="dashboard-reveal-button" id="dashboardEventsToggle">${dashboardEventsVisible ? "Hide" : "More"}</button>
+          <span class="dashboard-panel-grip" draggable="true" aria-hidden="true" title="Drag card"></span>
         </header>
         <div class="panel-body dashboard-event-body">
-        ${events.map((event) => `<div class="event-row"><span><i class="event-clock" aria-hidden="true"></i>${escapeHtml(event.date || "-")}</span><strong>${escapeHtml(event.content || "-")}</strong></div>`).join("")}
-        <a>${copy.detail} ›</a>
+          ${eventRows}
+          <a>${copy.detail} ›</a>
         </div>
+        <span class="dashboard-panel-resize-handle" aria-hidden="true" title="Resize card"></span>
       </section>
 
-      <section class="security-panel alert-panel ${dashboardAlertsVisible ? "alert-panel-visible" : "alert-panel-hidden"}">
+      <section class="security-panel alert-panel ${dashboardAlertsVisible ? "alert-panel-visible" : "alert-panel-hidden"}" data-dashboard-panel="alerts" data-panel-resizable="true" data-cols="4" data-rows="${dashboardAlertsVisible ? "3" : "1"}">
         <header class="alert-panel-header">
           <h2><i class="panel-title-icon alert-title-icon" aria-hidden="true"></i>${copy.alert}</h2>
           <button type="button" class="dashboard-reveal-button" id="dashboardAlertsToggle">${dashboardAlertsVisible ? "Hide" : "More"}</button>
+          <span class="dashboard-panel-grip" draggable="true" aria-hidden="true" title="Drag card"></span>
         </header>
         <div class="panel-body dashboard-alert-body">
           <div class="alert-ok"><span>${alerts.some((item) => String(item.value || "").match(/Failed|Detected|Error/i)) ? "확인 필요" : copy.noCritical}</span></div>
-          ${alerts.map((item) => `<div class="health-row"><span>${escapeHtml(item.label || "-")}</span><b>${escapeHtml(item.value || "-")}</b></div>`).join("")}
+          ${alertRows}
           <a>${copy.detail} ›</a>
         </div>
+        <span class="dashboard-panel-resize-handle" aria-hidden="true" title="Resize card"></span>
       </section>
 
-      <section class="security-panel audit-summary-panel">
-        <header><h2><i class="panel-title-icon audit-title-icon" aria-hidden="true"></i>${copy.audit}</h2></header>
+      <section class="security-panel audit-summary-panel" data-dashboard-panel="audit" data-panel-resizable="true" data-cols="4" data-rows="3">
+        <header><h2><i class="panel-title-icon audit-title-icon" aria-hidden="true"></i>${copy.audit}</h2><span class="dashboard-panel-grip" draggable="true" aria-hidden="true" title="Drag card"></span></header>
         <div class="panel-body">
           <div class="audit-count-grid">
-            <div><span>관리자 수동 조작</span><strong>1건</strong></div>
-            <div><span>정책 변경</span><strong>0건</strong></div>
-            <div><span>승인 요청</span><strong>2건</strong></div>
-            <div><span>로그인 실패</span><strong>0건</strong></div>
+            ${auditCounts.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}건</strong></div>`).join("")}
           </div>
+          <span class="audit-link-state">감사 로그 연동 ${auditSummary.linked ? "정상" : "확인 필요"} · 총 ${escapeHtml(String(auditSummary.total_records ?? 0))}건 · 최신 ${escapeHtml(auditSummary.latest_at || "-")}</span>
           <span class="export-label">로그 내보내기</span>
           <div class="export-buttons">
             <button><i class="file-icon file-csv" aria-hidden="true"></i>${copy.csv}</button>
@@ -2454,24 +2605,13 @@ function renderDashboard(data) {
             <button><i class="file-icon file-word" aria-hidden="true"></i>${copy.word}</button>
           </div>
         </div>
+        <span class="dashboard-panel-resize-handle" aria-hidden="true" title="Resize card"></span>
       </section>
 
   </div>
   `;
-  const dashboardEditToggle = document.querySelector("#dashboardEditToggle");
-  dashboardEditToggle?.addEventListener("click", () => {
-    const enabled = !document.querySelector("#dashboardKpiBoard")?.classList.contains("dashboard-kpi-edit-mode");
-    const board = document.querySelector("#dashboardKpiBoard");
-    if (!board) return;
-    board.classList.toggle("dashboard-kpi-edit-mode", enabled);
-    board.querySelectorAll("[data-dashboard-kpi]").forEach((card) => {
-      card.setAttribute("draggable", enabled ? "true" : "false");
-      card.querySelector(".dashboard-kpi-grip")?.setAttribute("draggable", enabled ? "true" : "false");
-    });
-    dashboardEditToggle.textContent = enabled ? "편집 잠금" : "편집 열기";
-    saveDashboardEditMode(enabled);
-  });
   enableDashboardKpiDrag(document.querySelector("#dashboardKpiBoard"));
+  enableDashboardPanelDrag(document.querySelector("#dashboardContentBoard"));
 }
 
 function renderReport(data) {

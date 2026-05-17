@@ -5221,7 +5221,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         airgap_state = str((state or {}).get(slot_id) or "UNKNOWN") if isinstance(state, dict) else "UNKNOWN"
         veeam_state = str(auto_isolate.get("state") or "UNKNOWN") if isinstance(auto_isolate, dict) else "UNKNOWN"
         backup_status = str(latest_session.get("status") or "Unknown")
-        backup_job = str(latest_session.get("name") or self.context.config.app_config.veeam.job_name or "-")
+        veeam_settings = get_veeam_config(self.context.app_config) or {}
+        backup_job = str(latest_session.get("name") or veeam_settings.get("job_name") or "-")
         backup_started = str(latest_session.get("started_at") or "-")
         backup_ended = str(latest_session.get("ended_at") or "-")
         backup_duration = str(latest_session.get("duration") or "-")
@@ -5248,12 +5249,18 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         volume_visible = bool(volume_probe)
 
         offline_failed = False
-        recent_events: list[dict] = []
-        for line in LockFixWebHandler.audit_log_lines(self)[-300:]:
+        audit_lines = LockFixWebHandler.audit_log_lines(self)
+        audit_records: list[dict] = []
+        for line in audit_lines:
             try:
                 record = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if isinstance(record, dict):
+                audit_records.append(record)
+
+        recent_events: list[dict] = []
+        for record in audit_records[-300:]:
             event = str(record.get("event") or "")
             if record.get("slot_id") and str(record.get("slot_id")) != slot_id:
                 continue
@@ -5264,6 +5271,17 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 message = record.get("error") or record.get("message") or record.get("output") or event
                 recent_events.append({"type": "EVENT", "date": ts, "content": LockFixWebHandler.compact_log_value(self, message)})
         recent_events = recent_events[-5:]
+        audit_recent = audit_records[-500:]
+        audit_latest = audit_records[-1] if audit_records else {}
+        audit_summary = {
+            "linked": self.context.config.audit_log_path.exists(),
+            "total_records": len(audit_records),
+            "manual_operations": sum(1 for item in audit_recent if str(item.get("event") or item.get("action") or "").startswith(("admin.", "manual.", "poc.admin"))),
+            "policy_changes": sum(1 for item in audit_recent if "policy" in str(item.get("event") or item.get("action") or "").lower()),
+            "approval_requests": sum(1 for item in audit_recent if str(item.get("event") or item.get("action") or "").startswith("approval.")),
+            "login_failures": sum(1 for item in audit_recent if "login" in str(item.get("event") or item.get("action") or "").lower() and "fail" in json.dumps(item, ensure_ascii=False).lower()),
+            "latest_at": LockFixWebHandler.format_audit_timestamp(self, audit_latest.get("ts") or audit_latest.get("createdAt") or audit_latest.get("time")) if audit_latest else "-",
+        }
 
         airgap_ok = airgap_state == "ISOLATED" and disk_is_offline
         warning_count = sum([
@@ -5313,6 +5331,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             ],
             "notifications": self.notification_items(),
             "logs": logs,
+            "audit_summary": audit_summary,
             "threat_detection": self.threat_detection_summary()["summary"],
             "total_logs": len(logs),
         }
