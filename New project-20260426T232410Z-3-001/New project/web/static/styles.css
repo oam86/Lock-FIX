@@ -9837,6 +9837,56 @@ td {
   gap: 12px;
 }
 
+.dashboard-status-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 12px;
+}
+
+.dashboard-status-strip article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  border: 1px solid #dfe6ee;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px 12px;
+  box-shadow: 0 4px 12px rgba(15, 31, 53, 0.05);
+}
+
+.dashboard-status-strip span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.dashboard-status-strip strong {
+  min-width: 0;
+  color: #162235;
+  font-size: 13px;
+  font-weight: 950;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1120px) {
+  .dashboard-status-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .dashboard-status-strip {
+    grid-template-columns: 1fr;
+  }
+}
+
 .security-flow-panel {
   grid-column: span 8;
 }
@@ -10469,14 +10519,25 @@ td {
   min-height: 230px;
 }
 
-.event-panel-hidden .dashboard-event-body {
-  filter: blur(5px);
-  opacity: 0.16;
+.event-panel-hidden,
+.alert-panel-hidden {
+  min-height: 66px;
+}
+
+.event-panel-hidden .dashboard-event-body,
+.alert-panel-hidden .dashboard-alert-body {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+  opacity: 0;
   pointer-events: none;
   user-select: none;
 }
 
-.event-panel-visible .dashboard-event-body {
+.event-panel-visible .dashboard-event-body,
+.alert-panel-visible .dashboard-alert-body {
+  max-height: none;
   filter: none;
   opacity: 1;
   pointer-events: auto;
@@ -10496,13 +10557,15 @@ td {
   box-shadow: 0 4px 12px rgba(31, 77, 216, 0.08);
 }
 
-.event-panel-header {
+.event-panel-header,
+.alert-panel-header {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.event-panel-header h2 {
+.event-panel-header h2,
+.alert-panel-header h2 {
   min-width: 0;
 }
 
@@ -10527,6 +10590,9 @@ td {
 
 .event-row strong {
   font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .event-clock {

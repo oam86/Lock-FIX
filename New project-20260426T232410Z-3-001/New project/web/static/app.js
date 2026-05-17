@@ -65,6 +65,7 @@ const dashboardKpiOrderKey = "lockfix.dashboard.kpiOrder.v1";
 const dashboardKpiSizeKey = "lockfix.dashboard.kpiSize.v1";
 const dashboardEditModeKey = "lockfix.dashboard.editMode.v1";
 const dashboardEventsKey = "lockfix.dashboard.eventsVisible.v1";
+const dashboardAlertsKey = "lockfix.dashboard.alertsVisible.v1";
 let dashboardKpiInteractionBound = false;
 const reportOverallStatus = document.querySelector("#reportOverallStatus");
 const reportAnalysis = document.querySelector("#reportAnalysis");
@@ -1990,6 +1991,22 @@ function saveDashboardEventsVisible(visible) {
   }
 }
 
+function loadDashboardAlertsVisible() {
+  try {
+    return localStorage.getItem(dashboardAlertsKey) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveDashboardAlertsVisible(visible) {
+  try {
+    localStorage.setItem(dashboardAlertsKey, visible ? "1" : "0");
+  } catch {
+    // Ignore storage failures in locked-down browser contexts.
+  }
+}
+
 function reorderDashboardKpis(cards) {
   const order = loadDashboardKpiOrder();
   if (!order.length) return cards;
@@ -2295,6 +2312,7 @@ function renderDashboard(data) {
   const threatStatus = String(threat.status || "정상");
   const threatDanger = threatTone(threatStatus) === "danger";
   const dashboardEventsVisible = loadDashboardEventsVisible();
+  const dashboardAlertsVisible = loadDashboardAlertsVisible();
   const dashboardEditMode = loadDashboardEditMode();
   dashboardView.innerHTML = `
     ${threatDanger ? `
@@ -2318,6 +2336,25 @@ function renderDashboard(data) {
         </article>
       `).join("")}
     </div>
+
+    <section class="dashboard-status-strip" aria-label="Dashboard status summary">
+      <article>
+        <span>위협 탐지</span>
+        <strong class="threat-${threatTone(threatStatus)}">${escapeHtml(threatStatus)}</strong>
+      </article>
+      <article>
+        <span>위험 점수</span>
+        <strong>${escapeHtml(String(threat.score ?? "-"))}</strong>
+      </article>
+      <article>
+        <span>마지막 검사</span>
+        <strong>${escapeHtml(threat.last_scan_at || "-")}</strong>
+      </article>
+      <article>
+        <span>의심 항목</span>
+        <strong>${escapeHtml(String(threat.suspicious_count ?? 0))}건</strong>
+      </article>
+    </section>
 
     <div class="security-dashboard-grid dashboard-content-grid">
       <section class="security-panel security-flow-panel">
@@ -2349,16 +2386,6 @@ function renderDashboard(data) {
         </div>
       </section>
 
-      <section class="security-panel dashboard-threat-panel">
-        <header><h2>위협 탐지 요약</h2><button type="button" class="threat-detail-button" onclick="window.location.hash='#threat'">보기</button></header>
-        <div class="panel-body dashboard-threat-summary">
-          <div><span>최근 상태</span><strong class="threat-${threatTone(threatStatus)}">${escapeHtml(threatStatus)}</strong></div>
-          <div><span>위험 점수</span><strong>${escapeHtml(String(threat.score ?? "-"))}</strong></div>
-          <div><span>마지막 검사</span><strong>${escapeHtml(threat.last_scan_at || "-")}</strong></div>
-          <div><span>의심 항목</span><strong>${escapeHtml(String(threat.suspicious_count ?? 0))}건</strong></div>
-        </div>
-      </section>
-
       <section class="security-panel event-panel ${dashboardEventsVisible ? "event-panel-visible" : "event-panel-hidden"}">
         <header class="event-panel-header">
           <h2><i class="panel-title-icon event-title-icon" aria-hidden="true"></i>${copy.event}</h2>
@@ -2370,9 +2397,12 @@ function renderDashboard(data) {
         </div>
       </section>
 
-      <section class="security-panel alert-panel">
-        <header><h2><i class="panel-title-icon alert-title-icon" aria-hidden="true"></i>${copy.alert}</h2></header>
-        <div class="panel-body">
+      <section class="security-panel alert-panel ${dashboardAlertsVisible ? "alert-panel-visible" : "alert-panel-hidden"}">
+        <header class="alert-panel-header">
+          <h2><i class="panel-title-icon alert-title-icon" aria-hidden="true"></i>${copy.alert}</h2>
+          <button type="button" class="dashboard-reveal-button" id="dashboardAlertsToggle">${dashboardAlertsVisible ? "Hide" : "More"}</button>
+        </header>
+        <div class="panel-body dashboard-alert-body">
           <div class="alert-ok"><span>${alerts.some((item) => String(item.value || "").match(/Failed|Detected|Error/i)) ? "확인 필요" : copy.noCritical}</span></div>
           ${alerts.map((item) => `<div class="health-row"><span>${escapeHtml(item.label || "-")}</span><b>${escapeHtml(item.value || "-")}</b></div>`).join("")}
           <a>${copy.detail} ›</a>
@@ -2646,6 +2676,15 @@ function renderDetectFallback(message = "탐지 내역을 불러오는 중입니
     eventPanel?.classList.toggle("event-panel-hidden", !visible);
     dashboardEventsToggle.textContent = visible ? "Hide" : "More";
     saveDashboardEventsVisible(visible);
+  });
+  const dashboardAlertsToggle = document.querySelector("#dashboardAlertsToggle");
+  const alertPanel = document.querySelector(".alert-panel");
+  dashboardAlertsToggle?.addEventListener("click", () => {
+    const visible = !alertPanel?.classList.contains("alert-panel-visible");
+    alertPanel?.classList.toggle("alert-panel-visible", visible);
+    alertPanel?.classList.toggle("alert-panel-hidden", !visible);
+    dashboardAlertsToggle.textContent = visible ? "Hide" : "More";
+    saveDashboardAlertsVisible(visible);
   });
 }
 
