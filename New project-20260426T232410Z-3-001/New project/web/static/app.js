@@ -22,6 +22,16 @@ const sidebarToggle = document.querySelector("#sidebarToggle");
 const contentArea = document.querySelector(".content-area");
 const logoutButton = document.querySelector("#logoutButton");
 const logoutSideButton = document.querySelector("#logoutSideButton");
+const sidebarUserMenu = document.querySelector("#sidebarUserMenu");
+const sidebarUserToggle = document.querySelector("#sidebarUserToggle");
+const sidebarUserPanel = document.querySelector("#sidebarUserPanel");
+const sidebarUserAvatar = document.querySelector("#sidebarUserAvatar");
+const sidebarUserName = document.querySelector("#sidebarUserName");
+const sidebarUserRole = document.querySelector("#sidebarUserRole");
+const sidebarUserStatus = document.querySelector("#sidebarUserStatus");
+const sidebarUserId = document.querySelector("#sidebarUserId");
+const sidebarUserRoleDetail = document.querySelector("#sidebarUserRoleDetail");
+const sidebarUserDepartment = document.querySelector("#sidebarUserDepartment");
 const sideItems = document.querySelectorAll(".side-item[data-view]");
 const views = document.querySelectorAll(".view");
 const monitoringChart = document.querySelector("#monitoringChart");
@@ -423,6 +433,12 @@ const translations = {
     "nav.veeam": "Veeam Backup",
     "nav.settings": "Settings",
     "nav.logout": "Logout",
+    "userMenu.title": "Login user",
+    "userMenu.userId": "User ID",
+    "userMenu.role": "Role",
+    "userMenu.department": "Department",
+    "userMenu.loggedIn": "Logged in",
+    "userMenu.loggedOut": "Logged out",
     "nav.customerWorkspace": "",
     "nav.operatorWorkspace": "Operation",
     "nav.adminWorkspace": "Admin / Developer",
@@ -647,6 +663,12 @@ const translations = {
     "nav.veeam": "Veeam 백업",
     "nav.settings": "설정",
     "nav.logout": "로그아웃",
+    "userMenu.title": "로그인 사용자",
+    "userMenu.userId": "사용자 ID",
+    "userMenu.role": "역할",
+    "userMenu.department": "부서",
+    "userMenu.loggedIn": "로그인됨",
+    "userMenu.loggedOut": "로그아웃",
     "nav.customerWorkspace": "",
     "nav.operatorWorkspace": "운영 작업",
     "nav.adminWorkspace": "관리 / 개발",
@@ -1360,6 +1382,7 @@ function applyUiSettings() {
     node.textContent = t(key);
   });
   applySidebarTooltips();
+  renderSidebarUserMenu();
 }
 
 function renderNotificationSettings(settings = {}) {
@@ -1522,10 +1545,55 @@ function applySidebarState() {
   sidebarToggle?.setAttribute("title", sidebarCollapsed ? "사이드바 열기" : "사이드바 닫기");
 }
 
+function departmentDisplayName(departmentId) {
+  const id = String(departmentId || "").trim();
+  if (!id) return "-";
+  return USER_MANAGEMENT_DEFAULT_DEPARTMENTS.find((department) => department.id === id)?.name || id;
+}
+
+function sidebarUserInitials(userText) {
+  const clean = String(userText || "").trim();
+  if (!clean) return "ID";
+  const localPart = clean.includes("@") ? clean.split("@")[0] : clean;
+  const parts = localPart.split(/[._\-\s]+/).filter(Boolean);
+  const initials = (parts.length > 1 ? parts[0][0] + parts[1][0] : localPart.slice(0, 2)).toUpperCase();
+  return initials || "ID";
+}
+
+function setSidebarUserPanel(open) {
+  const expanded = Boolean(open);
+  if (!sidebarUserToggle || !sidebarUserPanel) return;
+  sidebarUserToggle.setAttribute("aria-expanded", String(expanded));
+  sidebarUserPanel.hidden = !expanded;
+  sidebarUserMenu?.classList.toggle("sidebar-user-open", expanded);
+}
+
+function renderSidebarUserMenu() {
+  const loggedIn = Boolean(currentSession.authenticated);
+  const userText = currentSession.userId || currentSession.user || "-";
+  const roleText = currentSession.role || "-";
+  const departmentText = departmentDisplayName(currentSession.departmentId);
+  const statusText = loggedIn ? t("userMenu.loggedIn") : t("userMenu.loggedOut");
+  if (sidebarUserAvatar) sidebarUserAvatar.textContent = sidebarUserInitials(userText);
+  if (sidebarUserName) sidebarUserName.textContent = userText;
+  if (sidebarUserRole) sidebarUserRole.textContent = roleText;
+  if (sidebarUserStatus) sidebarUserStatus.textContent = statusText;
+  if (sidebarUserId) sidebarUserId.textContent = userText;
+  if (sidebarUserRoleDetail) sidebarUserRoleDetail.textContent = roleText;
+  if (sidebarUserDepartment) sidebarUserDepartment.textContent = departmentText;
+  if (sidebarUserToggle) {
+    sidebarUserToggle.disabled = !loggedIn;
+    sidebarUserToggle.setAttribute("aria-label", `${t("userMenu.title")}: ${userText}`);
+    sidebarUserToggle.setAttribute("title", `${t("userMenu.title")}: ${userText}`);
+  }
+  if (!loggedIn) setSidebarUserPanel(false);
+}
+
 function toggleSidebar() {
   sidebarCollapsed = !sidebarCollapsed;
   localStorage.setItem("lockfix.sidebarCollapsed", String(sidebarCollapsed));
   applySidebarState();
+  setSidebarUserPanel(false);
 }
 
 function getNetworkCardOrder() {
@@ -1707,6 +1775,7 @@ async function checkSession() {
     permissions: Array.isArray(session.permissions) ? session.permissions : [],
   };
   applyMenuVisibility();
+  renderSidebarUserMenu();
   setAuthenticated(session.authenticated);
   if (session.authenticated) {
     renderLicenseStatus(session.license);
@@ -1728,6 +1797,7 @@ function setAuthenticated(authenticated) {
     licenseModal.classList.add("hidden");
     currentSession = { authenticated: false, user: "", role: "", userId: "", departmentId: "", passwordChangeRequired: false, permissions: [] };
     applyMenuVisibility();
+    renderSidebarUserMenu();
   }
   if (authenticated) {
     stopQrTimers();
@@ -1753,6 +1823,7 @@ async function showLoginSplashThenEnter() {
     permissions: Array.isArray(session.permissions) ? session.permissions : [],
   };
   applyMenuVisibility();
+  renderSidebarUserMenu();
   await Promise.all([
     loadAll(),
     new Promise((resolve) => setTimeout(resolve, LOGIN_SPLASH_DURATION_MS)),
@@ -1813,6 +1884,7 @@ async function promptForRequiredPasswordChange() {
     passwordChangeRequired: Boolean(session.passwordChangeRequired),
     permissions: Array.isArray(session.permissions) ? session.permissions : [],
   };
+  renderSidebarUserMenu();
 }
 
 async function logout() {
@@ -7326,6 +7398,20 @@ logoutSideButton.addEventListener("click", (event) => {
 });
 licenseForm.addEventListener("submit", registerLicense);
 sidebarToggle?.addEventListener("click", toggleSidebar);
+sidebarUserToggle?.addEventListener("click", (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  if (!currentSession.authenticated) return;
+  const expanded = sidebarUserToggle.getAttribute("aria-expanded") === "true";
+  setSidebarUserPanel(!expanded);
+});
+document.addEventListener("click", (event) => {
+  if (!sidebarUserMenu || sidebarUserPanel?.hidden) return;
+  if (!sidebarUserMenu.contains(event.target)) setSidebarUserPanel(false);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !sidebarUserPanel?.hidden) setSidebarUserPanel(false);
+});
 sideItems.forEach((item) => item.addEventListener("click", () => {
   if (item.classList.contains("logout-side")) return;
   showView(item.dataset.view);

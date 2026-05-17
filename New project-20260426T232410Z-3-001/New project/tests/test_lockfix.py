@@ -678,7 +678,7 @@ class LockFixTests(unittest.TestCase):
             'id="userManagementForm"',
             'id="userManagementBackButton"',
             'data-i18n="userManagement.actions"',
-            'v=20260517-user-select-options',
+            'v=20260517-sidebar-user-menu',
             '<option value="backup-operation">Backup Operation</option>',
             '<option value="SECURITY_ADMIN">SECURITY_ADMIN</option>',
             '<span>Hardware Control</span>',
@@ -1525,6 +1525,25 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("pointer-events: auto;", css_source)
         self.assertIn("box-shadow: none;", css_source)
 
+    def test_sidebar_user_menu_shows_current_session_without_navigation(self) -> None:
+        root = Path.cwd()
+        index_source = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        app_source = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
+        css_source = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="sidebarUserToggle"', index_source)
+        self.assertIn('id="sidebarUserPanel"', index_source)
+        self.assertIn('class="sidebar-user-chevron"', index_source)
+        self.assertNotIn('id="sidebarUserToggle" data-view=', index_source)
+        self.assertIn('"userMenu.title": "로그인 사용자"', app_source)
+        self.assertIn("function renderSidebarUserMenu", app_source)
+        self.assertIn("function setSidebarUserPanel", app_source)
+        self.assertIn("currentSession.userId || currentSession.user", app_source)
+        self.assertIn(".sidebar-user-menu", css_source)
+        self.assertIn(".sidebar-user-chevron::before", css_source)
+        self.assertIn(".sidebar-user-panel[hidden]", css_source)
+        self.assertIn("20260517-sidebar-user-menu", index_source)
+
     def test_isolate_reaches_isolated(self) -> None:
         tmp_path = self.make_workspace()
         controller = LockFixController(load_config(write_config(tmp_path)))
@@ -2246,7 +2265,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("content: none !important;", css_source)
         self.assertIn("font-weight: 400 !important;", css_source)
         self.assertIn("opacity: 0.6 !important;", css_source)
-        self.assertIn("20260517-user-select-options", html_source)
+        self.assertIn("20260517-sidebar-user-menu", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -2265,7 +2284,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260517-user-select-options", html_source)
+        self.assertIn("20260517-sidebar-user-menu", html_source)
 
     def test_monitoring_header_copy_is_hidden_while_polling_remains(self) -> None:
         root = Path.cwd()
@@ -2365,7 +2384,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".dashboard-panel-resize-handle", css_source)
         self.assertIn(".dashboard-panel-drop-target", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260517-user-select-options", html_source)
+        self.assertIn("20260517-sidebar-user-menu", html_source)
 
     def test_dashboard_route_does_not_show_legacy_notification_markup(self) -> None:
         root = Path.cwd()
@@ -2383,7 +2402,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260517-user-select-options", html_source)
+        self.assertIn("20260517-sidebar-user-menu", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()

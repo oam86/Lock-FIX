@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LOCK-FIX PoC</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260517-user-select-options" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260517-sidebar-user-menu" />
   </head>
   <body>
     <section class="login-screen" id="loginScreen">
@@ -74,6 +74,36 @@
           <button class="side-item rbac-menu" data-menu-section="admin" data-view="settings" data-permission="SYSTEM_SETTING_MANAGE"><span class="nav-icon settings-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"></circle><path d="M12 3.8v2.4"></path><path d="M12 17.8v2.4"></path><path d="m5 7 2 1.2"></path><path d="m17 15.8 2 1.2"></path><path d="m19 7-2 1.2"></path><path d="m7 15.8-2 1.2"></path></svg></span><span data-i18n="nav.settings">System Settings</span></button>
           <button class="side-item logout-side" id="logoutSideButton" data-view="logout"><span class="nav-icon logout-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6H6v12h4"></path><path d="M13 8l4 4-4 4"></path><path d="M17 12H9"></path></svg></span><span data-i18n="nav.logout">Logout</span></button>
         </nav>
+        <div class="sidebar-user-menu" id="sidebarUserMenu">
+          <button class="sidebar-user-toggle" id="sidebarUserToggle" type="button" aria-expanded="false" aria-controls="sidebarUserPanel">
+            <span class="sidebar-user-avatar" id="sidebarUserAvatar">ID</span>
+            <span class="sidebar-user-summary">
+              <strong id="sidebarUserName">-</strong>
+              <span id="sidebarUserRole">-</span>
+            </span>
+            <span class="sidebar-user-chevron" aria-hidden="true"></span>
+          </button>
+          <div class="sidebar-user-panel" id="sidebarUserPanel" hidden>
+            <div class="sidebar-user-panel-head">
+              <span data-i18n="userMenu.title">Login user</span>
+              <strong id="sidebarUserStatus">-</strong>
+            </div>
+            <dl>
+              <div>
+                <dt data-i18n="userMenu.userId">User ID</dt>
+                <dd id="sidebarUserId">-</dd>
+              </div>
+              <div>
+                <dt data-i18n="userMenu.role">Role</dt>
+                <dd id="sidebarUserRoleDetail">-</dd>
+              </div>
+              <div>
+                <dt data-i18n="userMenu.department">Department</dt>
+                <dd id="sidebarUserDepartment">-</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
       </aside>
 
       <div class="content-area">
@@ -1225,7 +1255,7 @@
       </div>
     </template>
 
-    <script src="/static/app.js?v=20260517-user-select-options"></script>
+    <script src="/static/app.js?v=20260517-sidebar-user-menu"></script>
   </body>
 </html>
 
