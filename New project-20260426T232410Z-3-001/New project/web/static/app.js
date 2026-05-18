@@ -1206,7 +1206,7 @@ function friendlyEmergencyError(error) {
     return "해당 파일시스템은 Repair-Volume 검사를 지원하지 않아 검사를 건너뛰고 재연결 상태를 다시 확인합니다.";
   }
   if (/401|unauthorized|인증|auth/i.test(text)) {
-    return "긴급 접속 상태 확인 인증이 만료되었습니다. 현재 화면에서 다시 로그인한 뒤 실시간 작업 로그를 확인하세요.";
+    return "긴급 접속 상태 확인 인증이 만료되었습니다. 현재 화면에서 다시 로그인한 뒤 로그를 확인하세요.";
   }
   if (text) return text;
   return "긴급 접속 상태 확인 응답을 받지 못했습니다. WebUI 서비스와 LOCK-FIX Agent/Service 상태를 확인하세요.";
@@ -5928,7 +5928,6 @@ function finalizeEmergencyReconnectFromSources(sources) {
 
 function setEmergencyReconnectDetailLogging(enabled) {
   if (enabled && !emergencyReconnectDetailTimer) {
-    appendEmergencyReconnectDetail("request accepted; live detail logging started");
     emergencyReconnectDetailTimer = setInterval(() => {
       renderSources(latestSourcesData || { air_gap: fallbackAirGapSummary(true) });
     }, 1000);
@@ -6602,13 +6601,9 @@ function renderSources(data) {
     : emergencyEligible
       ? "READY"
       : "WAITING";
-  const emergencyLogMessage = sanitizeEmergencyReconnectMessage(emergencyActionStatus)
-    || sanitizeEmergencyReconnectMessage(emergencySlot.blocked_reason)
-    || sanitizeEmergencyReconnectMessage(emergencyAccess.secondary)
-    || "-";
-  const emergencyLiveLogMarkup = reconnectLiveLogLines.length
-    ? reconnectLiveLogLines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")
-    : `<li>${escapeHtml(emergencyLogMessage)}</li>`;
+  const emergencyLiveLogMarkup = reconnectLiveLogLines
+    .map((line) => `<li>${escapeHtml(line)}</li>`)
+    .join("");
   emergencyPanel.innerHTML = `
     <div class="emergency-access-card-head">
       <div class="emergency-access-copy">
@@ -6629,8 +6624,6 @@ function renderSources(data) {
       </div>
     </div>
     <div class="emergency-live-log-card">
-      <span>실시간 작업 로그</span>
-      <strong>${escapeHtml(emergencyLogMessage)}</strong>
       <ul class="emergency-live-log-list" data-emergency-live-log>
         ${emergencyLiveLogMarkup}
       </ul>
@@ -7391,7 +7384,7 @@ async function runEmergencyReconnect(slotId, volumePath = "") {
   emergencyReconnectDetailSlot = slotId || "-";
   emergencyReconnectDetailLogs = [];
   emergencyReconnectJobId = "";
-  emergencyActionStatus = "긴급 접속 작업이 백그라운드에서 시작되었습니다.";
+  emergencyActionStatus = "";
   renderSources(latestSourcesData || { air_gap: fallbackAirGapSummary(true) });
   setEmergencyReconnectLivePolling(true);
   setEmergencyReconnectDetailLogging(true);
