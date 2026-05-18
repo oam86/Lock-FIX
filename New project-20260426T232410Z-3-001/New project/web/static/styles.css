@@ -10901,13 +10901,13 @@ td {
 }
 
 .flow-step .security-icon-backup-complete::before {
-  left: 22px;
+  left: 20px;
   top: 26px;
-  width: 27px;
-  height: 15px;
-  border-left: 5px solid currentColor;
-  border-bottom: 5px solid currentColor;
-  border-radius: 0 0 0 4px;
+  width: 32px;
+  height: 16px;
+  border-left: 8px solid #ffffff;
+  border-bottom: 8px solid #ffffff;
+  border-radius: 0 0 0 5px;
   transform: rotate(-45deg);
 }
 
@@ -10916,13 +10916,11 @@ td {
 }
 
 .flow-step .security-icon-backup-complete {
-  border: 3px solid rgba(0, 188, 93, 0.84);
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 50%, rgba(0, 188, 93, 0.08), rgba(0, 188, 93, 0) 62%),
-    #ffffff;
-  color: #08b957;
-  box-shadow: 0 14px 26px rgba(8, 185, 87, 0.14);
+  border: 0;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #13b6d4 0%, #20df79 100%);
+  color: #ffffff;
+  box-shadow: 0 16px 28px rgba(5, 181, 120, 0.2);
 }
 
 .flow-step .security-icon-flush-run::before {
