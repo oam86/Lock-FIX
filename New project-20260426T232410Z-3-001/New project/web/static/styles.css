@@ -5565,6 +5565,8 @@ button {
 }
 
 .detect-fingerprint-root {
+  width: 100%;
+  box-sizing: border-box;
   min-height: calc(100vh - 120px);
   margin: -24px;
   padding: 28px 28px 42px;
@@ -5573,7 +5575,9 @@ button {
 }
 
 .detect-judgement-page {
-  max-width: 1320px;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
   min-height: calc(100vh - 156px);
 }
 
@@ -5609,6 +5613,8 @@ button {
 }
 
 .detect-judgement-panel {
+  width: 100%;
+  box-sizing: border-box;
   border: 1px solid #10b981;
   border-radius: 16px;
   padding: 28px 30px 30px;
