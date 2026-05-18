@@ -763,7 +763,7 @@ class LockFixTests(unittest.TestCase):
             'id="userManagementForm"',
             'id="userManagementBackButton"',
             'data-i18n="userManagement.actions"',
-            'v=20260518-detect-width-fill',
+            'v=20260518-dashboard-card-details',
             'class="rbac-chip-list user-management-department-list"',
             'data-i18n="department.backupOperation"',
             '<option value="SECURITY_ADMIN">SECURITY_ADMIN</option>',
@@ -1975,7 +1975,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("border: 0;", css_source)
         self.assertNotIn("border: 1px solid rgba(196, 211, 225, 0.72);", css_source)
         self.assertNotIn("border: 1px solid rgba(121, 158, 206, 0.48);", css_source)
-        self.assertIn("20260518-detect-width-fill", index_source)
+        self.assertIn("20260518-dashboard-card-details", index_source)
 
     def test_isolate_reaches_isolated(self) -> None:
         tmp_path = self.make_workspace()
@@ -2710,7 +2710,7 @@ class LockFixTests(unittest.TestCase):
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
         webui_source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")
 
-        self.assertIn("20260518-detect-width-fill", html_source)
+        self.assertIn("20260518-dashboard-card-details", html_source)
         self.assertIn("emergency.reconnect.background.timeout", webui_source)
         self.assertIn("EMERGENCY_RECONNECT_AGENT_START_TIMEOUT_SECONDS", webui_source)
         self.assertIn("emergency_reconnect_agent_started", webui_source)
@@ -2786,7 +2786,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("height: 68px !important;", css_source)
         self.assertIn("min-height: 36px !important;", css_source)
         self.assertIn("border-bottom: 0 !important;", css_source)
-        self.assertIn("20260518-detect-width-fill", html_source)
+        self.assertIn("20260518-dashboard-card-details", html_source)
 
     def test_logs_summary_cards_render_above_filter_bar(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -2794,7 +2794,7 @@ class LockFixTests(unittest.TestCase):
 
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('class="logs-range"'))
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('id="logsStart"'))
-        self.assertIn("20260518-detect-width-fill", html_source)
+        self.assertIn("20260518-dashboard-card-details", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -2813,7 +2813,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260518-detect-width-fill", html_source)
+        self.assertIn("20260518-dashboard-card-details", html_source)
 
     def test_settings_service_policy_card_is_not_rendered(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -2873,7 +2873,7 @@ class LockFixTests(unittest.TestCase):
             "departmentDisplayName(department.id)",
         ]:
             self.assertIn(token, app_source)
-        self.assertIn("20260518-detect-width-fill", html_source)
+        self.assertIn("20260518-dashboard-card-details", html_source)
 
     def test_monitoring_header_copy_is_hidden_while_polling_remains(self) -> None:
         root = Path.cwd()
@@ -2993,10 +2993,20 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".security-panel[data-dashboard-panel]:hover .dashboard-panel-resize-line", css_source)
         self.assertIn("border-right: 2px solid rgba(55, 102, 201", css_source)
         self.assertIn("event-panel-hidden", css_source)
-        self.assertIn("min-height: 46px;", css_source)
+        self.assertIn("min-height: 46px !important;", css_source)
+        self.assertIn('data-dashboard-reveal="events"', app_source)
+        self.assertIn('data-dashboard-reveal="alerts"', app_source)
+        self.assertIn("bindDashboardRevealToggles();", app_source)
+        self.assertIn("setDashboardRevealPanel(eventPanel, eventsToggle", app_source)
+        self.assertIn('const isEventPanel = panel.classList.contains("event-panel");', app_source)
+        self.assertIn('const isAlertPanel = panel.classList.contains("alert-panel");', app_source)
+        self.assertIn("button.setAttribute(\"aria-expanded\", String(visible));", app_source)
+        self.assertIn("box-shadow: 0 5px 0 #52606d, 0 10px 0 #52606d;", css_source)
+        self.assertIn("clip-path: polygon(50% 0, 100% 100%, 0 100%);", css_source)
+        self.assertIn("background: #ffffff;", css_source)
         self.assertIn("opacity: 0.66;", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260518-detect-width-fill", html_source)
+        self.assertIn("20260518-dashboard-card-details", html_source)
 
     def test_dashboard_route_does_not_show_legacy_notification_markup(self) -> None:
         root = Path.cwd()
@@ -3014,7 +3024,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260518-detect-width-fill", html_source)
+        self.assertIn("20260518-dashboard-card-details", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()

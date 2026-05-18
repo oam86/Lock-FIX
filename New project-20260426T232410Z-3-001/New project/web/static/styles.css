@@ -10672,39 +10672,39 @@ td {
 
 .event-title-icon::before {
   left: 3px;
-  top: 6px;
+  top: 3px;
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  box-shadow: 5px -4px 0 #52606d, 9px 3px 0 #52606d, 2px 8px 0 #52606d, 11px 10px 0 #52606d;
+  box-shadow: 0 5px 0 #52606d, 0 10px 0 #52606d;
 }
 
 .event-title-icon::after {
-  left: 6px;
-  top: 6px;
-  width: 9px;
-  height: 9px;
-  clip-path: polygon(0 42%, 38% 0, 100% 36%, 88% 50%, 40% 24%, 12% 54%);
+  left: 9px;
+  top: 4px;
+  width: 7px;
+  height: 1.7px;
+  border-radius: 99px;
+  box-shadow: 0 5px 0 #52606d, 0 10px 0 #52606d;
 }
 
 .alert-title-icon::before {
-  left: 4px;
-  top: 3px;
-  width: 9px;
-  height: 12px;
-  border: 1.8px solid #52606d;
-  border-bottom: 0;
-  border-radius: 9px 9px 3px 3px;
-  background: transparent;
+  left: 2px;
+  top: 1px;
+  width: 15px;
+  height: 15px;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  background: #52606d;
 }
 
 .alert-title-icon::after {
-  left: 2px;
-  top: 13px;
-  width: 13px;
-  height: 1.8px;
-  background: #52606d;
-  box-shadow: 5px 3px 0 -1px #52606d;
+  left: 8.5px;
+  top: 5px;
+  width: 2px;
+  height: 5px;
+  border-radius: 99px;
+  background: #ffffff;
+  box-shadow: 0 7px 0 -0.3px #ffffff;
 }
 
 .security-flow-panel {
@@ -11146,7 +11146,7 @@ td {
 
 .event-panel-hidden,
 .alert-panel-hidden {
-  min-height: 46px;
+  min-height: 46px !important;
 }
 
 .event-panel-hidden .dashboard-event-body,
@@ -11162,10 +11162,14 @@ td {
 
 .event-panel-visible .dashboard-event-body,
 .alert-panel-visible .dashboard-alert-body {
+  display: grid;
+  gap: 8px;
   max-height: none;
   filter: none;
   opacity: 1;
   pointer-events: auto;
+  padding-top: 14px;
+  padding-bottom: 16px;
 }
 
 .dashboard-reveal-button {

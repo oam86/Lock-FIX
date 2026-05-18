@@ -2720,6 +2720,42 @@ function saveDashboardAlertsVisible(visible) {
   }
 }
 
+function setDashboardRevealPanel(panel, button, visible, saveVisible) {
+  if (!panel || !button) return;
+  if (!visible) {
+    panel.dataset.expandedRows = String(Math.max(3, Number(panel.dataset.rows || 3)));
+  }
+  const expandedRows = Math.max(3, Number(panel.dataset.expandedRows || panel.dataset.rows || 3));
+  const isEventPanel = panel.classList.contains("event-panel");
+  const isAlertPanel = panel.classList.contains("alert-panel");
+  panel.classList.toggle("event-panel-visible", isEventPanel && visible);
+  panel.classList.toggle("event-panel-hidden", isEventPanel && !visible);
+  panel.classList.toggle("alert-panel-visible", isAlertPanel && visible);
+  panel.classList.toggle("alert-panel-hidden", isAlertPanel && !visible);
+  panel.dataset.rows = visible ? String(expandedRows) : "1";
+  panel.style.minHeight = visible ? `${Math.max(234, expandedRows * 78)}px` : "46px";
+  button.textContent = visible ? "Hide" : "More";
+  button.setAttribute("aria-expanded", String(visible));
+  saveVisible?.(visible);
+}
+
+function bindDashboardRevealToggles() {
+  const eventsToggle = document.querySelector("#dashboardEventsToggle");
+  const eventPanel = document.querySelector(".event-panel");
+  const alertsToggle = document.querySelector("#dashboardAlertsToggle");
+  const alertPanel = document.querySelector(".alert-panel");
+  setDashboardRevealPanel(eventPanel, eventsToggle, Boolean(eventPanel?.classList.contains("event-panel-visible")));
+  setDashboardRevealPanel(alertPanel, alertsToggle, Boolean(alertPanel?.classList.contains("alert-panel-visible")));
+  eventsToggle?.addEventListener("click", () => {
+    const visible = !eventPanel?.classList.contains("event-panel-visible");
+    setDashboardRevealPanel(eventPanel, eventsToggle, visible, saveDashboardEventsVisible);
+  });
+  alertsToggle?.addEventListener("click", () => {
+    const visible = !alertPanel?.classList.contains("alert-panel-visible");
+    setDashboardRevealPanel(alertPanel, alertsToggle, visible, saveDashboardAlertsVisible);
+  });
+}
+
 function loadOpsEventsVisible() {
   try {
     return localStorage.getItem(opsEventsVisibleKey) === "1";
@@ -3314,7 +3350,7 @@ function renderDashboard(data) {
       <section class="security-panel event-panel ${dashboardEventsVisible ? "event-panel-visible" : "event-panel-hidden"}" data-dashboard-panel="events" data-panel-resizable="true" data-cols="4" data-rows="${dashboardEventsVisible ? "3" : "1"}">
         <header class="event-panel-header">
           <h2><i class="panel-title-icon event-title-icon" aria-hidden="true"></i>${copy.event}</h2>
-          <button type="button" class="dashboard-reveal-button" id="dashboardEventsToggle">${dashboardEventsVisible ? "Hide" : "More"}</button>
+          <button type="button" class="dashboard-reveal-button" id="dashboardEventsToggle" data-dashboard-reveal="events" aria-expanded="${dashboardEventsVisible ? "true" : "false"}">${dashboardEventsVisible ? "Hide" : "More"}</button>
           <span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span>
         </header>
         <div class="panel-body dashboard-event-body">
@@ -3329,7 +3365,7 @@ function renderDashboard(data) {
       <section class="security-panel alert-panel ${dashboardAlertsVisible ? "alert-panel-visible" : "alert-panel-hidden"}" data-dashboard-panel="alerts" data-panel-resizable="true" data-cols="4" data-rows="${dashboardAlertsVisible ? "3" : "1"}">
         <header class="alert-panel-header">
           <h2><i class="panel-title-icon alert-title-icon" aria-hidden="true"></i>${copy.alert}</h2>
-          <button type="button" class="dashboard-reveal-button" id="dashboardAlertsToggle">${dashboardAlertsVisible ? "Hide" : "More"}</button>
+          <button type="button" class="dashboard-reveal-button" id="dashboardAlertsToggle" data-dashboard-reveal="alerts" aria-expanded="${dashboardAlertsVisible ? "true" : "false"}">${dashboardAlertsVisible ? "Hide" : "More"}</button>
           <span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span>
         </header>
         <div class="panel-body dashboard-alert-body">
@@ -3365,6 +3401,7 @@ function renderDashboard(data) {
   `;
   enableDashboardKpiDrag(document.querySelector("#dashboardKpiBoard"));
   enableDashboardPanelDrag(document.querySelector("#dashboardContentBoard"));
+  bindDashboardRevealToggles();
 }
 
 function renderDashboardFallback(message = "") {
@@ -3604,24 +3641,6 @@ function renderDetectFallback(message = "탐지 내역을 불러오는 중입니
       </section>
     </div>
   `;
-  const dashboardEventsToggle = document.querySelector("#dashboardEventsToggle");
-  const eventPanel = document.querySelector(".event-panel");
-  dashboardEventsToggle?.addEventListener("click", () => {
-    const visible = !eventPanel?.classList.contains("event-panel-visible");
-    eventPanel?.classList.toggle("event-panel-visible", visible);
-    eventPanel?.classList.toggle("event-panel-hidden", !visible);
-    dashboardEventsToggle.textContent = visible ? "Hide" : "More";
-    saveDashboardEventsVisible(visible);
-  });
-  const dashboardAlertsToggle = document.querySelector("#dashboardAlertsToggle");
-  const alertPanel = document.querySelector(".alert-panel");
-  dashboardAlertsToggle?.addEventListener("click", () => {
-    const visible = !alertPanel?.classList.contains("alert-panel-visible");
-    alertPanel?.classList.toggle("alert-panel-visible", visible);
-    alertPanel?.classList.toggle("alert-panel-hidden", !visible);
-    dashboardAlertsToggle.textContent = visible ? "Hide" : "More";
-    saveDashboardAlertsVisible(visible);
-  });
 }
 
 function renderDetect(data) {
