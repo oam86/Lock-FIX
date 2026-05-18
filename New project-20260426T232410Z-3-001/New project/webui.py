@@ -62,7 +62,7 @@ NETWORK_HISTORY_LOCK = threading.Lock()
 NETWORK_INTERFACE_HISTORY: dict[str, dict[str, list[float]]] = {}
 AIRGAP_AUTO_ISOLATE_LOCK = threading.Lock()
 AIRGAP_AUTO_ISOLATE_STALE_SECONDS = 120
-DASHBOARD_CACHE_TTL_SECONDS = 2.0
+DASHBOARD_CACHE_TTL_SECONDS = 0.8
 DASHBOARD_PROBE_TIMEOUT_SECONDS = 1.2
 EMERGENCY_RECONNECT_AGENT_START_TIMEOUT_SECONDS = 12
 
@@ -5831,6 +5831,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         result_label = "Offline Complete" if airgap_ok else ("Offline Failed" if offline_failed else airgap_state)
 
         payload = {
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "cards": [
                 {"id": "detect", "label": "Detect", "description": f"Disk {disk_number or '-'} {disk_name}", "value": 0 if disk_probe else 1},
                 {"id": "warning", "label": "Warning", "description": "Live operation issues", "value": warning_count},

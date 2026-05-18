@@ -1482,6 +1482,8 @@ function dashboardCopy() {
       alert: "Warnings / Alerts",
       audit: "Audit Log Summary",
       policy: "Policy Summary",
+      livePolling: "LIVE 1s",
+      liveUpdated: "Updated",
       protectedMessage: "Current backup storage is offline and external access is unavailable.",
       backupStart: "Backup completed detected",
       powerOn: "Storage online approved",
@@ -1521,6 +1523,8 @@ function dashboardCopy() {
     alert: "경고 / 알림",
     audit: "감사 로그 요약",
     policy: "정책 설정 요약",
+    livePolling: "LIVE 1초",
+    liveUpdated: "갱신",
     protectedMessage: "현재 백업 저장소는 Offline 상태로 외부 접근이 불가능합니다.",
     backupStart: "백업 완료 감지",
     powerOn: "승인 기반 온라인",
@@ -3357,6 +3361,15 @@ function renderDashboard(data) {
   const events = Array.isArray(data.logs) ? data.logs.slice(0, 5) : [];
   const alerts = Array.isArray(data.alerts) ? data.alerts : [];
   const auditSummary = data.audit_summary || {};
+  const threat = data.threat_detection || {};
+  const liveUpdatedAt = data.generated_at || data.checked_at || threat.last_scan_at || backup.ended_at || auditSummary.latest_at || "-";
+  const liveBadge = `
+    <span class="dashboard-live-badge" title="${escapeHtml(`${copy.liveUpdated}: ${liveUpdatedAt}`)}">
+      <i aria-hidden="true"></i>
+      <b>${escapeHtml(copy.livePolling)}</b>
+      <em>${escapeHtml(liveUpdatedAt)}</em>
+    </span>
+  `;
   const eventRows = events.length
     ? events.map((event) => `<div class="event-row"><span><i class="event-clock" aria-hidden="true"></i>${escapeHtml(event.date || "-")}</span><strong>${escapeHtml(event.content || "-")}</strong></div>`).join("")
     : `<div class="dashboard-empty-row">최근 이벤트가 없습니다. Veeam, Air-Gap, 감사 로그가 수집되면 표시됩니다.</div>`;
@@ -3369,7 +3382,6 @@ function renderDashboard(data) {
     ["승인 요청", auditSummary.approval_requests ?? 0],
     ["로그인 실패", auditSummary.login_failures ?? 0],
   ];
-  const threat = data.threat_detection || {};
   const threatStatus = String(threat.status || "정상");
   const threatDanger = threatTone(threatStatus) === "danger";
   const dashboardEventsVisible = loadDashboardEventsVisible();
@@ -3420,8 +3432,8 @@ function renderDashboard(data) {
     </section>
 
     <div class="security-dashboard-grid dashboard-content-grid" id="dashboardContentBoard">
-      <section class="security-panel security-flow-panel" data-dashboard-panel="protection" data-panel-resizable="true" data-cols="8" data-rows="3">
-        <header><h2>${copy.liveProtection}</h2><span class="dashboard-panel-info">ⓘ</span><span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span></header>
+      <section class="security-panel security-flow-panel" data-dashboard-panel="protection" data-panel-resizable="true" data-cols="8" data-rows="3" aria-live="polite">
+        <header class="security-flow-header"><h2>${copy.liveProtection}</h2>${liveBadge}<span class="dashboard-panel-info">ⓘ</span><span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span></header>
         <div class="panel-body">
           <p>${copy.protectedMessage.replace("Offline", "<b>Offline</b>").replace("offline", "<b>offline</b>")}</p>
           <div class="security-flow">
