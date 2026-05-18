@@ -3486,6 +3486,23 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         last_checked = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now))
         job = str(payload.get("job") or "LOCK-FIX-AIRGAP-BACKUP")
         state_source = payload.get("state_source") or ("veeam_rest_api" if payload.get("api_synced") else "runtime/veeam_interlock_state.json" if payload else "waiting_for_veeam_api")
+        raw_session_logs_for_completion = payload.get("session_logs") if isinstance(payload.get("session_logs"), list) else []
+        backup_copy_completed = LockFixWebHandler.veeam_backup_copy_completed(
+            self,
+            payload,
+            raw_session_logs_for_completion,
+            last_checked,
+        )
+        if connected and not backup_copy_completed:
+            current_step = 1
+            if progress >= 100:
+                progress = 99
+            payload["current_step"] = 1
+            payload["progress_percent"] = progress
+            if raw_result in {"SUCCESS", "SUCCEEDED", "COMPLETED"}:
+                payload["status"] = "Running"
+                payload["result"] = "RUNNING"
+                raw_result = "RUNNING"
         labels = ["백업 완료", "Flush 실행", "I/O 종료 확인", "Unmount", "오프라인"]
         codes = ["BACKUP_COMPLETED", "FLUSHING", "IO_CHECKING", "UNMOUNTING", "DISK_OFFLINING"]
         step_logs = []
@@ -3562,7 +3579,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "message": "Waiting for successful Veeam session.",
             }
         payload["auto_isolate"] = auto_isolate
-        session_completed = raw_result in {"SUCCESS", "SUCCEEDED", "COMPLETED"} or progress >= 100
+        session_completed = backup_copy_completed
         pre_checks = payload.get("checks") if isinstance(payload.get("checks"), dict) else {}
         pre_session_check = pre_checks.get("sessions") if isinstance(pre_checks.get("sessions"), dict) else {}
         backup_restore_point_evidence = bool(
@@ -3623,7 +3640,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     item["transition_allowed"] = False
                     item["progress_percent"] = ""
                     item["detail"] = "과거 처리 완료된 백업 정보입니다. 새 백업 완료 접수 전까지 이 단계로 전환하지 않습니다."
-        elif connected and session_completed and not force_waiting_for_new_backup and auto_isolate.get("triggered") is not True and auto_isolate.get("state") != "ISOLATED":
+        elif connected and session_completed and current_step <= 1 and not force_waiting_for_new_backup and auto_isolate.get("triggered") is not True and auto_isolate.get("state") != "ISOLATED":
             auto_isolate_error = str(auto_isolate.get("error") or auto_isolate.get("message") or "").lower()
             offline_approval_blocked = "disk_offline" in auto_isolate_error and "approval" in auto_isolate_error
             current_step = 3 if offline_approval_blocked else 1
@@ -3868,7 +3885,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                         "speed": payload.get("speed") or "-",
                     }
                 )
-        if connected and LockFixWebHandler.veeam_completion_detected(self, payload, session_logs, progress):
+        if connected and LockFixWebHandler.veeam_completion_detected(self, payload, session_logs, progress, last_checked):
             progress = 100
             status = "Success"
             payload["progress_percent"] = 100
@@ -3907,6 +3924,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             and progress >= 100
             and str(status or "").upper() in {"SUCCESS", "SUCCEEDED", "COMPLETED"}
             and not session_match_missing
+            and LockFixWebHandler.veeam_backup_copy_completed(self, payload, session_logs, last_checked)
         )
         if current_step <= 1 and not real_backup_complete:
             current_step = 1
@@ -3958,34 +3976,86 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             ),
         }
 
-    def veeam_completion_detected(self, payload: dict, session_logs: list[dict], progress: int = 0) -> bool:
+    def parse_veeam_completion_time(self, value: object) -> datetime | None:
+        text = str(value or "").strip()
+        if not text or text == "-":
+            return None
+        candidates = [text]
+        if text.endswith("Z"):
+            candidates.append(text[:-1] + "+00:00")
+        for candidate in candidates:
+            try:
+                parsed = datetime.fromisoformat(candidate)
+                if parsed.tzinfo:
+                    parsed = parsed.astimezone().replace(tzinfo=None)
+                return parsed
+            except ValueError:
+                continue
+        for pattern in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+            try:
+                return datetime.strptime(text, pattern)
+            except ValueError:
+                continue
+        return None
+
+    def veeam_backup_copy_completed(self, payload: dict, session_logs: list[dict] | None = None, checked_at: str = "") -> bool:
+        logs = session_logs if isinstance(session_logs, list) else []
         status_text = " ".join(
             str(payload.get(key) or "")
             for key in ("result", "status", "session_state", "state")
         ).upper()
-        if any(token in status_text for token in ("SUCCESS", "SUCCEEDED", "COMPLETED")):
-            return True
-        if progress >= 100:
-            return True
-        for entry in session_logs:
+        progress = int(payload.get("progress_percent") or payload.get("progress") or 0)
+        ended_text = str(payload.get("ended_at") or payload.get("end_time") or payload.get("endTime") or payload.get("stopTime") or "").strip()
+        if ended_text == "-":
+            ended_text = ""
+        action_lines: list[str] = []
+        for entry in logs:
             if not isinstance(entry, dict):
                 continue
-            entry_status = str(entry.get("status") or "").upper()
-            if any(token in entry_status for token in ("SUCCESS", "SUCCEEDED", "COMPLETED")):
-                return True
+            status_text = " ".join([status_text, str(entry.get("status") or ""), str(entry.get("result") or "")]).upper()
+            if not ended_text:
+                ended_text = str(entry.get("ended_at") or entry.get("end_time") or entry.get("endTime") or entry.get("stopTime") or "").strip()
+                if ended_text == "-":
+                    ended_text = ""
             actions = entry.get("actions") if isinstance(entry.get("actions"), list) else []
-            action_text = "\n".join(str(item or "") for item in actions).upper()
-            if any(
-                token in action_text
-                for token in (
-                    "PROCESSING FINISHED",
-                    "JOB FINISHED",
-                    "HAS BEEN COMPLETED, STATUS: 'SUCCESS'",
-                    "STATUS: 'SUCCESS'",
+            action_lines.extend(str(item or "") for item in actions)
+        if not ended_text:
+            for line in action_lines:
+                match = re.search(
+                    r"(?:processing finished|job finished)\s+at\s+([0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}(?::[0-9]{2})?)",
+                    str(line),
+                    re.IGNORECASE,
                 )
-            ):
-                return True
-        return False
+                if match:
+                    ended_text = match.group(1).replace("T", " ")
+                    break
+        action_text = "\n".join(action_lines).upper()
+        completed_by_status = any(token in status_text for token in ("SUCCESS", "SUCCEEDED", "COMPLETED"))
+        completed_by_action = any(
+            token in action_text
+            for token in (
+                "PROCESSING FINISHED",
+                "JOB FINISHED",
+                "HAS BEEN COMPLETED, STATUS: 'SUCCESS'",
+                "STATUS: 'SUCCESS'",
+            )
+        )
+        if not (completed_by_status or completed_by_action):
+            return False
+        if progress < 100 and not completed_by_action:
+            return False
+        ended_at = LockFixWebHandler.parse_veeam_completion_time(self, ended_text)
+        if not ended_at:
+            return False
+        checked_at_dt = LockFixWebHandler.parse_veeam_completion_time(self, checked_at)
+        if checked_at_dt and checked_at_dt.year >= 2000 and ended_at > checked_at_dt:
+            return False
+        return True
+
+    def veeam_completion_detected(self, payload: dict, session_logs: list[dict], progress: int = 0, checked_at: str = "") -> bool:
+        payload = dict(payload)
+        payload.setdefault("progress_percent", progress)
+        return LockFixWebHandler.veeam_backup_copy_completed(self, payload, session_logs, checked_at)
 
     def veeam_flush_operation_actions(self, slot_id: str, current_step: int, limit: int = 12) -> list[str]:
         if current_step < 2:
@@ -5021,6 +5091,13 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         return (now - started_at).total_seconds() > AIRGAP_AUTO_ISOLATE_STALE_SECONDS
 
     def auto_isolate_after_veeam_success(self, payload: dict, status: str, checked_at: str) -> dict:
+        session_logs = payload.get("session_logs") if isinstance(payload.get("session_logs"), list) else []
+        if not LockFixWebHandler.veeam_backup_copy_completed(self, payload, session_logs, checked_at):
+            return {
+                "enabled": True,
+                "triggered": False,
+                "message": "Veeam Backup Copy completion is not confirmed yet. Waiting for the final processing finished/end time before Step 2 Flush.",
+            }
         result = str(payload.get("result") or status or "").upper()
         progress = int(payload.get("progress_percent") or payload.get("progress") or 0)
         if result not in {"SUCCESS", "SUCCEEDED", "COMPLETED"} and progress < 100:

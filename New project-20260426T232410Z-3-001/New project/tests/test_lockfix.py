@@ -3860,11 +3860,21 @@ class LockFixTests(unittest.TestCase):
         old_value = marker_path.read_text(encoding="utf-8") if marker_path.exists() else None
         payload = {
             "slot_id": "BAY-01",
+            "session_id": uuid.uuid4().hex,
             "job": "Agent_backup",
             "result": "Success",
             "progress_percent": 100,
-            "started_at": f"test-{uuid.uuid4().hex}",
-            "ended_at": f"test-{uuid.uuid4().hex}",
+            "started_at": "2026-05-01 09:59:50",
+            "ended_at": "2026-05-01 10:00:00",
+            "session_logs": [
+                {
+                    "name": "Agent_backup",
+                    "status": "Success",
+                    "ended_at": "2026-05-01 10:00:00",
+                    "progress_percent": 100,
+                    "actions": ["Agent_backup processing finished at 2026-05-01 10:00:00"],
+                }
+            ],
         }
         try:
             result = webui.LockFixWebHandler.auto_isolate_after_veeam_success(Probe(), payload, "Success", "2026-05-01 10:00:00")
@@ -3896,11 +3906,21 @@ class LockFixTests(unittest.TestCase):
         old_value = marker_path.read_text(encoding="utf-8") if marker_path.exists() else None
         payload = {
             "slot_id": "BAY-01",
+            "session_id": uuid.uuid4().hex,
             "job": "Agent_backup",
             "result": "Success",
             "progress_percent": 100,
-            "started_at": f"stale-{uuid.uuid4().hex}",
-            "ended_at": f"stale-{uuid.uuid4().hex}",
+            "started_at": "2026-05-01 09:59:50",
+            "ended_at": "2026-05-01 10:00:00",
+            "session_logs": [
+                {
+                    "name": "Agent_backup",
+                    "status": "Success",
+                    "ended_at": "2026-05-01 10:00:00",
+                    "progress_percent": 100,
+                    "actions": ["Agent_backup processing finished at 2026-05-01 10:00:00"],
+                }
+            ],
         }
         session_key, _ = webui.LockFixWebHandler.veeam_auto_isolate_identity(Probe(), payload)
         stale_started_at = (datetime.now() - timedelta(seconds=webui.AIRGAP_AUTO_ISOLATE_STALE_SECONDS + 30)).isoformat(timespec="seconds")
@@ -3937,6 +3957,62 @@ class LockFixTests(unittest.TestCase):
         self.assertEqual(result["state"], "IN_PROGRESS")
         self.assertEqual(final_marker.get("state"), "ISOLATED")
         self.assertIn('"event": "veeam.auto_isolate.in_progress.recovered"', audit_text)
+
+    def test_webui_airgap_holds_flush_until_veeam_end_time_is_reached(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+
+        class Probe:
+            context = webui.WebContext(config_path)
+
+            def veeam_install_properties(self):
+                return {}
+
+            def tcp_port_open(self, host, port, timeout=0.25):
+                return True
+
+            def save_veeam_last_logs(self, session_logs, checked_at):
+                return None
+
+            def poll_veeam_api(self, server, port, local_payload):
+                return {
+                    "api_synced": True,
+                    "server": "192.168.219.230",
+                    "port": 9419,
+                    "job": "Agent_backup",
+                    "status": "Success",
+                    "result": "Success",
+                    "progress_percent": 100,
+                    "current_step": 2,
+                    "slot_id": "BAY-01",
+                    "started_at": "2026-05-19 00:44:32",
+                    "ended_at": "2026-05-19 00:44:42",
+                    "session_logs": [
+                        {
+                            "name": "Agent_backup",
+                            "status": "Success",
+                            "ended_at": "2026-05-19 00:44:42",
+                            "progress_percent": 100,
+                            "actions": [
+                                "Backup copy for Agent_backup - 192.168.219.102 started at 2026-05-19 00:44:32",
+                                "Agent_backup - 192.168.219.102 (Incremental) (479 GB) is running: 0 B transferred at -, progress 0%",
+                            ],
+                            "duration": "00:10",
+                        }
+                    ],
+                }
+
+        checked_before_veeam_end = datetime(2026, 5, 19, 0, 44, 40).timestamp()
+        result = webui.LockFixWebHandler.veeam_interlock_runtime(Probe(), checked_before_veeam_end)
+        actions = "\n".join(result["session_logs"][0]["actions"])
+
+        self.assertEqual(result["current_step"], 1)
+        self.assertEqual(result["progress_percent"], 0)
+        self.assertEqual(result["step_logs"][1]["state"], "PENDING")
+        self.assertFalse(result["step_logs"][1]["transition_allowed"])
+        self.assertFalse(result["auto_isolate"]["triggered"])
+        self.assertIn("completion is not confirmed", result["auto_isolate"]["message"])
+        self.assertNotIn("LOCK-FIX STEP 2 DETAIL", actions)
 
     def test_webui_airgap_step2_appends_flush_audit_logs_after_veeam_logs(self) -> None:
         tmp_path = self.make_workspace()
@@ -3987,12 +4063,16 @@ class LockFixTests(unittest.TestCase):
                     "current_step": 2,
                     "slot_id": "BAY-01",
                     "started_at": "2026-05-04 21:10:37",
-                    "ended_at": "-",
+                    "ended_at": "2026-05-04 21:10:48",
                     "session_logs": [
                         {
                             "name": "Agent_backup",
                             "status": "Running",
-                            "actions": ["Backup copy for Agent_backup - 192.168.219.102 started at 2026-05-04 21:10:37"],
+                            "ended_at": "2026-05-04 21:10:48",
+                            "actions": [
+                                "Backup copy for Agent_backup - 192.168.219.102 started at 2026-05-04 21:10:37",
+                                "Agent_backup - 192.168.219.102 (0 B) processing finished at 2026-05-04 21:10:48",
+                            ],
                             "duration": "-",
                         }
                     ],
@@ -4048,12 +4128,16 @@ class LockFixTests(unittest.TestCase):
                     "current_step": 3,
                     "slot_id": "BAY-01",
                     "started_at": "2026-05-04 21:10:37",
-                    "ended_at": "-",
+                    "ended_at": "2026-05-04 21:10:48",
                     "session_logs": [
                         {
                             "name": "Agent_backup",
                             "status": "Running",
-                            "actions": ["Backup copy for Agent_backup - 192.168.219.102 started at 2026-05-04 21:10:37"],
+                            "ended_at": "2026-05-04 21:10:48",
+                            "actions": [
+                                "Backup copy for Agent_backup - 192.168.219.102 started at 2026-05-04 21:10:37",
+                                "Agent_backup - 192.168.219.102 (0 B) processing finished at 2026-05-04 21:10:48",
+                            ],
                             "duration": "-",
                         }
                     ],
@@ -4142,12 +4226,16 @@ class LockFixTests(unittest.TestCase):
                     "current_step": 5,
                     "slot_id": "BAY-01",
                     "started_at": "2026-05-04 21:10:37",
-                    "ended_at": "-",
+                    "ended_at": "2026-05-04 21:10:48",
                     "session_logs": [
                         {
                             "name": "Agent_backup",
                             "status": "Running",
-                            "actions": ["Backup copy for Agent_backup - 192.168.219.102 started at 2026-05-04 21:10:37"],
+                            "ended_at": "2026-05-04 21:10:48",
+                            "actions": [
+                                "Backup copy for Agent_backup - 192.168.219.102 started at 2026-05-04 21:10:37",
+                                "Agent_backup - 192.168.219.102 (0 B) processing finished at 2026-05-04 21:10:48",
+                            ],
                             "duration": "-",
                         }
                     ],
