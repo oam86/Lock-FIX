@@ -10725,9 +10725,9 @@ td {
 
 .security-flow {
   display: grid;
-  grid-template-columns: repeat(5, 78px);
+  grid-template-columns: repeat(5, 92px);
   justify-content: center;
-  gap: 26px;
+  gap: 30px;
   align-items: start;
   margin: 0 auto;
 }
@@ -10747,9 +10747,9 @@ td {
 .flow-step:not(:last-child)::after {
   content: "";
   position: absolute;
-  right: -24px;
-  top: 27px;
-  width: 23px;
+  right: -28px;
+  top: 35px;
+  width: 27px;
   height: 1.5px;
   background: linear-gradient(90deg, #aebdca, #7f93a8);
   box-shadow: none;
@@ -10758,8 +10758,8 @@ td {
 .flow-step:not(:last-child)::before {
   content: "";
   position: absolute;
-  right: -25px;
-  top: 23.5px;
+  right: -29px;
+  top: 31.5px;
   width: 7px;
   height: 7px;
   border-top: 1.6px solid #7f93a8;
@@ -10769,9 +10769,9 @@ td {
 }
 
 .flow-step .security-icon {
-  width: 58px;
-  height: 58px;
-  flex-basis: 58px;
+  width: 72px;
+  height: 72px;
+  flex-basis: 72px;
   border: 2px solid #dbeaf5;
   border-radius: 50%;
   background:
@@ -10881,7 +10881,14 @@ td {
 }
 
 .flow-step .security-icon-backup-complete::before {
-  display: none;
+  left: 22px;
+  top: 26px;
+  width: 27px;
+  height: 15px;
+  border-left: 5px solid currentColor;
+  border-bottom: 5px solid currentColor;
+  border-radius: 0 0 0 4px;
+  transform: rotate(-45deg);
 }
 
 .flow-step .security-icon-backup-complete::after {
@@ -10889,55 +10896,103 @@ td {
 }
 
 .flow-step .security-icon-backup-complete {
-  border: 0;
+  border: 3px solid rgba(0, 188, 93, 0.84);
   border-radius: 50%;
-  background: url("flow-backup-complete.png") center / contain no-repeat;
-  box-shadow: 0 12px 22px rgba(8, 54, 92, 0.08);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(0, 188, 93, 0.08), rgba(0, 188, 93, 0) 62%),
+    #ffffff;
+  color: #08b957;
+  box-shadow: 0 14px 26px rgba(8, 185, 87, 0.14);
 }
 
 .flow-step .security-icon-flush-run::before {
-  display: none;
+  left: 19px;
+  top: 18px;
+  width: 31px;
+  height: 31px;
+  border: 4px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  transform: rotate(-22deg);
 }
 
 .flow-step .security-icon-flush-run::after {
-  display: none;
+  right: 19px;
+  top: 18px;
+  width: 10px;
+  height: 10px;
+  border-top: 4px solid currentColor;
+  border-right: 4px solid currentColor;
+  transform: rotate(28deg);
 }
 
 .flow-step .security-icon-flush-run {
-  border: 0;
+  border: 3px solid rgba(38, 134, 255, 0.86);
   border-radius: 50%;
-  background: url("flow-flush-run.png") center / contain no-repeat;
-  box-shadow: 0 12px 22px rgba(8, 54, 92, 0.08);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(38, 134, 255, 0.08), rgba(38, 134, 255, 0) 62%),
+    #ffffff;
+  color: #2686ff;
+  box-shadow: 0 14px 26px rgba(38, 134, 255, 0.14);
 }
 
 .flow-step .security-icon-io-check::before {
-  left: 20px;
-  top: 20px;
-  width: 20px;
-  height: 20px;
-  border-radius: 2px;
+  left: 24px;
+  top: 22px;
+  width: 25px;
+  height: 25px;
+  border-radius: 4px;
   background: currentColor;
   transform: rotate(-34deg);
   transform-origin: center;
 }
 
 .flow-step .security-icon-io-check::after {
-  display: none;
+  left: 32px;
+  top: 25px;
+  width: 12px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  transform: rotate(-34deg);
+}
+
+.flow-step .security-icon-io-check {
+  border: 3px solid rgba(203, 225, 243, 0.96);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(82, 96, 109, 0.08), rgba(82, 96, 109, 0) 62%),
+    #ffffff;
+  color: #52606d;
+  box-shadow: 0 14px 26px rgba(82, 96, 109, 0.12);
 }
 
 .flow-step .security-icon-power-off::before {
-  display: none;
+  left: 22px;
+  top: 23px;
+  width: 27px;
+  height: 27px;
+  border: 4px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
 }
 
 .flow-step .security-icon-power-off::after {
-  display: none;
+  left: 34px;
+  top: 14px;
+  width: 5px;
+  height: 24px;
+  border-radius: 999px;
+  background: currentColor;
 }
 
 .flow-step .security-icon-power-off {
-  border: 0;
+  border: 3px solid rgba(239, 35, 53, 0.74);
   border-radius: 50%;
-  background: url("flow-power-off.png") center / contain no-repeat;
-  box-shadow: 0 12px 22px rgba(8, 54, 92, 0.08);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(239, 35, 53, 0.08), rgba(239, 35, 53, 0) 62%),
+    #ffffff;
+  color: #ef2335;
+  box-shadow: 0 14px 26px rgba(239, 35, 53, 0.12);
 }
 
 .flow-step .security-icon-plug::before {
