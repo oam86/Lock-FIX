@@ -1567,6 +1567,19 @@ function dashboardKpiLabel(icon, label, copy) {
   })[label] || label || "-";
 }
 
+function dashboardKpiTone(normalized, value) {
+  const display = String(value || "").trim().toUpperCase();
+  if (normalized === "OFFLINE" || display === "오프라인" || display === "OFFLINE") return "red";
+  if (normalized === "ISOLATED" || display === "격리됨" || display === "ISOLATED") return "orange";
+  if (
+    ["SUCCESS", "NORMAL", "OK", "OFFLINE_COMPLETE"].includes(normalized)
+    || ["정상", "성공", "격리 완료", "NORMAL", "SUCCESS", "OFFLINE COMPLETE"].includes(display)
+  ) {
+    return "green";
+  }
+  return "dark";
+}
+
 function dashboardKpiStatus(item, copy) {
   const rawValue = String(item.value ?? "").trim();
   const normalized = rawValue.toUpperCase().replace(/[\s-]+/g, "_");
@@ -1622,15 +1635,10 @@ function dashboardKpiStatus(item, copy) {
   if (icon === "veeam-backup-completed" && normalized === "SUCCESS") {
     value = isKo ? "성공" : "Success";
   }
-  if (icon === "storage-power" && normalized === "UNKNOWN") {
-    tone = "dark";
-  }
   if (icon === "integrity-logo" && normalized === "ONLINE_VERIFIED_RW") {
     detail = "RW";
   }
-  if (["UNKNOWN", "CHECKING", "WAITING"].includes(normalized) || normalized.startsWith("WAITING_")) {
-    tone = "dark";
-  }
+  tone = dashboardKpiTone(normalized, value);
   return { value, tone, detail, rawValue };
 }
 
