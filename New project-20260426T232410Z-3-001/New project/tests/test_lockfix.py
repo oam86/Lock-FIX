@@ -722,7 +722,7 @@ class LockFixTests(unittest.TestCase):
             'id="userManagementForm"',
             'id="userManagementBackButton"',
             'data-i18n="userManagement.actions"',
-            'v=20260518-hide-auto-approval',
+            'v=20260518-hide-approval-workflow',
             'class="rbac-chip-list user-management-department-list"',
             '<option value="backup-operation">Backup Operation</option>',
             '<option value="SECURITY_ADMIN">SECURITY_ADMIN</option>',
@@ -1632,7 +1632,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("border: 0;", css_source)
         self.assertNotIn("border: 1px solid rgba(196, 211, 225, 0.72);", css_source)
         self.assertNotIn("border: 1px solid rgba(121, 158, 206, 0.48);", css_source)
-        self.assertIn("20260518-hide-auto-approval", index_source)
+        self.assertIn("20260518-hide-approval-workflow", index_source)
 
     def test_isolate_reaches_isolated(self) -> None:
         tmp_path = self.make_workspace()
@@ -2375,7 +2375,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("height: 68px !important;", css_source)
         self.assertIn("min-height: 36px !important;", css_source)
         self.assertIn("border-bottom: 0 !important;", css_source)
-        self.assertIn("20260518-hide-auto-approval", html_source)
+        self.assertIn("20260518-hide-approval-workflow", html_source)
 
     def test_logs_summary_cards_render_above_filter_bar(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -2383,7 +2383,7 @@ class LockFixTests(unittest.TestCase):
 
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('class="logs-range"'))
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('id="logsStart"'))
-        self.assertIn("20260518-hide-auto-approval", html_source)
+        self.assertIn("20260518-hide-approval-workflow", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -2402,7 +2402,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260518-hide-auto-approval", html_source)
+        self.assertIn("20260518-hide-approval-workflow", html_source)
 
     def test_monitoring_header_copy_is_hidden_while_polling_remains(self) -> None:
         root = Path.cwd()
@@ -2525,7 +2525,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("min-height: 46px;", css_source)
         self.assertIn("opacity: 0.66;", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260518-hide-auto-approval", html_source)
+        self.assertIn("20260518-hide-approval-workflow", html_source)
 
     def test_dashboard_route_does_not_show_legacy_notification_markup(self) -> None:
         root = Path.cwd()
@@ -2543,7 +2543,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260518-hide-auto-approval", html_source)
+        self.assertIn("20260518-hide-approval-workflow", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()
@@ -2635,9 +2635,13 @@ class LockFixTests(unittest.TestCase):
         app = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
         css = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
 
-        for tab in ["작업 요청", "부서 검토", "승인", "실행", "감사 기록"]:
-            self.assertIn(tab, html)
-
+        self.assertNotIn('id="approvalsView"', html)
+        self.assertNotIn("협업/승인 워크플로우", html)
+        self.assertNotIn('data-settings-view="approvals"', html)
+        self.assertNotIn('view: "approvals"', app)
+        self.assertNotIn('showView("approvals")', app)
+        self.assertNotIn('settingsApprovalStatus', app)
+        self.assertNotIn('update(requestJson("/api/approvals")', app)
         self.assertIn("approvalDecisionSummary", app)
         self.assertIn("repositoryOnlineWorkflowSummary", app)
         self.assertIn("departmentReviewsFor", app)
@@ -2660,12 +2664,6 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("data-department-review-id", app)
         self.assertIn("data-review-action", app)
         self.assertIn("/api/approval-requests/", app)
-        self.assertIn("최종 승인 가능 여부", html + app)
-        self.assertIn("작업 요청에서 부서 검토, 승인, 실행, 감사 기록까지", html)
-        self.assertIn("approvalWorkflowPipeline", html + app)
-        self.assertIn("부서 검토", html)
-        self.assertIn("실행", html)
-        self.assertIn("감사 기록", html)
         self.assertIn("approval-review-state", css)
         self.assertIn("repository-online-request-card", css)
         self.assertIn("final-approval-wait-card", css)

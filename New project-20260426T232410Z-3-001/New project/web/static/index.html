@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LOCK-FIX PoC</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260518-hide-auto-approval" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260518-hide-approval-workflow" />
   </head>
   <body>
     <section class="login-screen" id="loginScreen">
@@ -750,96 +750,6 @@
         </section>
       </section>
 
-      <section class="view rbac-page-view" id="approvalsView">
-        <div class="monitoring-header">
-          <div>
-            <h1>협업/승인 워크플로우</h1>
-            <p>승인 요청 등록, 부서 검토 대기, 내 검토함, 내 승인 대기, 협의 댓글, 검토 완료 상태, 보완 요청 상태, 최종 승인 가능 여부를 한 화면에서 확인합니다.</p>
-          </div>
-        </div>
-        <section class="approval-workflow-hero">
-          <div class="approval-workflow-copy">
-            <span>운영 요청 등록부터 감사 기록까지</span>
-            <h2>위험 작업은 요청, 부서 검토, 승인, 실행, 감사 기록 순서로 남깁니다.</h2>
-            <p>권한 작업을 구두 승인이나 임시 메신저 기록에 의존하지 않고, 누가 어떤 사유로 요청했고 어느 부서가 검토했는지 한 화면에서 추적합니다.</p>
-          </div>
-          <div class="approval-workflow-steps" aria-label="Approval workflow steps">
-            <span>1 요청 등록</span>
-            <span>2 부서 검토</span>
-            <span>3 2인 승인</span>
-            <span>4 실행 허용</span>
-            <span>5 감사 기록</span>
-          </div>
-        </section>
-        <section class="approval-ops-grid" id="approvalWorkflowSummary" aria-label="Approval workflow summary"></section>
-        <section class="approval-execution-proof" id="approvalExecutionProof" aria-label="Execution approval proof"></section>
-        <section class="approval-create-panel">
-          <div>
-            <h2>승인 요청 등록</h2>
-            <p>작업 유형, 대상 슬롯/장비, 사유를 입력하면 필요한 부서 검토와 승인 단계가 자동으로 생성됩니다.</p>
-          </div>
-          <form class="approval-request-form" id="approvalRequestForm">
-            <label>
-              <span>요청 유형</span>
-              <select id="approvalRequestType">
-                <option value="DISK_ONLINE">DISK_ONLINE - 저장소 재접속</option>
-                <option value="DISK_OFFLINE">DISK_OFFLINE - 저장소 격리</option>
-                <option value="POLICY_CHANGE">POLICY_CHANGE - 정책 변경</option>
-                <option value="EMERGENCY_UNLOCK">EMERGENCY_UNLOCK - 긴급 해제</option>
-                <option value="HARDWARE_POWER_ON">HARDWARE_POWER_ON - 하드웨어 전원 켜기</option>
-                <option value="HARDWARE_POWER_OFF">HARDWARE_POWER_OFF - 하드웨어 전원 끄기</option>
-              </select>
-            </label>
-            <label>
-              <span>대상</span>
-              <input id="approvalTargetId" type="text" value="BAY-01" placeholder="BAY-01 또는 Repository ID">
-            </label>
-            <label>
-              <span>저장소 경로</span>
-              <input id="approvalRepositoryPath" type="text" placeholder="예: D:\\ 또는 \\\\?\\Volume{...}\\">
-            </label>
-            <label class="approval-request-reason">
-              <span>요청 사유</span>
-              <textarea id="approvalReason" rows="3" placeholder="예: 백업 검증을 위해 Repository Online 작업이 필요합니다."></textarea>
-            </label>
-            <button type="submit">요청 등록</button>
-          </form>
-          <p class="approval-form-status" id="approvalFormStatus" aria-live="polite"></p>
-        </section>
-        <div class="rbac-tabs" id="approvalTabs">
-          <!-- approvalWorkflowPipeline: 작업 요청 | 부서 검토 | 승인 | 실행 | 감사 기록 -->
-          <button type="button" class="active" data-approval-tab="approvalRequestBox">승인 요청함</button>
-          <button type="button" data-approval-tab="departmentReviewBox">부서 검토함</button>
-          <button type="button" data-approval-tab="myApprovalPending">내 승인 대기</button>
-          <button type="button" data-approval-tab="consultationOpinion">협의 의견</button>
-          <button type="button" data-approval-tab="reworkRequest">보완 요청</button>
-          <button type="button" data-approval-tab="completedHistory">완료 이력</button>
-          <button type="button" data-approval-tab="auditRecord">감사 기록</button>
-        </div>
-        <section class="rbac-panel">
-          <div class="rbac-panel-head">
-            <h2 id="approvalTabTitle">승인 요청함</h2>
-            <span id="approvalCount">0 requests</span>
-          </div>
-          <div class="rbac-table-wrap">
-            <table class="rbac-table">
-              <thead>
-                <tr>
-                  <th>Type</th>
-                  <th>Requester</th>
-                  <th>Target</th>
-                  <th>Status</th>
-                  <th>Approvals</th>
-                  <th>Expires</th>
-                  <th>확인</th>
-                </tr>
-              </thead>
-              <tbody id="approvalRequestsTable"></tbody>
-            </table>
-          </div>
-        </section>
-      </section>
-
       <section class="view rbac-page-view" id="userManagementView">
         <div class="monitoring-header user-management-header">
           <div>
@@ -1083,11 +993,10 @@
           <article class="settings-card settings-navigation-card">
             <div>
               <h2 data-i18n="settings.managementTitle">Operation & Administration</h2>
-              <p data-i18n="settings.managementDesc">Open operational, approval, user, and audit management screens from Settings.</p>
+              <p data-i18n="settings.managementDesc">Open operational, user, and audit management screens from Settings.</p>
             </div>
             <div class="settings-shortcut-grid">
               <button type="button" class="settings-shortcut" data-settings-view="hardware"><span data-i18n="settings.hardwareControl">Hardware Control</span><em id="settingsHardwareStatus" data-i18n="settings.statusChecking">Checking</em></button>
-              <button type="button" class="settings-shortcut" data-settings-view="approvals"><span data-i18n="settings.approvalWorkflow">Approval Workflow</span><em id="settingsApprovalStatus" data-i18n="settings.statusChecking">Checking</em></button>
               <button type="button" class="settings-shortcut" data-settings-view="userManagement"><span data-i18n="settings.userRoleManagement">User & Role Management</span><em id="settingsServiceStatus" data-i18n="settings.statusChecking">Checking</em></button>
               <button type="button" class="settings-shortcut" data-settings-view="auditLogs"><span data-i18n="settings.auditLogs">Audit Logs</span><em id="settingsAuditStatus" data-i18n="settings.statusChecking">Checking</em></button>
             </div>
@@ -1255,7 +1164,7 @@
       </div>
     </template>
 
-    <script src="/static/app.js?v=20260518-hide-auto-approval"></script>
+    <script src="/static/app.js?v=20260518-hide-approval-workflow"></script>
   </body>
 </html>
 

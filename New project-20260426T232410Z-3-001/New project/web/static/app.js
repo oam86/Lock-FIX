@@ -218,7 +218,6 @@ const settingsApplyButton = document.querySelector("#settingsApplyButton");
 const settingsApplyStatus = document.querySelector("#settingsApplyStatus");
 const settingsShortcutItems = document.querySelectorAll("[data-settings-view]");
 const settingsHardwareStatus = document.querySelector("#settingsHardwareStatus");
-const settingsApprovalStatus = document.querySelector("#settingsApprovalStatus");
 const settingsServiceStatus = document.querySelector("#settingsServiceStatus");
 const settingsAuditStatus = document.querySelector("#settingsAuditStatus");
 const consoleStatusText = document.querySelector("#consoleStatusText");
@@ -384,12 +383,6 @@ const menuDefinitions = [
   { view: "logs2", label: "Logs", permissions: ["AUDIT_LOG_VIEW"], section: "customer" },
   { view: "securityAudit", label: "Security Audit", permissions: ["AUDIT_LOG_VIEW"], section: "customer" },
   { view: "hardware", label: "Hardware Control", permissions: ["HARDWARE_CONTROL"], section: "operator" },
-  {
-    view: "approvals",
-    label: "협업/승인 워크플로우",
-    anyPermissions: ["DISK_ONLINE_APPROVE", "AIRGAP_POLICY_MANAGE", "DISK_OFFLINE_REQUEST", "DISK_ONLINE_REQUEST", "HARDWARE_CONTROL"],
-    section: "operator",
-  },
   { view: "userManagement", label: "User & Role Management", roles: ["SUPER_ADMIN"], anyPermissions: ["USER_MANAGE", "ROLE_MANAGE"], section: "admin" },
   { view: "auditLogs", label: "Audit Logs", permissions: ["AUDIT_LOG_VIEW"], section: "admin" },
   { view: "settings", label: "System Settings", permissions: ["SYSTEM_SETTING_MANAGE"], section: "admin" },
@@ -490,16 +483,14 @@ const translations = {
     "settings.smtpTls": "STARTTLS",
     "settings.smtpSsl": "SSL",
     "settings.managementTitle": "Operation & Administration",
-    "settings.managementDesc": "Open operational, approval, user, and audit management screens from Settings.",
+    "settings.managementDesc": "Open operational, user, and audit management screens from Settings.",
     "settings.hardwareControl": "Hardware Control",
-    "settings.approvalWorkflow": "Approval Workflow",
     "settings.userRoleManagement": "User & Role Management",
     "settings.auditLogs": "Audit Logs",
     "settings.statusChecking": "Checking",
     "settings.statusUnavailable": "Unavailable",
     "settings.hardwareConnected": "Hardware connected",
     "settings.hardwareCheckNeeded": "Check required",
-    "settings.pendingApprovals": "{count} pending",
     "settings.auditEvents": "{count} events",
     "settings.serviceNormal": "Service running",
     "settings.serviceStopped": "Service stopped",
@@ -726,16 +717,14 @@ const translations = {
     "settings.smtpTls": "STARTTLS",
     "settings.smtpSsl": "SSL",
     "settings.managementTitle": "운영/관리",
-    "settings.managementDesc": "운영, 승인, 사용자, 감사 관리 화면은 설정에서만 이동합니다.",
+    "settings.managementDesc": "운영, 사용자, 감사 관리 화면은 설정에서만 이동합니다.",
     "settings.hardwareControl": "하드웨어 제어",
-    "settings.approvalWorkflow": "협업/승인 워크플로우",
     "settings.userRoleManagement": "사용자/권한 관리",
     "settings.auditLogs": "감사 기록",
     "settings.statusChecking": "확인 중",
     "settings.statusUnavailable": "확인 불가",
     "settings.hardwareConnected": "하드웨어 연결됨",
     "settings.hardwareCheckNeeded": "확인 필요",
-    "settings.pendingApprovals": "승인 대기 {count}건",
     "settings.auditEvents": "감사 이벤트 {count}건",
     "settings.serviceNormal": "서비스 정상",
     "settings.serviceStopped": "서비스 중지",
@@ -1996,12 +1985,6 @@ function showView(name) {
     reloadVeeamIntegration().catch((error) => {
       console.warn("Unable to reload Veeam Integration view", error);
       if (veeamIntegrationStatus) veeamIntegrationStatus.textContent = error.message;
-    });
-  }
-  if (targetView === "approvals") {
-    reloadApprovals().catch((error) => {
-      console.warn("Unable to reload approvals", error);
-      renderApprovals({ requests: [], decisions: [], policies: [] }, error.message);
     });
   }
   if (targetView === "userManagement") {
@@ -5678,11 +5661,6 @@ function setSettingsShortcutStatus(target, key, replacements = {}) {
   target.textContent = text;
 }
 
-function activeApprovalRequestCount(data) {
-  const closed = new Set(["APPROVED", "REJECTED", "EXPIRED", "EXECUTED", "COMPLETED", "CANCELLED"]);
-  return (Array.isArray(data?.requests) ? data.requests : []).filter((request) => !closed.has(String(request.status || "").toUpperCase())).length;
-}
-
 function sourcesHardwareConnected(data) {
   const airGap = data?.air_gap || {};
   const slot = airGap?.emergency_access?.slot || {};
@@ -5694,7 +5672,6 @@ function sourcesHardwareConnected(data) {
 
 async function reloadSettingsShortcutStatus() {
   setSettingsShortcutStatus(settingsHardwareStatus, "settings.statusChecking");
-  setSettingsShortcutStatus(settingsApprovalStatus, "settings.statusChecking");
   setSettingsShortcutStatus(settingsServiceStatus, "settings.statusChecking");
   setSettingsShortcutStatus(settingsAuditStatus, "settings.statusChecking");
 
@@ -5706,9 +5683,6 @@ async function reloadSettingsShortcutStatus() {
     update(requestJson("/api/sources"), (data) => {
       setSettingsShortcutStatus(settingsHardwareStatus, sourcesHardwareConnected(data) ? "settings.hardwareConnected" : "settings.hardwareCheckNeeded");
     }, settingsHardwareStatus),
-    update(requestJson("/api/approvals"), (data) => {
-      setSettingsShortcutStatus(settingsApprovalStatus, "settings.pendingApprovals", { count: activeApprovalRequestCount(data) });
-    }, settingsApprovalStatus),
     update(requestJson("/api/service/status"), (status) => {
       const state = String(status?.state || "").toUpperCase();
       setSettingsShortcutStatus(settingsServiceStatus, state === "RUNNING" ? "settings.serviceNormal" : "settings.serviceStopped");
@@ -7302,7 +7276,6 @@ function showEmergencyReconnectApprovalRequired(error, slotId, volumePath = "") 
         <em class="emergency-approval-error" aria-live="polite"></em>
         <div class="emergency-approval-actions">
           <button type="button" data-approval-cancel="true">취소</button>
-          <button type="button" data-approval-open="true">승인 화면으로 이동</button>
           <button type="button" data-approval-create="true">승인 요청 생성</button>
         </div>
       </section>
@@ -7318,10 +7291,6 @@ function showEmergencyReconnectApprovalRequired(error, slotId, volumePath = "") 
       if (event.key === "Escape") close("");
     }
     overlay.querySelector("[data-approval-cancel]").addEventListener("click", () => close(""));
-    overlay.querySelector("[data-approval-open]").addEventListener("click", () => {
-      close("open");
-      showView("approvals");
-    });
     createButton.addEventListener("click", async () => {
       createButton.disabled = true;
       status.textContent = "필요한 승인 요청을 생성하는 중입니다.";
@@ -7335,12 +7304,10 @@ function showEmergencyReconnectApprovalRequired(error, slotId, volumePath = "") 
             reason: "긴급 재접속을 위해 EMERGENCY_UNLOCK 및 DISK_ONLINE 승인이 필요합니다.",
           }),
         });
-        status.textContent = "승인 요청이 생성되었습니다. 부서 검토와 2인 승인 완료 후 다시 재접속할 수 있습니다.";
-        activeApprovalTab = "approvalRequestBox";
-        await reloadApprovals();
+        status.textContent = "승인 요청이 생성되었습니다. 승인 워크플로우 화면은 숨김 처리되었으며 감사 로그에 기록됩니다.";
         setTimeout(() => {
           close("created");
-          showView("approvals");
+          showView("sources");
         }, 650);
       } catch (createError) {
         status.textContent = createError.message || "승인 요청 생성에 실패했습니다.";
