@@ -61,6 +61,7 @@ LOGIN_TEMP_PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 NETWORK_HISTORY_LOCK = threading.Lock()
 NETWORK_INTERFACE_HISTORY: dict[str, dict[str, list[float]]] = {}
 AIRGAP_AUTO_ISOLATE_LOCK = threading.Lock()
+AIRGAP_AUTO_ISOLATE_STALE_SECONDS = 120
 DASHBOARD_CACHE_TTL_SECONDS = 2.0
 DASHBOARD_PROBE_TIMEOUT_SECONDS = 1.2
 EMERGENCY_RECONNECT_AGENT_START_TIMEOUT_SECONDS = 12
@@ -152,6 +153,8 @@ class WebContext:
         raise ValueError(f"Unsupported LOCK-FIX Agent/Service operation: {operation}")
 
     def run_agent_service_operation(self, operation: str, payload: dict, timeout_seconds: float | None = None) -> dict:
+        if operation in {"veeam.diagnostics", "service.preflight"} or self.agent_worker_thread is not None:
+            self.start_agent_service_worker()
         return self.agent_service.submit_and_wait(operation, payload, timeout_seconds=timeout_seconds)
 
     def start_agent_service_worker(self) -> None:
@@ -4710,10 +4713,11 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
 
     def run_veeam_diagnostics_limited(self, veeam_config: dict, timeout_seconds: float = 8.0) -> dict:
         try:
+            wait_timeout = max(float(timeout_seconds), 30.0)
             response = self.context.run_agent_service_operation(
                 "veeam.diagnostics",
                 {"timeout_seconds": timeout_seconds},
-                timeout_seconds=timeout_seconds,
+                timeout_seconds=wait_timeout,
             )
             diagnostics = response.get("diagnostics")
             if isinstance(diagnostics, dict):
@@ -5002,6 +5006,20 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 error=str(exc),
             )
 
+    def veeam_auto_isolate_in_progress_stale(self, marker: dict) -> bool:
+        timestamp = str(marker.get("started_at") or marker.get("checked_at") or "").strip()
+        if not timestamp:
+            return True
+        try:
+            started_at = datetime.fromisoformat(timestamp)
+        except ValueError:
+            try:
+                started_at = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                return True
+        now = datetime.now(started_at.tzinfo) if started_at.tzinfo else datetime.now()
+        return (now - started_at).total_seconds() > AIRGAP_AUTO_ISOLATE_STALE_SECONDS
+
     def auto_isolate_after_veeam_success(self, payload: dict, status: str, checked_at: str) -> dict:
         result = str(payload.get("result") or status or "").upper()
         progress = int(payload.get("progress_percent") or payload.get("progress") or 0)
@@ -5062,14 +5080,23 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "message": "This Backup Done session was already processed through Steps 1-5. Waiting for a new Backup Done record.",
             }
         if str(previous.get("session_key") or "") == session_key and previous.get("state") == "IN_PROGRESS":
-            return {
-                "enabled": True,
-                "triggered": True,
-                "slot_id": slot_id,
-                "session_key": session_key,
-                "state": "IN_PROGRESS",
-                "message": "Veeam backup success detected. LOCK-FIX Air-Gap isolation is already running.",
-            }
+            if LockFixWebHandler.veeam_auto_isolate_in_progress_stale(self, previous):
+                self.context.controller.audit.write(
+                    "veeam.auto_isolate.in_progress.recovered",
+                    slot_id=slot_id,
+                    session_key=session_key,
+                    previous_started_at=str(previous.get("started_at") or previous.get("checked_at") or ""),
+                    message="Stale automatic Air-Gap isolation marker was recovered and rescheduled.",
+                )
+            else:
+                return {
+                    "enabled": True,
+                    "triggered": True,
+                    "slot_id": slot_id,
+                    "session_key": session_key,
+                    "state": "IN_PROGRESS",
+                    "message": "Veeam backup success detected. LOCK-FIX Air-Gap isolation is already running.",
+                }
         if str(previous.get("session_key") or "") == session_key and previous.get("state") == "FAILED":
             return {
                 "enabled": True,
@@ -5087,14 +5114,22 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 latest = {}
             latest_processed = set(latest.get("processed_session_keys") or processed_session_keys)
             if str(latest.get("session_key") or "") == session_key and latest.get("state") == "IN_PROGRESS":
-                return {
-                    "enabled": True,
-                    "triggered": True,
-                    "slot_id": slot_id,
-                    "session_key": session_key,
-                    "state": "IN_PROGRESS",
-                    "message": "Veeam backup success detected. LOCK-FIX Air-Gap isolation is already running.",
-                }
+                if not LockFixWebHandler.veeam_auto_isolate_in_progress_stale(self, latest):
+                    return {
+                        "enabled": True,
+                        "triggered": True,
+                        "slot_id": slot_id,
+                        "session_key": session_key,
+                        "state": "IN_PROGRESS",
+                        "message": "Veeam backup success detected. LOCK-FIX Air-Gap isolation is already running.",
+                    }
+                self.context.controller.audit.write(
+                    "veeam.auto_isolate.in_progress.recovered",
+                    slot_id=slot_id,
+                    session_key=session_key,
+                    previous_started_at=str(latest.get("started_at") or latest.get("checked_at") or ""),
+                    message="Stale automatic Air-Gap isolation marker was recovered under lock and rescheduled.",
+                )
             if str(latest.get("session_key") or "") == session_key and latest.get("state") == "ISOLATED":
                 latest_processed.add(session_key)
                 return {

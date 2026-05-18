@@ -5,7 +5,7 @@ import os
 import time
 import unittest
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -1372,6 +1372,136 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("agent.service.request.expired", audit_text)
         self.assertNotIn("agent.service.request.received", audit_text)
 
+    def test_agent_service_client_removes_timed_out_requests(self) -> None:
+        tmp_path = self.make_workspace()
+        queue_root = tmp_path / "agent_service"
+        client = AgentServiceClient(queue_root, timeout_seconds=0.05)
+
+        with self.assertRaises(AgentServiceUnavailable):
+            client.submit_and_wait("veeam.diagnostics", {"timeout_seconds": 8.0})
+
+        self.assertEqual([], list((queue_root / "requests").glob("*.json")))
+
+    def test_agent_service_worker_ignores_request_file_removed_after_response(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        queue_root = tmp_path / "agent_service"
+        request_path = queue_root / "requests" / "raced-diagnostics.json"
+        request_path.parent.mkdir(parents=True)
+        request_path.write_text(
+            json.dumps(
+                {
+                    "request_id": "raced-diagnostics",
+                    "operation": "veeam.diagnostics",
+                    "payload": {"timeout_seconds": 8.0},
+                    "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                }
+            ),
+            encoding="utf-8",
+        )
+        worker = AgentServiceWorker(config_path, queue_root)
+
+        def remove_request(_request: dict) -> dict:
+            request_path.unlink()
+            return {"ok": True, "request_id": "raced-diagnostics", "operation": "veeam.diagnostics"}
+
+        with patch.object(worker, "execute_request", side_effect=remove_request):
+            processed = worker.process_once(max_requests=1)
+
+        self.assertEqual(processed, 1)
+        self.assertTrue((queue_root / "responses" / "raced-diagnostics.json").exists())
+        self.assertFalse((queue_root / "processed" / "raced-diagnostics.json").exists())
+
+    def test_agent_service_worker_prunes_large_stale_diagnostics_backlog(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        queue_root = tmp_path / "agent_service"
+        requests_dir = queue_root / "requests"
+        requests_dir.mkdir(parents=True)
+        stale_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() - 3600))
+        current_time = time.strftime("%Y-%m-%d %H:%M:%S")
+        for index in range(105):
+            request_id = f"old-diagnostics-{index}"
+            (requests_dir / f"{request_id}.json").write_text(
+                json.dumps(
+                    {
+                        "request_id": request_id,
+                        "operation": "veeam.diagnostics",
+                        "payload": {"timeout_seconds": 8.0},
+                        "created_at": stale_time,
+                    }
+                ),
+                encoding="utf-8",
+            )
+        fresh_path = requests_dir / "fresh-diagnostics.json"
+        fresh_path.write_text(
+            json.dumps(
+                {
+                    "request_id": "fresh-diagnostics",
+                    "operation": "veeam.diagnostics",
+                    "payload": {"timeout_seconds": 8.0},
+                    "created_at": current_time,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with patch(
+            "lockfix.agent_service.run_veeam_diagnostics",
+            return_value={
+                "success": True,
+                "latest_configured_session": {
+                    "name": "Agent_backup",
+                    "repository_name": "D REPO",
+                    "repository_path": "D:\\Backup",
+                },
+            },
+        ):
+            processed = AgentServiceWorker(config_path, queue_root).process_once(max_requests=1)
+
+        response = json.loads((queue_root / "responses" / "fresh-diagnostics.json").read_text(encoding="utf-8"))
+        audit_text = load_config(config_path).audit_log_path.read_text(encoding="utf-8")
+
+        self.assertEqual(processed, 1)
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["diagnostics"]["latest_configured_session"]["name"], "Agent_backup")
+        self.assertEqual(len(list((queue_root / "expired").glob("*.json"))), 105)
+        self.assertEqual([], list((queue_root / "requests").glob("*.json")))
+        self.assertIn('"event": "agent.service.queue.pruned"', audit_text)
+
+    def test_agent_service_worker_keeps_only_latest_pending_diagnostics(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        queue_root = tmp_path / "agent_service"
+        requests_dir = queue_root / "requests"
+        requests_dir.mkdir(parents=True)
+        current_time = time.strftime("%Y-%m-%d %H:%M:%S")
+        for index in range(3):
+            request_id = f"diagnostics-{index}"
+            request_path = requests_dir / f"{request_id}.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "request_id": request_id,
+                        "operation": "veeam.diagnostics",
+                        "payload": {"timeout_seconds": 8.0},
+                        "created_at": current_time,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            os.utime(request_path, (time.time() + index, time.time() + index))
+
+        with patch("lockfix.agent_service.run_veeam_diagnostics", return_value={"success": True}):
+            processed = AgentServiceWorker(config_path, queue_root).process_once(max_requests=1)
+
+        self.assertEqual(processed, 1)
+        self.assertTrue((queue_root / "responses" / "diagnostics-2.json").exists())
+        self.assertFalse((queue_root / "responses" / "diagnostics-0.json").exists())
+        self.assertFalse((queue_root / "responses" / "diagnostics-1.json").exists())
+        self.assertEqual(len(list((queue_root / "expired").glob("*.json"))), 2)
+        self.assertEqual([], list((queue_root / "requests").glob("*.json")))
+
     def test_agent_service_worker_prioritizes_emergency_requests_with_backlog(self) -> None:
         tmp_path = self.make_workspace()
         config_path = write_config(tmp_path)
@@ -1461,6 +1591,20 @@ class LockFixTests(unittest.TestCase):
         with self.assertRaises(AgentServiceUnavailable):
             context.run_agent_service_operation("disk.isolate", {"slot_id": "BAY-01"}, timeout_seconds=0.1)
 
+    def test_webui_starts_agent_worker_before_veeam_diagnostics(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        context = webui.WebContext(config_path)
+
+        with patch.object(context, "start_agent_service_worker") as starter, patch(
+            "webui.AgentServiceClient.submit_and_wait",
+            return_value={"ok": True, "operation": "veeam.diagnostics", "diagnostics": {"success": True}},
+        ):
+            result = context.run_agent_service_operation("veeam.diagnostics", {"timeout_seconds": 8.0}, timeout_seconds=0.1)
+
+        self.assertTrue(result["ok"])
+        starter.assert_called_once()
+
     def test_webui_keeps_inline_fallback_only_for_dry_run_compatibility(self) -> None:
         tmp_path = self.make_workspace()
         config_path = write_config(tmp_path)
@@ -1483,6 +1627,17 @@ class LockFixTests(unittest.TestCase):
             config = load_config(config_path)
 
         self.assertFalse(config.dry_run)
+
+    def test_default_veeam_config_targets_agent_backup_d_repo(self) -> None:
+        config_path = Path(__file__).resolve().parents[1] / "config" / "lockfix.example.json"
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(raw["veeam"]["job_name"], "Agent_backup")
+        self.assertEqual(raw["veeam"]["target_repository_id"], "88788f9e-d8f5-4eb4-bc4f-9b3f5403bcec")
+        self.assertEqual(raw["veeam"]["target_repository_name"], "D REPO")
+        self.assertEqual(raw["veeam"]["target_repository_path"], "D:\\Backup")
+        self.assertEqual(raw["slots"][0]["device"], "D:\\")
+        self.assertEqual(raw["slots"][0]["mount_point"], "D:\\")
 
     def test_command_runner_handles_windows_output_decode_failures_safely(self) -> None:
         class Result:
@@ -3582,6 +3737,59 @@ class LockFixTests(unittest.TestCase):
         self.assertTrue(result["triggered"])
         self.assertEqual(result["state"], "IN_PROGRESS")
         self.assertEqual(final_marker.get("state"), "ISOLATED")
+
+    def test_webui_auto_isolate_recovers_stale_in_progress_marker(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+
+        class Probe:
+            context = webui.WebContext(config_path)
+
+        marker_path = webui.ROOT / "runtime" / "veeam_auto_isolate.json"
+        old_value = marker_path.read_text(encoding="utf-8") if marker_path.exists() else None
+        payload = {
+            "slot_id": "BAY-01",
+            "job": "Agent_backup",
+            "result": "Success",
+            "progress_percent": 100,
+            "started_at": f"stale-{uuid.uuid4().hex}",
+            "ended_at": f"stale-{uuid.uuid4().hex}",
+        }
+        session_key, _ = webui.LockFixWebHandler.veeam_auto_isolate_identity(Probe(), payload)
+        stale_started_at = (datetime.now() - timedelta(seconds=webui.AIRGAP_AUTO_ISOLATE_STALE_SECONDS + 30)).isoformat(timespec="seconds")
+        try:
+            marker_path.parent.mkdir(parents=True, exist_ok=True)
+            marker_path.write_text(
+                json.dumps(
+                    {
+                        "session_key": session_key,
+                        "processed_session_keys": [],
+                        "slot_id": "BAY-01",
+                        "state": "IN_PROGRESS",
+                        "checked_at": "2026-05-01 10:00:00",
+                        "started_at": stale_started_at,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = webui.LockFixWebHandler.auto_isolate_after_veeam_success(Probe(), payload, "Success", "2026-05-01 10:00:00")
+            final_marker = {}
+            for _ in range(60):
+                final_marker = json.loads(marker_path.read_text(encoding="utf-8"))
+                if final_marker.get("state") in {"ISOLATED", "FAILED"}:
+                    break
+                time.sleep(0.1)
+            audit_text = load_config(config_path).audit_log_path.read_text(encoding="utf-8")
+        finally:
+            if old_value is None:
+                marker_path.unlink(missing_ok=True)
+            else:
+                marker_path.write_text(old_value, encoding="utf-8")
+
+        self.assertTrue(result["triggered"])
+        self.assertEqual(result["state"], "IN_PROGRESS")
+        self.assertEqual(final_marker.get("state"), "ISOLATED")
+        self.assertIn('"event": "veeam.auto_isolate.in_progress.recovered"', audit_text)
 
     def test_webui_airgap_step2_appends_flush_audit_logs_after_veeam_logs(self) -> None:
         tmp_path = self.make_workspace()

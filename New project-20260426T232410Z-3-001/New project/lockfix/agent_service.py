@@ -17,6 +17,8 @@ from .veeam_diagnostics import run_veeam_diagnostics
 
 REQUEST_MAX_AGE_SECONDS = 10 * 60
 REQUEST_BATCH_SIZE = 1
+STALE_QUEUE_PRUNE_THRESHOLD = 100
+DIAGNOSTICS_PENDING_KEEP = 1
 
 
 class AgentServiceUnavailable(RuntimeError):
@@ -79,6 +81,10 @@ class AgentServiceClient:
                     raise AgentServiceUnavailable(str(response.get("error") or "LOCK-FIX Agent/Service operation failed."))
                 return response
             time.sleep(0.2)
+        try:
+            request_path.unlink(missing_ok=True)
+        except OSError:
+            pass
         if self.allow_inline_fallback and self.inline_executor:
             return self.inline_executor(operation, payload)
         raise AgentServiceUnavailable(
@@ -95,14 +101,17 @@ class AgentServiceWorker:
         self.requests_dir = self.queue_root / "requests"
         self.responses_dir = self.queue_root / "responses"
         self.processed_dir = self.queue_root / "processed"
+        self.expired_dir = self.queue_root / "expired"
 
     def ensure_dirs(self) -> None:
         self.requests_dir.mkdir(parents=True, exist_ok=True)
         self.responses_dir.mkdir(parents=True, exist_ok=True)
         self.processed_dir.mkdir(parents=True, exist_ok=True)
+        self.expired_dir.mkdir(parents=True, exist_ok=True)
 
     def process_once(self, max_requests: int = REQUEST_BATCH_SIZE) -> int:
         self.ensure_dirs()
+        self.prune_stale_backlog()
         processed = 0
         request_paths = sorted(
             self.requests_dir.glob("*.json"),
@@ -118,7 +127,10 @@ class AgentServiceWorker:
                 response = {"ok": False, "request_id": request_id, "error": str(exc)}
             response_path = self.responses_dir / f"{request_path.stem}.json"
             response_path.write_text(json.dumps(response, ensure_ascii=False, indent=2), encoding="utf-8")
-            request_path.replace(self.processed_dir / request_path.name)
+            try:
+                request_path.replace(self.processed_dir / request_path.name)
+            except FileNotFoundError:
+                pass
             processed += 1
         return processed
 
@@ -136,8 +148,64 @@ class AgentServiceWorker:
     def run_forever(self, poll_seconds: float = 0.5) -> None:
         self.ensure_dirs()
         while True:
-            self.process_once()
+            try:
+                self.process_once()
+            except Exception as exc:
+                self.record_worker_error(exc)
             time.sleep(poll_seconds)
+
+    def prune_stale_backlog(self) -> int:
+        request_paths = list(self.requests_dir.glob("*.json"))
+        pruned = self.prune_superseded_diagnostics(request_paths)
+        if len(request_paths) <= STALE_QUEUE_PRUNE_THRESHOLD:
+            return pruned
+        now = time.time()
+        expired = 0
+        for request_path in request_paths:
+            if self.request_path_age_seconds(request_path, now=now) <= REQUEST_MAX_AGE_SECONDS:
+                continue
+            if self.expire_request_path(request_path):
+                expired += 1
+        if expired:
+            self.record_queue_pruned(expired, len(request_paths))
+        return pruned + expired
+
+    def prune_superseded_diagnostics(self, request_paths: list[Path]) -> int:
+        diagnostics = [
+            path
+            for path in request_paths
+            if self.request_operation(path) == "veeam.diagnostics"
+        ]
+        if len(diagnostics) <= DIAGNOSTICS_PENDING_KEEP:
+            return 0
+        diagnostics.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+        expired = 0
+        for request_path in diagnostics[DIAGNOSTICS_PENDING_KEEP:]:
+            if self.expire_request_path(request_path):
+                expired += 1
+        if expired:
+            self.record_queue_pruned(expired, len(request_paths))
+        return expired
+
+    def request_operation(self, request_path: Path) -> str:
+        try:
+            request = json.loads(request_path.read_text(encoding="utf-8"))
+            return str(request.get("operation") or "") if isinstance(request, dict) else ""
+        except Exception:
+            return ""
+
+    def expire_request_path(self, request_path: Path) -> bool:
+        target = self.expired_dir / request_path.name
+        if target.exists():
+            target = self.expired_dir / f"{request_path.stem}-{uuid.uuid4().hex}.json"
+        try:
+            request_path.replace(target)
+            return True
+        except FileNotFoundError:
+            return False
+        except OSError as exc:
+            self.record_worker_error(exc)
+            return False
 
     def execute_request(self, request: dict[str, Any]) -> dict[str, Any]:
         operation = str(request.get("operation") or "")
@@ -192,14 +260,48 @@ class AgentServiceWorker:
             return {"ok": True, "request_id": request_id, "operation": operation, "diagnostics": diagnostics}
         raise ValueError(f"Unsupported LOCK-FIX Agent/Service operation: {operation}")
 
-    def request_age_seconds(self, request: dict[str, Any]) -> float:
+    def request_age_seconds(self, request: dict[str, Any], *, now: float | None = None) -> float:
         created_at = str(request.get("created_at") or "").strip()
         if not created_at:
             return 0.0
         try:
-            return max(0.0, time.time() - time.mktime(time.strptime(created_at, "%Y-%m-%d %H:%M:%S")))
+            return max(0.0, float(now or time.time()) - time.mktime(time.strptime(created_at, "%Y-%m-%d %H:%M:%S")))
         except ValueError:
             return 0.0
+
+    def request_path_age_seconds(self, request_path: Path, *, now: float | None = None) -> float:
+        current = float(now or time.time())
+        try:
+            request = json.loads(request_path.read_text(encoding="utf-8"))
+            age = self.request_age_seconds(request, now=current) if isinstance(request, dict) else 0.0
+            if age > 0:
+                return age
+        except Exception:
+            pass
+        try:
+            return max(0.0, current - request_path.stat().st_mtime)
+        except OSError:
+            return 0.0
+
+    def record_queue_pruned(self, expired_count: int, pending_count: int) -> None:
+        try:
+            controller = LockFixController(load_config(self.config_path))
+            controller.audit.write(
+                "agent.service.queue.pruned",
+                expired_count=expired_count,
+                pending_count=pending_count,
+                message="Expired LOCK-FIX Agent/Service requests were moved out of the live queue.",
+            )
+        except Exception as exc:
+            self.record_worker_error(exc)
+
+    def record_worker_error(self, exc: Exception) -> None:
+        try:
+            self.queue_root.mkdir(parents=True, exist_ok=True)
+            with (self.queue_root / "worker-error.log").open("a", encoding="utf-8") as handle:
+                handle.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {type(exc).__name__}: {exc}\n")
+        except OSError:
+            pass
 
     def run_probe(self, command: list[str], timeout: float = 8.0) -> dict[str, Any]:
         try:
