@@ -3413,53 +3413,6 @@ button {
   font-weight: 900;
 }
 
-.airgap-approval-verification {
-  padding: 18px;
-}
-
-.airgap-approval-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.airgap-approval-grid article {
-  display: grid;
-  gap: 8px;
-  border: 1px solid #dce7f3;
-  border-radius: 8px;
-  background: #f8fbff;
-  padding: 14px;
-}
-
-.airgap-approval-grid article span {
-  color: #687b88;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.airgap-approval-grid article strong {
-  color: #162633;
-  font-size: 18px;
-  font-weight: 900;
-}
-
-.airgap-approval-grid article p {
-  margin: 0;
-  color: #5a6c78;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.airgap-approval-ready {
-  border-color: #17b26a;
-  box-shadow: 0 4px 16px rgba(23, 178, 106, 0.12);
-}
-
-.airgap-approval-wait {
-  border-color: #cbd5e1;
-}
-
 .airgap-policy-panel {
   border-color: #f2c166;
   background: #fffdf7;

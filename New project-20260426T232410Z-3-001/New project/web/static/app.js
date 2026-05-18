@@ -6521,40 +6521,6 @@ function renderSources(data) {
     if (Number.isFinite(previousTop)) row.scrollTop = previousTop;
   });
 
-  const approvalVerificationPanel = document.createElement("section");
-  const approvalAvailable = Boolean(autoApproval.available);
-  const approvalVerified = approvalAvailable && Number(autoApproval.approved_count || 0) >= Number(autoApproval.required_count || 1);
-  approvalVerificationPanel.className = `airgap-panel airgap-approval-verification ${approvalVerified ? "airgap-approval-ready" : "airgap-approval-wait"}`;
-  approvalVerificationPanel.innerHTML = `
-    <div class="airgap-panel-head">
-      <h2>자동 승인 검증</h2>
-      <span>${escapeHtml(approvalVerified ? "검증 완료" : "검증 대기")}</span>
-    </div>
-    <div class="airgap-approval-grid">
-      <article>
-        <span>허용 여부</span>
-        <strong>${escapeHtml(approvalVerified ? "허용됨" : "대기")}</strong>
-        <p>${escapeHtml(approvalVerified ? "에어갭 자동 승인 정책이 실행 가능합니다." : "자동 승인 결과를 아직 확인하지 못했습니다.")}</p>
-      </article>
-      <article>
-        <span>승인 진행률</span>
-        <strong>${escapeHtml(Number(autoApproval.approved_count || 0))} / ${escapeHtml(Number(autoApproval.required_count || 1))}</strong>
-        <p>${escapeHtml(autoApproval.summary || "자동 승인 상태를 확인합니다.")}</p>
-      </article>
-      <article>
-        <span>검증 모드</span>
-        <strong>${escapeHtml(autoApproval.mode || "-")}</strong>
-        <p>${escapeHtml(autoApproval.requester_user_id ? `요청자 ${autoApproval.requester_user_id}` : "자동 정책 기반 승인 요청")}</p>
-      </article>
-      <article>
-        <span>최종 상태</span>
-        <strong>${escapeHtml(approvalVerified ? "실행 가능" : "실행 전 확인 필요")}</strong>
-        <p>${escapeHtml(approvalVerified ? "승인 완료 후 에어갭 화면 확인으로 이어집니다." : "부서 검토와 승인 완료 뒤 다시 확인하세요.")}</p>
-      </article>
-    </div>
-  `;
-  sourceList.appendChild(approvalVerificationPanel);
-
   // Policy guard events continue to be generated and stored in audit/detail logs.
   // The customer-facing Air-Gap screen keeps those background decisions hidden.
 
