@@ -19,6 +19,10 @@ REJECTED = "REJECTED"
 EXPIRED_REQUEST_RETENTION_DAYS = 30
 
 
+def comparable_user_id(value: object) -> str:
+    return str(value or "").strip().casefold()
+
+
 DEFAULT_APPROVER_ROLES = {
     "DISK_ONLINE": [Role.SECURITY_ADMIN.value, Role.SUPER_ADMIN.value],
     "EMERGENCY_UNLOCK": [Role.SUPER_ADMIN.value, Role.SECURITY_ADMIN.value],
@@ -682,13 +686,14 @@ class ApprovalStore:
         approver = str(approver_user_id or "").strip()
         if not approver:
             raise ValueError("approverUserId is required")
-        if approver == str(request.get("requesterUserId") or ""):
+        approver_key = comparable_user_id(approver)
+        if approver_key == comparable_user_id(request.get("requesterUserId")):
             raise PermissionError("request creator cannot approve their own request")
         role = normalize_role(approver_role)
         if role.value not in set(request.get("allowedApproverRoles") or []):
             raise PermissionError(f"approver role is not allowed: {role.value}")
         if any(
-            item.get("approvalRequestId") == approval_request_id and item.get("approverUserId") == approver
+            item.get("approvalRequestId") == approval_request_id and comparable_user_id(item.get("approverUserId")) == approver_key
             for item in data["decisions"]
         ):
             raise PermissionError("duplicate approval decision is not allowed")

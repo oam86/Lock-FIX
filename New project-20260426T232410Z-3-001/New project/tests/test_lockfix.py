@@ -881,11 +881,15 @@ class LockFixTests(unittest.TestCase):
 
         with self.assertRaisesRegex(PermissionError, "creator cannot approve"):
             store.decide(request["id"], "creator", Role.SECURITY_ADMIN, "APPROVED")
+        with self.assertRaisesRegex(PermissionError, "creator cannot approve"):
+            store.decide(request["id"], "Creator", Role.SECURITY_ADMIN, "APPROVED")
 
         self.complete_department_reviews(store, request)
         store.decide(request["id"], "approver-a", Role.SECURITY_ADMIN, "APPROVED")
         with self.assertRaisesRegex(PermissionError, "duplicate"):
             store.decide(request["id"], "approver-a", Role.SECURITY_ADMIN, "APPROVED")
+        with self.assertRaisesRegex(PermissionError, "duplicate"):
+            store.decide(request["id"], "APPROVER-A", Role.SECURITY_ADMIN, "APPROVED")
 
     def test_emergency_unlock_approval_requires_reason_and_two_approvers(self) -> None:
         tmp_path = self.make_workspace()
