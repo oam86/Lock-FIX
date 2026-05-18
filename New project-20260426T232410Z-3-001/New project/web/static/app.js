@@ -3012,12 +3012,12 @@ function enableDashboardKpiDrag(board) {
   });
 
   board.addEventListener("mousedown", (event) => {
-    const handle = event.target.closest?.(".dashboard-kpi-resize-handle, .dashboard-kpi-resize-line");
+    const handle = event.target.closest?.(".dashboard-kpi-resize-line");
     if (!handle) return;
     const card = handle.closest("[data-dashboard-kpi]");
     if (!card) return;
     event.preventDefault();
-    const axis = handle.dataset.resizeAxis || "both";
+    const axis = handle.dataset.resizeAxis || "x";
     resizing = {
       card,
       axis,
@@ -3026,7 +3026,7 @@ function enableDashboardKpiDrag(board) {
       startCols: Number(card.dataset.cols || 1),
       startRows: Number(card.dataset.rows || 1),
     };
-    board.classList.add("dashboard-kpi-board-resizing");
+    board.classList.add(`dashboard-kpi-board-resizing-${axis}`);
 
     const onMouseMove = (event) => {
       if (!resizing) return;
@@ -3060,7 +3060,7 @@ function enableDashboardKpiDrag(board) {
       });
       saveDashboardKpiSizes(sizes);
       resizing = null;
-      board.classList.remove("dashboard-kpi-board-resizing");
+      board.classList.remove("dashboard-kpi-board-resizing-x", "dashboard-kpi-board-resizing-y");
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
@@ -3142,12 +3142,12 @@ function enableDashboardPanelDrag(board) {
   });
 
   board.addEventListener("mousedown", (event) => {
-    const handle = event.target.closest?.(".dashboard-panel-resize-handle, .dashboard-panel-resize-line");
+    const handle = event.target.closest?.(".dashboard-panel-resize-line");
     if (!handle) return;
     const panel = handle.closest("[data-dashboard-panel][data-panel-resizable='true']");
     if (!panel) return;
     event.preventDefault();
-    const axis = handle.dataset.resizeAxis || "both";
+    const axis = handle.dataset.resizeAxis || "x";
     resizing = {
       panel,
       axis,
@@ -3156,7 +3156,7 @@ function enableDashboardPanelDrag(board) {
       startCols: Number(panel.dataset.cols || 4),
       startRows: Number(panel.dataset.rows || 3),
     };
-    board.classList.add("dashboard-panel-board-resizing");
+    board.classList.add(`dashboard-panel-board-resizing-${axis}`);
 
     const onMouseMove = (event) => {
       if (!resizing) return;
@@ -3188,7 +3188,7 @@ function enableDashboardPanelDrag(board) {
       });
       saveDashboardPanelSizes(sizes);
       resizing = null;
-      board.classList.remove("dashboard-panel-board-resizing");
+      board.classList.remove("dashboard-panel-board-resizing-x", "dashboard-panel-board-resizing-y");
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
@@ -3394,8 +3394,8 @@ function renderDashboard(data) {
   ];
   const threatStatus = String(threat.status || "정상");
   const threatDanger = threatTone(threatStatus) === "danger";
-  const dashboardEventsVisible = loadDashboardEventsVisible();
-  const dashboardAlertsVisible = loadDashboardAlertsVisible();
+  const dashboardEventsVisible = true;
+  const dashboardAlertsVisible = true;
   dashboardView.innerHTML = `
     ${threatDanger ? `
       <section class="dashboard-threat-banner">
@@ -3411,7 +3411,6 @@ function renderDashboard(data) {
           <span class="dashboard-kpi-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag to reorder"></span>
           <span class="dashboard-kpi-resize-line dashboard-kpi-resize-line-x" data-resize-axis="x" aria-hidden="true" title="Resize width"></span>
           <span class="dashboard-kpi-resize-line dashboard-kpi-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>
-          <span class="dashboard-kpi-resize-handle" data-resize-axis="both" aria-hidden="true" title="Resize card"></span>
           <div>
             <span>${escapeHtml(label || "-")}</span>
             <strong class="security-value-${tone}" ${valueTitle ? `title="${escapeHtml(valueTitle)}"` : ""}>${escapeHtml(value || "-")}</strong>
@@ -3457,7 +3456,6 @@ function renderDashboard(data) {
         </div>
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-x" data-resize-axis="x" aria-hidden="true" title="Resize width"></span>
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>
-        <span class="dashboard-panel-resize-handle" data-resize-axis="both" aria-hidden="true" title="Resize card"></span>
       </section>
 
       <section class="security-panel backup-panel" data-dashboard-panel="backup" data-panel-resizable="true" data-cols="4" data-rows="3">
@@ -3474,13 +3472,11 @@ function renderDashboard(data) {
         </div>
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-x" data-resize-axis="x" aria-hidden="true" title="Resize width"></span>
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>
-        <span class="dashboard-panel-resize-handle" data-resize-axis="both" aria-hidden="true" title="Resize card"></span>
       </section>
 
       <section class="security-panel event-panel ${dashboardEventsVisible ? "event-panel-visible" : "event-panel-hidden"}" data-dashboard-panel="events" data-panel-resizable="true" data-cols="4" data-rows="${dashboardEventsVisible ? "3" : "1"}">
         <header class="event-panel-header">
           <h2>${copy.event}</h2>
-          <button type="button" class="dashboard-reveal-button" id="dashboardEventsToggle" data-dashboard-reveal="events" aria-expanded="${dashboardEventsVisible ? "true" : "false"}">${dashboardEventsVisible ? "Hide" : "More"}</button>
           <span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span>
         </header>
         <div class="panel-body dashboard-event-body">
@@ -3489,13 +3485,11 @@ function renderDashboard(data) {
         </div>
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-x" data-resize-axis="x" aria-hidden="true" title="Resize width"></span>
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>
-        <span class="dashboard-panel-resize-handle" data-resize-axis="both" aria-hidden="true" title="Resize card"></span>
       </section>
 
       <section class="security-panel alert-panel ${dashboardAlertsVisible ? "alert-panel-visible" : "alert-panel-hidden"}" data-dashboard-panel="alerts" data-panel-resizable="true" data-cols="4" data-rows="${dashboardAlertsVisible ? "3" : "1"}">
         <header class="alert-panel-header">
           <h2>${copy.alert}</h2>
-          <button type="button" class="dashboard-reveal-button" id="dashboardAlertsToggle" data-dashboard-reveal="alerts" aria-expanded="${dashboardAlertsVisible ? "true" : "false"}">${dashboardAlertsVisible ? "Hide" : "More"}</button>
           <span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span>
         </header>
         <div class="panel-body dashboard-alert-body">
@@ -3505,7 +3499,6 @@ function renderDashboard(data) {
         </div>
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-x" data-resize-axis="x" aria-hidden="true" title="Resize width"></span>
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>
-        <span class="dashboard-panel-resize-handle" data-resize-axis="both" aria-hidden="true" title="Resize card"></span>
       </section>
 
       <section class="security-panel audit-summary-panel" data-dashboard-panel="audit" data-panel-resizable="true" data-cols="4" data-rows="3">
@@ -3524,14 +3517,12 @@ function renderDashboard(data) {
         </div>
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-x" data-resize-axis="x" aria-hidden="true" title="Resize width"></span>
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>
-        <span class="dashboard-panel-resize-handle" data-resize-axis="both" aria-hidden="true" title="Resize card"></span>
       </section>
 
   </div>
   `;
   enableDashboardKpiDrag(document.querySelector("#dashboardKpiBoard"));
   enableDashboardPanelDrag(document.querySelector("#dashboardContentBoard"));
-  bindDashboardRevealToggles();
 }
 
 function renderDashboardFallback(message = "") {
