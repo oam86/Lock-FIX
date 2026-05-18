@@ -2162,7 +2162,7 @@ button {
 .line-chart {
   width: 100%;
   height: auto;
-  min-height: 270px;
+  min-height: 236px;
 }
 
 .grid-line {
