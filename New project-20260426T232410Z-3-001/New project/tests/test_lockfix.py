@@ -763,11 +763,11 @@ class LockFixTests(unittest.TestCase):
             'id="userManagementForm"',
             'id="userManagementBackButton"',
             'data-i18n="userManagement.actions"',
-            'v=20260518-hardware-shortcut-hidden',
+            'v=20260518-i18n-static-polish',
             'class="rbac-chip-list user-management-department-list"',
-            '<option value="backup-operation">Backup Operation</option>',
+            'data-i18n="department.backupOperation"',
             '<option value="SECURITY_ADMIN">SECURITY_ADMIN</option>',
-            '<span>Hardware Control</span>',
+            'data-i18n="department.hardwareControl"',
         ]:
             self.assertIn(token, html)
         for token in [
@@ -1972,7 +1972,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("border: 0;", css_source)
         self.assertNotIn("border: 1px solid rgba(196, 211, 225, 0.72);", css_source)
         self.assertNotIn("border: 1px solid rgba(121, 158, 206, 0.48);", css_source)
-        self.assertIn("20260518-hardware-shortcut-hidden", index_source)
+        self.assertIn("20260518-i18n-static-polish", index_source)
 
     def test_isolate_reaches_isolated(self) -> None:
         tmp_path = self.make_workspace()
@@ -2707,7 +2707,7 @@ class LockFixTests(unittest.TestCase):
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
         webui_source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")
 
-        self.assertIn("20260518-hardware-shortcut-hidden", html_source)
+        self.assertIn("20260518-i18n-static-polish", html_source)
         self.assertIn("emergency.reconnect.background.timeout", webui_source)
         self.assertIn("EMERGENCY_RECONNECT_AGENT_START_TIMEOUT_SECONDS", webui_source)
         self.assertIn("emergency_reconnect_agent_started", webui_source)
@@ -2783,7 +2783,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("height: 68px !important;", css_source)
         self.assertIn("min-height: 36px !important;", css_source)
         self.assertIn("border-bottom: 0 !important;", css_source)
-        self.assertIn("20260518-hardware-shortcut-hidden", html_source)
+        self.assertIn("20260518-i18n-static-polish", html_source)
 
     def test_logs_summary_cards_render_above_filter_bar(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -2791,7 +2791,7 @@ class LockFixTests(unittest.TestCase):
 
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('class="logs-range"'))
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('id="logsStart"'))
-        self.assertIn("20260518-hardware-shortcut-hidden", html_source)
+        self.assertIn("20260518-i18n-static-polish", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -2810,7 +2810,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260518-hardware-shortcut-hidden", html_source)
+        self.assertIn("20260518-i18n-static-polish", html_source)
 
     def test_settings_service_policy_card_is_not_rendered(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -2828,6 +2828,49 @@ class LockFixTests(unittest.TestCase):
         self.assertNotIn("settingsHardwareStatus", html_source)
         self.assertIn("settingsHardwareStatus", app_source)
         self.assertIn('id="hardwareView"', html_source)
+
+    def test_static_web_ui_text_uses_language_bindings(self) -> None:
+        root = Path.cwd()
+        html_source = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        app_source = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
+
+        for token in [
+            'data-i18n="login.email"',
+            'data-i18n-placeholder="login.email"',
+            'data-i18n-aria-label="login.qrConfirm"',
+            'data-i18n-title="monitoring.download"',
+            'data-i18n="ops.eventsDesc"',
+            'data-i18n="logs.title"',
+            'data-i18n="notification.title"',
+            'data-i18n="auditLogs.title"',
+            'data-i18n="accessDenied.message"',
+            'data-i18n="threatPolicy.title"',
+            'data-i18n="licenseModal.title"',
+            'data-i18n="accountGuide.body"',
+            'data-i18n="airgapConfirm.ok"',
+            'data-i18n="department.backupOperation"',
+        ]:
+            self.assertIn(token, html_source)
+        for token in [
+            'node.setAttribute("placeholder", t(node.dataset.i18nPlaceholder))',
+            'node.setAttribute("title", t(node.dataset.i18nTitle))',
+            'node.setAttribute("aria-label", t(node.dataset.i18nAriaLabel))',
+            '"login.email": "이메일"',
+            '"login.email": "Email"',
+            '"notification.title": "보안 알림 게이트웨이"',
+            '"notification.title": "Security Notification Gateway"',
+            '"auditLogs.title": "감사 로그"',
+            '"auditLogs.title": "Audit Logs"',
+            '"threatPolicy.title": "위협 탐지 정책"',
+            '"threatPolicy.title": "Threat Detection Policy"',
+            '"licenseModal.register": "라이선스 등록"',
+            '"licenseModal.register": "Register License"',
+            '"department.hardwareControl": "하드웨어 제어"',
+            '"department.hardwareControl": "Hardware Control"',
+            "departmentDisplayName(department.id)",
+        ]:
+            self.assertIn(token, app_source)
+        self.assertIn("20260518-i18n-static-polish", html_source)
 
     def test_monitoring_header_copy_is_hidden_while_polling_remains(self) -> None:
         root = Path.cwd()
@@ -2950,7 +2993,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("min-height: 46px;", css_source)
         self.assertIn("opacity: 0.66;", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260518-hardware-shortcut-hidden", html_source)
+        self.assertIn("20260518-i18n-static-polish", html_source)
 
     def test_dashboard_route_does_not_show_legacy_notification_markup(self) -> None:
         root = Path.cwd()
@@ -2968,7 +3011,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260518-hardware-shortcut-hidden", html_source)
+        self.assertIn("20260518-i18n-static-polish", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()
