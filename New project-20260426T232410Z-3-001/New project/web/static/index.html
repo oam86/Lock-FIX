@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LOCK-FIX PoC</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260518-signature-draw-modal" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260518-service-policy-hidden" />
   </head>
   <body>
     <section class="login-screen" id="loginScreen">
@@ -1015,29 +1015,6 @@
               <label><span>리포트 저장 경로</span><input id="threatPolicyReportPath" type="text" value="C:\ProgramData\LOCK-FIX\reports\threat" /></label>
             </div>
           </article>
-          <article class="settings-card settings-service-card">
-            <div>
-              <h2 data-i18n="settings.servicePolicyTitle">권한 운영 정책</h2>
-              <p data-i18n="settings.servicePolicyDesc">운영 모드, 서비스 실행 계정, 디스크 제어 권한, Veeam REST 권한을 Agent/Service 기준으로 진단합니다.</p>
-              <strong id="serviceControlStatus">LOCK-FIX Service : Checking</strong>
-            </div>
-            <div class="settings-service-preflight">
-              <div class="settings-service-status-row">
-                <span id="servicePreflightStatus">확인 중</span>
-                <button type="button" id="servicePreflightButton" data-i18n="settings.preflightRefresh">재진단</button>
-              </div>
-              <div class="settings-preflight-grid">
-                <div><em>Mode</em><b id="servicePreflightMode">-</b></div>
-                <div><em>Service Account</em><b id="servicePreflightAccount">-</b></div>
-                <div><em>Restricted</em><b id="servicePreflightRestricted">-</b></div>
-              </div>
-              <ul id="servicePreflightChecks" class="settings-preflight-checks"></ul>
-              <div class="settings-service-actions">
-                <button type="button" id="serviceStartButton" data-i18n="settings.serviceStart">Start</button>
-                <button type="button" id="serviceStopButton" data-i18n="settings.serviceStop">Stop</button>
-              </div>
-            </div>
-          </article>
           <div class="settings-actions">
             <button type="button" id="settingsApplyButton" data-i18n="settings.apply">Apply</button>
             <span id="settingsApplyStatus" data-i18n="settings.pending">Select options, then click Apply.</span>
@@ -1177,7 +1154,7 @@
       </div>
     </template>
 
-    <script src="/static/app.js?v=20260518-signature-draw-modal"></script>
+    <script src="/static/app.js?v=20260518-service-policy-hidden"></script>
   </body>
 </html>
 
