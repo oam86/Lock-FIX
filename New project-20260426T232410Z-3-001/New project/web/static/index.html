@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LOCK-FIX PoC</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260518-monitoring-chart-compact" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260518-report-signature-compact" />
   </head>
   <body>
     <section class="login-screen" id="loginScreen">
@@ -276,7 +276,7 @@
                     <button type="button" class="signature-clear-button" data-signature-clear="engineerSignaturePad" data-i18n="report.clearSignature">Clear</button>
                   </div>
                 </div>
-                <canvas id="engineerSignaturePad" class="signature-pad" width="560" height="180" aria-label="Engineer signature pad"></canvas>
+                <canvas id="engineerSignaturePad" class="signature-pad" width="560" height="120" aria-label="Engineer signature pad"></canvas>
               </article>
               <article class="signature-card">
                 <div class="signature-card-head">
@@ -289,7 +289,7 @@
                     <button type="button" class="signature-clear-button" data-signature-clear="managerSignaturePad" data-i18n="report.clearSignature">Clear</button>
                   </div>
                 </div>
-                <canvas id="managerSignaturePad" class="signature-pad" width="560" height="180" aria-label="Manager signature pad"></canvas>
+                <canvas id="managerSignaturePad" class="signature-pad" width="560" height="120" aria-label="Manager signature pad"></canvas>
               </article>
             </div>
           </div>
@@ -1164,7 +1164,7 @@
       </div>
     </template>
 
-    <script src="/static/app.js?v=20260518-monitoring-chart-compact"></script>
+    <script src="/static/app.js?v=20260518-report-signature-compact"></script>
   </body>
 </html>
 
