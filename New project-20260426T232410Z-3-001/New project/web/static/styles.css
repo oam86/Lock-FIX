@@ -10792,17 +10792,12 @@ td {
   width: 72px;
   height: 72px;
   flex-basis: 72px;
-  border: 2px solid #dbeaf5;
+  border: 3px solid #dbeaf5;
   border-radius: 50%;
-  background:
-    radial-gradient(circle at 34% 28%, #ffffff 0 32%, #f8fbfd 70%),
-    #ffffff;
+  background: #ffffff;
   color: #3d4f62;
   position: relative;
-  box-shadow:
-    0 12px 24px rgba(34, 55, 78, 0.12),
-    inset 0 0 0 5px #fbfdff,
-    inset 0 0 0 7px rgba(219, 234, 245, 0.42);
+  box-shadow: none;
 }
 
 .flow-step .security-icon::before {
@@ -10920,7 +10915,7 @@ td {
   border-radius: 18px;
   background: linear-gradient(135deg, #13b6d4 0%, #20df79 100%);
   color: #ffffff;
-  box-shadow: 0 16px 28px rgba(5, 181, 120, 0.2);
+  box-shadow: none;
 }
 
 .flow-step .security-icon-flush-run::before {
@@ -10947,11 +10942,9 @@ td {
 .flow-step .security-icon-flush-run {
   border: 3px solid rgba(38, 134, 255, 0.86);
   border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 50%, rgba(38, 134, 255, 0.08), rgba(38, 134, 255, 0) 62%),
-    #ffffff;
+  background: #ffffff;
   color: #2686ff;
-  box-shadow: 0 14px 26px rgba(38, 134, 255, 0.14);
+  box-shadow: none;
 }
 
 .flow-step .security-icon-io-check::before {
@@ -10977,11 +10970,9 @@ td {
 
 .flow-step .security-icon-io-check {
   border: 3px solid rgba(203, 225, 243, 0.96);
-  background:
-    radial-gradient(circle at 50% 50%, rgba(82, 96, 109, 0.08), rgba(82, 96, 109, 0) 62%),
-    #ffffff;
+  background: #ffffff;
   color: #52606d;
-  box-shadow: 0 14px 26px rgba(82, 96, 109, 0.12);
+  box-shadow: none;
 }
 
 .flow-step .security-icon-power-off::before {
@@ -11006,11 +10997,9 @@ td {
 .flow-step .security-icon-power-off {
   border: 3px solid rgba(239, 35, 53, 0.74);
   border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 50%, rgba(239, 35, 53, 0.08), rgba(239, 35, 53, 0) 62%),
-    #ffffff;
+  background: #ffffff;
   color: #ef2335;
-  box-shadow: 0 14px 26px rgba(239, 35, 53, 0.12);
+  box-shadow: none;
 }
 
 .flow-step .security-icon-plug::before {
@@ -11054,20 +11043,36 @@ td {
 }
 
 .flow-step .security-icon-airgap-logo {
-  width: 66px;
-  height: 66px;
-  flex-basis: 66px;
+  width: 72px;
+  height: 72px;
+  flex-basis: 72px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 18px;
   clip-path: none;
-  background: url("/static/airgap-logo.png") center / contain no-repeat;
+  background: #ffffff;
   box-shadow: none;
   transform: translateY(0);
 }
 
-.flow-step .security-icon-airgap-logo::before,
+.flow-step .security-icon-airgap-logo::before {
+  left: 17px;
+  top: 9px;
+  width: 38px;
+  height: 48px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #0d65df 0 50%, #17b85d 50% 100%);
+  clip-path: polygon(50% 0, 88% 14%, 84% 56%, 50% 100%, 16% 56%, 12% 14%);
+}
+
 .flow-step .security-icon-airgap-logo::after {
-  display: none;
+  left: 28px;
+  top: 31px;
+  width: 16px;
+  height: 15px;
+  border: 4px solid #ffffff;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: 0 -10px 0 -6px #ffffff;
 }
 
 .flow-step span {
