@@ -7390,7 +7390,62 @@ function showEmergencyReconnectApprovalRequired(error, slotId, volumePath = "") 
   });
 }
 
+function requestEmergencyReconnectPassword() {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "emergency-approval-modal emergency-reauth-modal";
+    overlay.innerHTML = `
+      <form class="emergency-approval-card emergency-reauth-card" role="dialog" aria-modal="true" aria-labelledby="emergencyReauthTitle">
+        <span class="emergency-approval-kicker">Re-authentication</span>
+        <h2 id="emergencyReauthTitle">비밀번호 재인증</h2>
+        <p>현재 로그인한 LOCK-FIX 사용자 비밀번호를 다시 입력하면 주간에는 2인 승인 없이 무결성 검증 후 재접속을 실행합니다.</p>
+        <label>
+          현재 사용자 비밀번호
+          <input type="password" name="reauthPassword" autocomplete="current-password" required />
+        </label>
+        <em class="emergency-approval-error" aria-live="polite"></em>
+        <div class="emergency-approval-actions">
+          <button type="button" data-reauth-cancel="true">취소</button>
+          <button type="submit">확인 후 실행</button>
+        </div>
+      </form>
+    `;
+    const form = overlay.querySelector("form");
+    const input = overlay.querySelector("input[name='reauthPassword']");
+    const status = overlay.querySelector(".emergency-approval-error");
+    const close = (value) => {
+      document.removeEventListener("keydown", onKey);
+      overlay.remove();
+      resolve(value);
+    };
+    function onKey(event) {
+      if (event.key === "Escape") close(null);
+    }
+    overlay.querySelector("[data-reauth-cancel]").addEventListener("click", () => close(null));
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) close(null);
+    });
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const password = String(input.value || "");
+      if (!password.trim()) {
+        status.textContent = "현재 로그인한 사용자 비밀번호를 입력하세요.";
+        input.focus();
+        return;
+      }
+      close(password);
+    });
+    document.addEventListener("keydown", onKey);
+    document.body.appendChild(overlay);
+    setTimeout(() => input.focus(), 0);
+  });
+}
+
 async function runEmergencyReconnect(slotId, volumePath = "") {
+  const reauthPassword = await requestEmergencyReconnectPassword();
+  if (reauthPassword === null) {
+    return;
+  }
   emergencyReconnectRunning = true;
   emergencyReconnectInitialState = String((latestSourcesData?.air_gap?.emergency_access?.slot?.state) || "").toUpperCase();
   emergencyReconnectDetailSlot = slotId || "-";
@@ -7404,7 +7459,7 @@ async function runEmergencyReconnect(slotId, volumePath = "") {
     const result = await requestJson(`/api/emergency-reconnect?slot=${encodeURIComponent(slotId)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ repository_path: volumePath }),
+      body: JSON.stringify({ repository_path: volumePath, reauth_password: reauthPassword }),
     });
     emergencyActionStatus = result.message || "긴급 접속 작업이 백그라운드에서 진행 중입니다.";
     emergencyReconnectJobId = result.job_id || "";
@@ -7420,9 +7475,11 @@ async function runEmergencyReconnect(slotId, volumePath = "") {
       await loadAll();
       return;
     }
-    emergencyActionStatus = Number(error.status || 0) === 401
-      ? "로그인 세션이 만료되어 긴급 재접속 요청이 서비스에 전달되지 않았습니다. 다시 로그인 후 실행하세요."
-      : friendlyEmergencyError(error);
+    emergencyActionStatus = error?.payload?.error === "reauth_failed"
+      ? "비밀번호 재인증에 실패했습니다. 현재 로그인한 사용자 비밀번호를 다시 확인하세요."
+      : Number(error.status || 0) === 401
+        ? "로그인 세션이 만료되어 긴급 재접속 요청이 서비스에 전달되지 않았습니다. 다시 로그인 후 실행하세요."
+        : friendlyEmergencyError(error);
     appendEmergencyReconnectDetail(`reconnect request failed: ${emergencyActionStatus}`);
     stopEmergencyReconnectWatch();
     await loadAll();

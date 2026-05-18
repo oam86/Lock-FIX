@@ -63,6 +63,8 @@ NETWORK_INTERFACE_HISTORY: dict[str, dict[str, list[float]]] = {}
 AIRGAP_AUTO_ISOLATE_LOCK = threading.Lock()
 DASHBOARD_CACHE_TTL_SECONDS = 2.0
 DASHBOARD_PROBE_TIMEOUT_SECONDS = 1.2
+EMERGENCY_RECONNECT_DAY_START_HOUR = 9
+EMERGENCY_RECONNECT_DAY_END_HOUR = 18
 
 
 class WebContext:
@@ -1013,43 +1015,78 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 payload = self.read_json_body()
                 slot_id = self.query_slot(parsed.query)
                 slot = self.context.config.slot(slot_id)
-                missing_approvals = self.missing_emergency_reconnect_approvals(slot_id)
-                if missing_approvals:
-                    for request_type in missing_approvals:
+                if self.is_daytime_emergency_reconnect_window():
+                    reauth = self.verify_current_session_password(str(payload.get("reauth_password") or ""))
+                    if not reauth.get("ok"):
                         self.context.controller.audit.write(
-                            "approval.execution.blocked",
-                            request_type=request_type,
-                            target_id=slot_id,
+                            "emergency.reconnect.reauth.failed",
+                            slot_id=slot_id,
+                            actorUserId=self.current_session_user(),
+                            actor_role=self.current_role().value,
+                            reason=str(reauth.get("reason") or "password_mismatch"),
+                            result="FAILED",
+                            risk="HIGH",
+                            message="Emergency reconnect password re-authentication failed.",
                         )
+                        self.send_json(
+                            {
+                                "slot_id": slot_id,
+                                "accepted": False,
+                                "reauth_required": True,
+                                "error": "reauth_failed",
+                                "message": "현재 로그인한 LOCK-FIX 사용자 비밀번호를 다시 확인하세요.",
+                            },
+                            status=401,
+                        )
+                        return
                     self.context.controller.audit.write(
-                        "emergency.reconnect.approval.required",
+                        "emergency.reconnect.reauth.success",
                         slot_id=slot_id,
-                        missing_approvals=missing_approvals,
-                        message="Emergency reconnect is blocked until required approvals are completed.",
+                        actorUserId=self.current_session_user(),
+                        actor_role=self.current_role().value,
+                        result="SUCCESS",
+                        message="Emergency reconnect password re-authentication succeeded.",
                     )
-                    self.send_json(
-                        {
-                            "slot_id": slot_id,
-                            "accepted": False,
-                            "approval_required": True,
-                            "required_approvals": ["EMERGENCY_UNLOCK", "DISK_ONLINE"],
-                            "missing_approvals": missing_approvals,
-                            "approval_target": slot_id,
-                            "error": "긴급 재접속 승인이 필요합니다.",
-                            "message": "EMERGENCY_UNLOCK 및 DISK_ONLINE 승인 완료 후 다시 실행하세요.",
-                        },
-                        status=403,
-                    )
-                    return
-                self.context.controller.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)
-                self.context.controller.approvals.require_approved("DISK_ONLINE", slot_id)
-                approval_password = str(payload.get("approval_password") or "").strip()
-                if approval_password:
                     self.context.controller.audit.write(
-                        "emergency.reconnect.approval_password.legacy_ignored",
+                        "emergency.reconnect.daytime_approval_bypass",
                         slot_id=slot_id,
-                        message="Legacy approval password input was ignored because approval decisions already gate emergency reconnect.",
+                        actorUserId=self.current_session_user(),
+                        actor_role=self.current_role().value,
+                        window=f"{EMERGENCY_RECONNECT_DAY_START_HOUR:02d}:00-{EMERGENCY_RECONNECT_DAY_END_HOUR:02d}:00",
+                        result="SUCCESS",
+                        message="Daytime emergency reconnect bypassed dual approval after current-user password re-authentication.",
                     )
+                else:
+                    missing_approvals = self.missing_emergency_reconnect_approvals(slot_id)
+                    if missing_approvals:
+                        for request_type in missing_approvals:
+                            self.context.controller.audit.write(
+                                "approval.execution.blocked",
+                                request_type=request_type,
+                                target_id=slot_id,
+                            )
+                        self.context.controller.audit.write(
+                            "emergency.reconnect.approval.required",
+                            slot_id=slot_id,
+                            missing_approvals=missing_approvals,
+                            message="Emergency reconnect is blocked until required approvals are completed.",
+                        )
+                        self.send_json(
+                            {
+                                "slot_id": slot_id,
+                                "accepted": False,
+                                "approval_required": True,
+                                "required_approvals": ["EMERGENCY_UNLOCK", "DISK_ONLINE"],
+                                "missing_approvals": missing_approvals,
+                                "approval_target": slot_id,
+                                "error": "긴급 재접속 승인이 필요합니다.",
+                                "message": "EMERGENCY_UNLOCK 및 DISK_ONLINE 승인 완료 후 다시 실행하세요.",
+                            },
+                            status=403,
+                        )
+                        return
+                    self.context.controller.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)
+                    self.context.controller.approvals.require_approved("DISK_ONLINE", slot_id)
                 repository_path = str(payload.get("repository_path") or self.context.veeam_backup_copy_repository_path() or slot.mount_point or slot.device or "").strip()
                 veeam_repository_path = self.context.veeam_backup_copy_repository_path()
                 if veeam_repository_path:
@@ -1750,6 +1787,42 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
 
     def current_password_change_required(self) -> bool:
         return bool(self.current_session_record().get("password_change_required", False))
+
+    def is_daytime_emergency_reconnect_window(self, now: datetime | None = None) -> bool:
+        current = now or datetime.now()
+        return EMERGENCY_RECONNECT_DAY_START_HOUR <= current.hour < EMERGENCY_RECONNECT_DAY_END_HOUR
+
+    def verify_current_session_password(self, password: str) -> dict:
+        supplied = str(password or "")
+        user = self.current_session_user()
+        if not supplied:
+            return {"ok": False, "reason": "missing_password", "user": user}
+        if secrets.compare_digest(user, "admin"):
+            ok = secrets.compare_digest(supplied, "1")
+            return {
+                "ok": ok,
+                "reason": "primary_password" if ok else "password_mismatch",
+                "user": user,
+            }
+        managed = self.managed_user_by_email(user)
+        if not managed:
+            return {"ok": False, "reason": "user_not_found", "user": user}
+        stored_hash = str(managed.get("passwordHash") or "")
+        if not stored_hash:
+            return {
+                "ok": False,
+                "reason": "password_not_set",
+                "user": user,
+                "user_id": str(managed.get("id") or ""),
+            }
+        supplied_hash = self.context.login_security_hash(supplied)
+        ok = secrets.compare_digest(stored_hash, supplied_hash)
+        return {
+            "ok": ok,
+            "reason": "managed_user_password" if ok else "password_mismatch",
+            "user": user,
+            "user_id": str(managed.get("id") or ""),
+        }
 
     def permission_error_status(self, exc: PermissionError) -> int:
         return 401 if "authentication required" in str(exc).lower() else 403
