@@ -9773,10 +9773,10 @@ td {
   grid-row: span 1;
   min-height: 118px;
   display: grid;
-  grid-template-columns: 62px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  gap: 16px;
-  padding: 16px 34px;
+  gap: 10px;
+  padding: 18px 34px;
   transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
 }
 

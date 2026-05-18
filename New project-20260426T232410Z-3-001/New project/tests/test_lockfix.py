@@ -763,7 +763,7 @@ class LockFixTests(unittest.TestCase):
             'id="userManagementForm"',
             'id="userManagementBackButton"',
             'data-i18n="userManagement.actions"',
-            'v=20260519-crisp-flow-icons',
+            'v=20260519-dashboard-card-text-only',
             'class="rbac-chip-list user-management-department-list"',
             'data-i18n="department.backupOperation"',
             '<option value="SECURITY_ADMIN">SECURITY_ADMIN</option>',
@@ -1975,7 +1975,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("border: 0;", css_source)
         self.assertNotIn("border: 1px solid rgba(196, 211, 225, 0.72);", css_source)
         self.assertNotIn("border: 1px solid rgba(121, 158, 206, 0.48);", css_source)
-        self.assertIn("20260519-crisp-flow-icons", index_source)
+        self.assertIn("20260519-dashboard-card-text-only", index_source)
 
     def test_isolate_reaches_isolated(self) -> None:
         tmp_path = self.make_workspace()
@@ -2710,7 +2710,7 @@ class LockFixTests(unittest.TestCase):
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
         webui_source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")
 
-        self.assertIn("20260519-crisp-flow-icons", html_source)
+        self.assertIn("20260519-dashboard-card-text-only", html_source)
         self.assertIn("emergency.reconnect.background.timeout", webui_source)
         self.assertIn("EMERGENCY_RECONNECT_AGENT_START_TIMEOUT_SECONDS", webui_source)
         self.assertIn("emergency_reconnect_agent_started", webui_source)
@@ -2786,7 +2786,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("height: 68px !important;", css_source)
         self.assertIn("min-height: 36px !important;", css_source)
         self.assertIn("border-bottom: 0 !important;", css_source)
-        self.assertIn("20260519-crisp-flow-icons", html_source)
+        self.assertIn("20260519-dashboard-card-text-only", html_source)
 
     def test_logs_summary_cards_render_above_filter_bar(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -2794,7 +2794,7 @@ class LockFixTests(unittest.TestCase):
 
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('class="logs-range"'))
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('id="logsStart"'))
-        self.assertIn("20260519-crisp-flow-icons", html_source)
+        self.assertIn("20260519-dashboard-card-text-only", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -2813,7 +2813,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260519-crisp-flow-icons", html_source)
+        self.assertIn("20260519-dashboard-card-text-only", html_source)
 
     def test_settings_service_policy_card_is_not_rendered(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -2873,7 +2873,7 @@ class LockFixTests(unittest.TestCase):
             "departmentDisplayName(department.id)",
         ]:
             self.assertIn(token, app_source)
-        self.assertIn("20260519-crisp-flow-icons", html_source)
+        self.assertIn("20260519-dashboard-card-text-only", html_source)
 
     def test_monitoring_header_copy_is_hidden_while_polling_remains(self) -> None:
         root = Path.cwd()
@@ -2965,6 +2965,12 @@ class LockFixTests(unittest.TestCase):
         self.assertIn('data-dashboard-panel="protection" data-panel-resizable="true"', app_source)
         self.assertIn('data-dashboard-panel="backup" data-panel-resizable="true"', app_source)
         self.assertIn('data-panel-resizable="true"', app_source)
+        self.assertNotIn('class="security-icon security-icon-${icon} security-tone-${tone}"', app_source)
+        self.assertNotIn('panel-title-icon protection-title-icon', app_source)
+        self.assertNotIn('panel-title-icon backup-title-icon', app_source)
+        self.assertNotIn('panel-title-icon event-title-icon', app_source)
+        self.assertNotIn('panel-title-icon alert-title-icon', app_source)
+        self.assertNotIn('panel-title-icon audit-title-icon', app_source)
         self.assertIn("dashboard-panel-resize-handle", app_source)
         self.assertIn("dashboard-kpi-resize-line-x", app_source)
         self.assertIn("dashboard-kpi-resize-line-y", app_source)
@@ -3006,6 +3012,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn('const isAlertPanel = panel.classList.contains("alert-panel");', app_source)
         self.assertIn("button.setAttribute(\"aria-expanded\", String(visible));", app_source)
         self.assertIn("grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));", css_source)
+        self.assertIn("grid-template-columns: minmax(0, 1fr);", css_source)
         self.assertIn("grid-auto-rows: minmax(118px, auto);", css_source)
         self.assertIn("white-space: nowrap;", css_source)
         self.assertIn("overflow-wrap: normal;", css_source)
@@ -3016,7 +3023,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("background: #ffffff;", css_source)
         self.assertIn("opacity: 0.66;", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260519-crisp-flow-icons", html_source)
+        self.assertIn("20260519-dashboard-card-text-only", html_source)
         self.assertIn("grid-template-columns: repeat(5, 92px);", css_source)
         self.assertIn("flex-basis: 72px;", css_source)
         self.assertIn("border-radius: 18px;", css_source)
@@ -3051,7 +3058,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260519-crisp-flow-icons", html_source)
+        self.assertIn("20260519-dashboard-card-text-only", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()

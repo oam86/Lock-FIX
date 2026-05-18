@@ -3390,7 +3390,6 @@ function renderDashboard(data) {
           <span class="dashboard-kpi-resize-line dashboard-kpi-resize-line-x" data-resize-axis="x" aria-hidden="true" title="Resize width"></span>
           <span class="dashboard-kpi-resize-line dashboard-kpi-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>
           <span class="dashboard-kpi-resize-handle" data-resize-axis="both" aria-hidden="true" title="Resize card"></span>
-          <i class="security-icon security-icon-${icon} security-tone-${tone}" ${meta ? `title="${escapeHtml(meta)}" aria-label="${escapeHtml(meta)}"` : 'aria-hidden="true"'}></i>
           <div>
             <span>${escapeHtml(label || "-")}</span>
             <strong class="security-value-${tone}" ${valueTitle ? `title="${escapeHtml(valueTitle)}"` : ""}>${escapeHtml(value || "-")}</strong>
@@ -3422,7 +3421,7 @@ function renderDashboard(data) {
 
     <div class="security-dashboard-grid dashboard-content-grid" id="dashboardContentBoard">
       <section class="security-panel security-flow-panel" data-dashboard-panel="protection" data-panel-resizable="true" data-cols="8" data-rows="3">
-        <header><h2><i class="panel-title-icon protection-title-icon" aria-hidden="true"></i>${copy.liveProtection}</h2><span class="dashboard-panel-info">ⓘ</span><span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span></header>
+        <header><h2>${copy.liveProtection}</h2><span class="dashboard-panel-info">ⓘ</span><span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span></header>
         <div class="panel-body">
           <p>${copy.protectedMessage.replace("Offline", "<b>Offline</b>").replace("offline", "<b>offline</b>")}</p>
           <div class="security-flow">
@@ -3440,7 +3439,7 @@ function renderDashboard(data) {
       </section>
 
       <section class="security-panel backup-panel" data-dashboard-panel="backup" data-panel-resizable="true" data-cols="4" data-rows="3">
-        <header><h2><i class="panel-title-icon backup-title-icon" aria-hidden="true"></i>${copy.backupLink}</h2><span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span></header>
+        <header><h2>${copy.backupLink}</h2><span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span></header>
         <div class="panel-body">
           <dl>
             <div><dt>연동 백업 솔루션</dt><dd>${escapeHtml(backup.solution || "Veeam Backup & Replication")}</dd></div>
@@ -3458,7 +3457,7 @@ function renderDashboard(data) {
 
       <section class="security-panel event-panel ${dashboardEventsVisible ? "event-panel-visible" : "event-panel-hidden"}" data-dashboard-panel="events" data-panel-resizable="true" data-cols="4" data-rows="${dashboardEventsVisible ? "3" : "1"}">
         <header class="event-panel-header">
-          <h2><i class="panel-title-icon event-title-icon" aria-hidden="true"></i>${copy.event}</h2>
+          <h2>${copy.event}</h2>
           <button type="button" class="dashboard-reveal-button" id="dashboardEventsToggle" data-dashboard-reveal="events" aria-expanded="${dashboardEventsVisible ? "true" : "false"}">${dashboardEventsVisible ? "Hide" : "More"}</button>
           <span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span>
         </header>
@@ -3473,7 +3472,7 @@ function renderDashboard(data) {
 
       <section class="security-panel alert-panel ${dashboardAlertsVisible ? "alert-panel-visible" : "alert-panel-hidden"}" data-dashboard-panel="alerts" data-panel-resizable="true" data-cols="4" data-rows="${dashboardAlertsVisible ? "3" : "1"}">
         <header class="alert-panel-header">
-          <h2><i class="panel-title-icon alert-title-icon" aria-hidden="true"></i>${copy.alert}</h2>
+          <h2>${copy.alert}</h2>
           <button type="button" class="dashboard-reveal-button" id="dashboardAlertsToggle" data-dashboard-reveal="alerts" aria-expanded="${dashboardAlertsVisible ? "true" : "false"}">${dashboardAlertsVisible ? "Hide" : "More"}</button>
           <span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span>
         </header>
@@ -3488,7 +3487,7 @@ function renderDashboard(data) {
       </section>
 
       <section class="security-panel audit-summary-panel" data-dashboard-panel="audit" data-panel-resizable="true" data-cols="4" data-rows="3">
-        <header><h2><i class="panel-title-icon audit-title-icon" aria-hidden="true"></i>${copy.audit}</h2><span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span></header>
+        <header><h2>${copy.audit}</h2><span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span></header>
         <div class="panel-body">
           <div class="audit-count-grid">
             ${auditCounts.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}건</strong></div>`).join("")}
