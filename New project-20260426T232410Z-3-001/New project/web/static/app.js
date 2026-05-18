@@ -1540,6 +1540,108 @@ function dashboardCopy() {
   };
 }
 
+function dashboardKpiLabel(icon, label, copy) {
+  const key = String(icon || "");
+  const labelMap = {
+    "data-protection-logo": copy.protection,
+    "airgap-logo": copy.airgap,
+    "storage-power": copy.storagePower,
+    "veeam-backup-completed": copy.lastBackup,
+    "integrity-logo": copy.integrity,
+  };
+  if (labelMap[key]) return labelMap[key];
+  if (uiSettings.language !== "ko") return label || "-";
+  return ({
+    "Data Protection": copy.protection,
+    "Protection Status": copy.protection,
+    "Air-Gap": copy.airgap,
+    "Air-Gap Status": copy.airgap,
+    "Disk Offline": copy.storagePower,
+    "Last Backup": copy.lastBackup,
+    "LOCK-FIX State": copy.integrity,
+    "Integrity Check": copy.integrity,
+  })[label] || label || "-";
+}
+
+function dashboardKpiStatus(item, copy) {
+  const rawValue = String(item.value ?? "").trim();
+  const normalized = rawValue.toUpperCase().replace(/[\s-]+/g, "_");
+  const isKo = uiSettings.language === "ko";
+  const commonMap = isKo
+    ? {
+      SUCCESS: "성공",
+      COMPLETED: "완료",
+      COMPLETE: "완료",
+      NORMAL: "정상",
+      OK: "정상",
+      ACTIVE: "활성",
+      ISOLATED: "격리됨",
+      OFFLINE: "오프라인",
+      ONLINE: "온라인",
+      UNKNOWN: "확인 중",
+      CHECKING: "확인 중",
+      WAITING: "대기",
+      WAITING_FOR_NEW_BACKUP: "백업 대기",
+      WAITING_DISK: "디스크 대기",
+      ONLINE_VERIFIED_RW: "검증 완료",
+      ONLINE_VERIFIED: "검증 완료",
+      OFFLINE_COMPLETE: "격리 완료",
+      OFFLINE_FAILED: "확인 필요",
+    }
+    : {
+      SUCCESS: "Success",
+      COMPLETED: "Complete",
+      COMPLETE: "Complete",
+      NORMAL: "Normal",
+      OK: "OK",
+      ACTIVE: "Active",
+      ISOLATED: "Isolated",
+      OFFLINE: "Offline",
+      ONLINE: "Online",
+      UNKNOWN: "Checking",
+      CHECKING: "Checking",
+      WAITING: "Waiting",
+      WAITING_FOR_NEW_BACKUP: "Backup Waiting",
+      WAITING_DISK: "Disk Waiting",
+      ONLINE_VERIFIED_RW: "Verified",
+      ONLINE_VERIFIED: "Verified",
+      OFFLINE_COMPLETE: "Offline Complete",
+      OFFLINE_FAILED: "Needs Check",
+    };
+  const icon = String(item.icon || "");
+  let value = commonMap[normalized] || rawValue || "-";
+  let tone = item.tone || "dark";
+  let detail = "";
+  if (icon === "data-protection-logo" && normalized === "SUCCESS") {
+    value = isKo ? "정상" : "Success";
+  }
+  if (icon === "veeam-backup-completed" && normalized === "SUCCESS") {
+    value = isKo ? "성공" : "Success";
+  }
+  if (icon === "storage-power" && normalized === "UNKNOWN") {
+    tone = "dark";
+  }
+  if (icon === "integrity-logo" && normalized === "ONLINE_VERIFIED_RW") {
+    detail = "RW";
+  }
+  if (["UNKNOWN", "CHECKING", "WAITING"].includes(normalized) || normalized.startsWith("WAITING_")) {
+    tone = "dark";
+  }
+  return { value, tone, detail, rawValue };
+}
+
+function dashboardKpiDisplay(item, copy) {
+  const status = dashboardKpiStatus(item, copy);
+  return {
+    ...item,
+    label: dashboardKpiLabel(item.icon, item.label, copy),
+    value: status.value,
+    tone: status.tone,
+    detail: status.detail,
+    rawValue: status.rawValue,
+  };
+}
+
 function editableReportField(field, value, placeholder) {
   return `<input class="report-edit-input" data-report-field="${field}" value="${escapeHtml(value === "-" ? "" : value)}" placeholder="${placeholder}" />`;
 }
@@ -3237,10 +3339,10 @@ function renderDashboard(data) {
       { icon: "veeam-backup-completed", label: copy.lastBackup, value: copy.success, tone: "green", meta: "2026-04-25 18:25" },
       { icon: "integrity-logo", label: copy.integrity, value: copy.normal, tone: "green", meta: `${copy.latest} 2026-04-25 17:40` },
     ];
-  const orderedKpis = reorderDashboardKpis(securityKpis.map((item, index) => ({
+  const orderedKpis = reorderDashboardKpis(securityKpis.map((item, index) => dashboardKpiDisplay({
     ...item,
     key: item.key || item.id || item.label || `kpi-${index}`,
-  })));
+  }, copy)));
   const kpiSizes = loadDashboardKpiSizes();
   const flowItems = Array.isArray(data.flow) && data.flow.length
     ? data.flow
@@ -3280,16 +3382,23 @@ function renderDashboard(data) {
       </section>
     ` : ""}
     <div class="security-kpi-grid" id="dashboardKpiBoard" aria-label="Dashboard summary cards">
-      ${orderedKpis.map(({ icon, label, value, tone, meta, key }) => `
+      ${orderedKpis.map(({ icon, label, value, tone, meta, key, detail, rawValue }) => {
+        const valueTitle = rawValue && rawValue !== value ? rawValue : meta;
+        return `
         <article class="security-kpi security-kpi-${icon}" data-dashboard-kpi="${escapeHtml(key)}" data-cols="${escapeHtml(String(kpiSizes[key]?.cols || 1))}" data-rows="${escapeHtml(String(kpiSizes[key]?.rows || 1))}">
           <span class="dashboard-kpi-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag to reorder"></span>
           <span class="dashboard-kpi-resize-line dashboard-kpi-resize-line-x" data-resize-axis="x" aria-hidden="true" title="Resize width"></span>
           <span class="dashboard-kpi-resize-line dashboard-kpi-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>
           <span class="dashboard-kpi-resize-handle" data-resize-axis="both" aria-hidden="true" title="Resize card"></span>
           <i class="security-icon security-icon-${icon} security-tone-${tone}" ${meta ? `title="${escapeHtml(meta)}" aria-label="${escapeHtml(meta)}"` : 'aria-hidden="true"'}></i>
-          <div><span>${escapeHtml(label || "-")}</span><strong class="security-value-${tone}">${escapeHtml(value || "-")}</strong></div>
+          <div>
+            <span>${escapeHtml(label || "-")}</span>
+            <strong class="security-value-${tone}" ${valueTitle ? `title="${escapeHtml(valueTitle)}"` : ""}>${escapeHtml(value || "-")}</strong>
+            ${detail ? `<em>${escapeHtml(detail)}</em>` : ""}
+          </div>
         </article>
-      `).join("")}
+      `;
+      }).join("")}
     </div>
 
     <section class="dashboard-status-strip" aria-label="Dashboard status summary">
