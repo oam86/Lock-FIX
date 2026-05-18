@@ -652,13 +652,14 @@ class LockFixTests(unittest.TestCase):
         self.assertTrue(handler.verify_current_session_password("StrongPass1")["ok"])
         self.assertEqual(handler.verify_current_session_password("bad")["reason"], "password_mismatch")
 
-    def test_emergency_reconnect_daytime_window_is_local_business_hours(self) -> None:
-        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+    def test_emergency_reconnect_approval_request_endpoint_is_removed(self) -> None:
+        source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")
+        app_source = (Path.cwd() / "web" / "static" / "app.js").read_text(encoding="utf-8")
 
-        self.assertFalse(handler.is_daytime_emergency_reconnect_window(datetime(2026, 5, 18, 8, 59)))
-        self.assertTrue(handler.is_daytime_emergency_reconnect_window(datetime(2026, 5, 18, 9, 0)))
-        self.assertTrue(handler.is_daytime_emergency_reconnect_window(datetime(2026, 5, 18, 17, 59)))
-        self.assertFalse(handler.is_daytime_emergency_reconnect_window(datetime(2026, 5, 18, 18, 0)))
+        self.assertNotIn("/api/emergency-reconnect/approval-requests", source)
+        self.assertNotIn("/api/emergency-reconnect/approval-requests", app_source)
+        self.assertNotIn("재접속 승인이 필요합니다", app_source)
+        self.assertNotIn("승인 요청 생성", app_source)
 
     def test_admin_archive_user_soft_deletes_and_redacts_sensitive_fields(self) -> None:
         tmp_path = self.make_workspace()
@@ -722,7 +723,7 @@ class LockFixTests(unittest.TestCase):
             'id="userManagementForm"',
             'id="userManagementBackButton"',
             'data-i18n="userManagement.actions"',
-            'v=20260518-reconnect-agent-visible',
+            'v=20260518-reconnect-password-only',
             'class="rbac-chip-list user-management-department-list"',
             '<option value="backup-operation">Backup Operation</option>',
             '<option value="SECURITY_ADMIN">SECURITY_ADMIN</option>',
@@ -1017,14 +1018,17 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("agent.os.backend", finding_ids)
         self.assertIn("offline.reconnect.validation.completed", (tmp_path / "audit.jsonl").read_text(encoding="utf-8"))
 
-    def test_webui_permission_errors_return_403_and_emergency_does_not_pregrant_online(self) -> None:
+    def test_webui_permission_errors_return_403_and_emergency_uses_password_reauth(self) -> None:
         source = Path("webui.py").read_text(encoding="utf-8")
         handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
 
         self.assertEqual(handler.permission_error_status(PermissionError("approval required: DISK_ONLINE")), 403)
         self.assertEqual(handler.permission_error_status(PermissionError("authentication required")), 401)
-        self.assertIn('self.context.controller.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)', source)
-        self.assertIn('self.context.controller.approvals.require_approved("DISK_ONLINE", slot_id)', source)
+        self.assertIn("verify_current_session_password", source)
+        self.assertIn("emergency.reconnect.password_approval_bypass", source)
+        self.assertIn('approval_bypass_reason = "password_reauth"', source)
+        self.assertNotIn('self.context.controller.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)', source)
+        self.assertNotIn('self.context.controller.approvals.require_approved("DISK_ONLINE", slot_id)', source)
         self.assertNotIn("reason=\"admin_emergency_reconnect_requested\"", source)
 
     def test_install_properties_can_enable_live_operation_mode(self) -> None:
@@ -1288,9 +1292,9 @@ class LockFixTests(unittest.TestCase):
                     "payload": {
                         "slot_id": "BAY-01",
                         "repository_path": "D:\\",
-                        "job_id": "job-daytime-reauth",
+                        "job_id": "job-password-reauth",
                         "approval_bypass": True,
-                        "approval_bypass_reason": "daytime_password_reauth",
+                        "approval_bypass_reason": "password_reauth",
                     },
                 }
             ),
@@ -1306,7 +1310,7 @@ class LockFixTests(unittest.TestCase):
         self.assertEqual(response["state"], "ONLINE_VERIFIED_RW")
         self.assertIn('"event": "emergency.unlock.prevalidated"', audit_text)
         self.assertIn('"event": "disk.online.prevalidated"', audit_text)
-        self.assertIn('"job_id": "job-daytime-reauth"', audit_text)
+        self.assertIn('"job_id": "job-password-reauth"', audit_text)
 
     def test_agent_service_worker_expires_stale_mutating_requests(self) -> None:
         tmp_path = self.make_workspace()
@@ -1387,7 +1391,7 @@ class LockFixTests(unittest.TestCase):
                         "repository_path": "D:\\",
                         "job_id": "priority-job",
                         "approval_bypass": True,
-                        "approval_bypass_reason": "daytime_password_reauth",
+                        "approval_bypass_reason": "password_reauth",
                     },
                     "created_at": current_time,
                 }
@@ -1773,7 +1777,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("border: 0;", css_source)
         self.assertNotIn("border: 1px solid rgba(196, 211, 225, 0.72);", css_source)
         self.assertNotIn("border: 1px solid rgba(121, 158, 206, 0.48);", css_source)
-        self.assertIn("20260518-reconnect-agent-visible", index_source)
+        self.assertIn("20260518-reconnect-password-only", index_source)
 
     def test_isolate_reaches_isolated(self) -> None:
         tmp_path = self.make_workspace()
@@ -2481,24 +2485,25 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("os.startfile", source)
         self.assertIn("local access only", source)
 
-    def test_webui_uses_daytime_reauth_and_after_hours_approval_for_emergency_reconnect(self) -> None:
+    def test_webui_uses_password_reauth_only_for_emergency_reconnect(self) -> None:
         source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")
+        app_source = (Path.cwd() / "web" / "static" / "app.js").read_text(encoding="utf-8")
 
-        self.assertIn("EMERGENCY_RECONNECT_DAY_START_HOUR = 9", source)
-        self.assertIn("EMERGENCY_RECONNECT_DAY_END_HOUR = 18", source)
         self.assertIn("def verify_current_session_password", source)
-        self.assertIn("def is_daytime_emergency_reconnect_window", source)
         self.assertIn('payload.get("reauth_password")', source)
         self.assertIn("emergency.reconnect.reauth.success", source)
         self.assertIn("emergency.reconnect.reauth.failed", source)
-        self.assertIn("emergency.reconnect.daytime_approval_bypass", source)
+        self.assertIn("emergency.reconnect.password_approval_bypass", source)
         self.assertIn("approval_bypass = True", source)
         self.assertIn('"approval_bypass": bool(approval_bypass)', source)
-        self.assertIn("daytime_password_reauth", source)
+        self.assertIn("password_reauth", source)
         self.assertIn("start_agent_service_worker", source)
         self.assertIn("LOCKFIXAgentServiceWorker", source)
-        self.assertIn('self.context.controller.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)', source)
-        self.assertIn('self.context.controller.approvals.require_approved("DISK_ONLINE", slot_id)', source)
+        self.assertNotIn("emergency.reconnect.approval.required", source)
+        self.assertNotIn("missing_emergency_reconnect_approvals", source)
+        self.assertNotIn("create_emergency_reconnect_approval_requests", source)
+        self.assertNotIn("showEmergencyReconnectApprovalRequired", app_source)
+        self.assertNotIn("approval required:", app_source)
         self.assertNotIn("approval_password_failed", source)
         self.assertNotIn("긴급 재접속 승인 비밀번호가 일치하지 않습니다.", source)
 
@@ -2507,7 +2512,7 @@ class LockFixTests(unittest.TestCase):
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
         webui_source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")
 
-        self.assertIn("20260518-reconnect-agent-visible", html_source)
+        self.assertIn("20260518-reconnect-password-only", html_source)
         self.assertIn("emergency.reconnect.background.timeout", webui_source)
         self.assertIn("EMERGENCY_RECONNECT_AGENT_START_TIMEOUT_SECONDS", webui_source)
         self.assertIn("emergency_reconnect_agent_started", webui_source)
@@ -2583,7 +2588,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("height: 68px !important;", css_source)
         self.assertIn("min-height: 36px !important;", css_source)
         self.assertIn("border-bottom: 0 !important;", css_source)
-        self.assertIn("20260518-reconnect-agent-visible", html_source)
+        self.assertIn("20260518-reconnect-password-only", html_source)
 
     def test_logs_summary_cards_render_above_filter_bar(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -2591,7 +2596,7 @@ class LockFixTests(unittest.TestCase):
 
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('class="logs-range"'))
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('id="logsStart"'))
-        self.assertIn("20260518-reconnect-agent-visible", html_source)
+        self.assertIn("20260518-reconnect-password-only", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -2610,7 +2615,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260518-reconnect-agent-visible", html_source)
+        self.assertIn("20260518-reconnect-password-only", html_source)
 
     def test_monitoring_header_copy_is_hidden_while_polling_remains(self) -> None:
         root = Path.cwd()
@@ -2733,7 +2738,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("min-height: 46px;", css_source)
         self.assertIn("opacity: 0.66;", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260518-reconnect-agent-visible", html_source)
+        self.assertIn("20260518-reconnect-password-only", html_source)
 
     def test_dashboard_route_does_not_show_legacy_notification_markup(self) -> None:
         root = Path.cwd()
@@ -2751,7 +2756,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260518-reconnect-agent-visible", html_source)
+        self.assertIn("20260518-reconnect-password-only", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()

@@ -6795,31 +6795,8 @@ button {
   text-transform: uppercase;
 }
 
-.emergency-approval-required-card {
-  width: min(560px, 100%);
-}
-
 .emergency-reauth-card {
   width: min(500px, 100%);
-}
-
-.emergency-approval-required-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.emergency-approval-required-list strong {
-  min-height: 40px;
-  display: flex;
-  align-items: center;
-  border: 1px solid #e7edf5;
-  border-radius: 8px;
-  background: #fbfdff;
-  color: #10213a;
-  padding: 0 12px;
-  font-size: 13px;
-  font-weight: 900;
 }
 
 .emergency-approval-card label {

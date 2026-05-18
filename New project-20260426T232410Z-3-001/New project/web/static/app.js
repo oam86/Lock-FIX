@@ -994,10 +994,10 @@ const airgapKo = {
   Time: "시간",
   Target: "대상",
   "Emergency Control Center": "비상 제어 센터",
-  "Two-administrator approval required": "관리자 2인 승인 필요",
-  "Manual release is available only after two-administrator approval.": "수동 해제는 관리자 2인 승인 후에만 가능합니다.",
-  "Waiting for Dual Approval": "2인 승인 대기 중",
-  "Data path activation remains blocked": "데이터 통로 활성화 차단 유지",
+  "Password re-authentication required": "비밀번호 재인증 필요",
+  "Manual release is available after current-user password approval.": "현재 사용자 비밀번호 승인 후 수동 해제가 가능합니다.",
+  "Waiting for Password Approval": "비밀번호 승인 대기",
+  "Data path activation remains protected": "데이터 통로 보호 유지",
   "Air-Gap status is loading": "에어갭 상태를 불러오는 중",
   "The Air-Gap overview remains available while live source data is refreshed.": "실시간 소스 데이터를 새로 고치는 동안에도 에어갭 개요를 표시합니다.",
   MATCH: "일치",
@@ -6178,9 +6178,9 @@ function fallbackAirGapSummary(loading = false) {
     ],
     emergency: {
       title: "Emergency Control Center",
-      description: "Manual release is available only after two-administrator approval.",
-      primary: "Waiting for Dual Approval",
-      secondary: "Data path activation remains blocked",
+      description: "Manual release is available after current-user password approval.",
+      primary: "Waiting for Password Approval",
+      secondary: "Data path activation remains protected",
     },
     emergency_access: {
       title: "Emergency Volume Access",
@@ -6789,7 +6789,7 @@ function renderSources(data) {
     <article class="airgap-panel emergency-panel">
       <div class="airgap-panel-head">
         <h2>${airgapText(emergency.title)}</h2>
-        <span>${airgapText("Two-administrator approval required")}</span>
+        <span>${airgapText("Password re-authentication required")}</span>
       </div>
       <p>${airgapText(emergency.description)}</p>
       <button type="button">${airgapText(emergency.primary)}</button>
@@ -7257,72 +7257,6 @@ async function runAction(action, slotId) {
   }
 }
 
-function showEmergencyReconnectApprovalRequired(error, slotId, volumePath = "") {
-  return new Promise((resolve) => {
-    const payload = error?.payload || {};
-    const missing = Array.isArray(payload.missing_approvals) && payload.missing_approvals.length
-      ? payload.missing_approvals
-      : ["EMERGENCY_UNLOCK", "DISK_ONLINE"];
-    const overlay = document.createElement("div");
-    overlay.className = "emergency-approval-modal";
-    overlay.innerHTML = `
-      <section class="emergency-approval-card emergency-approval-required-card" role="dialog" aria-modal="true" aria-labelledby="emergencyApprovalRequiredTitle">
-        <span class="emergency-approval-kicker">Approval Required</span>
-        <h2 id="emergencyApprovalRequiredTitle">재접속 승인이 필요합니다</h2>
-        <p>격리된 백업 볼륨을 온라인 상태로 전환하려면 보안 해제 승인과 디스크 온라인 승인이 먼저 완료되어야 합니다.</p>
-        <div class="emergency-approval-required-list">
-          ${missing.map((item) => `<strong>${escapeHtml(item)}</strong>`).join("")}
-        </div>
-        <em class="emergency-approval-error" aria-live="polite"></em>
-        <div class="emergency-approval-actions">
-          <button type="button" data-approval-cancel="true">취소</button>
-          <button type="button" data-approval-create="true">승인 요청 생성</button>
-        </div>
-      </section>
-    `;
-    const status = overlay.querySelector(".emergency-approval-error");
-    const createButton = overlay.querySelector("[data-approval-create]");
-    const close = (value) => {
-      document.removeEventListener("keydown", onKey);
-      overlay.remove();
-      resolve(value);
-    };
-    function onKey(event) {
-      if (event.key === "Escape") close("");
-    }
-    overlay.querySelector("[data-approval-cancel]").addEventListener("click", () => close(""));
-    createButton.addEventListener("click", async () => {
-      createButton.disabled = true;
-      status.textContent = "필요한 승인 요청을 생성하는 중입니다.";
-      try {
-        await requestJson("/api/emergency-reconnect/approval-requests", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            slot_id: slotId,
-            repository_path: volumePath,
-            reason: "긴급 재접속을 위해 EMERGENCY_UNLOCK 및 DISK_ONLINE 승인이 필요합니다.",
-          }),
-        });
-        status.textContent = "승인 요청이 생성되었습니다. 승인 워크플로우 화면은 숨김 처리되었으며 감사 로그에 기록됩니다.";
-        setTimeout(() => {
-          close("created");
-          showView("sources");
-        }, 650);
-      } catch (createError) {
-        status.textContent = createError.message || "승인 요청 생성에 실패했습니다.";
-        createButton.disabled = false;
-      }
-    });
-    overlay.addEventListener("click", (event) => {
-      if (event.target === overlay) close("");
-    });
-    document.addEventListener("keydown", onKey);
-    document.body.appendChild(overlay);
-    setTimeout(() => createButton.focus(), 0);
-  });
-}
-
 function requestEmergencyReconnectPassword() {
   return new Promise((resolve) => {
     const overlay = document.createElement("div");
@@ -7331,7 +7265,7 @@ function requestEmergencyReconnectPassword() {
       <form class="emergency-approval-card emergency-reauth-card" role="dialog" aria-modal="true" aria-labelledby="emergencyReauthTitle">
         <span class="emergency-approval-kicker">Re-authentication</span>
         <h2 id="emergencyReauthTitle">비밀번호 재인증</h2>
-        <p>현재 로그인한 LOCK-FIX 사용자 비밀번호를 다시 입력하면 주간에는 2인 승인 없이 무결성 검증 후 재접속을 실행합니다.</p>
+        <p>현재 로그인한 LOCK-FIX 사용자 비밀번호를 다시 입력하고 승인하면 무결성 검증 후 재접속을 바로 실행합니다.</p>
         <label>
           현재 사용자 비밀번호
           <input type="password" name="reauthPassword" autocomplete="current-password" required />
@@ -7339,7 +7273,7 @@ function requestEmergencyReconnectPassword() {
         <em class="emergency-approval-error" aria-live="polite"></em>
         <div class="emergency-approval-actions">
           <button type="button" data-reauth-cancel="true">취소</button>
-          <button type="submit">확인 후 실행</button>
+          <button type="submit">비밀번호 승인 후 실행</button>
         </div>
       </form>
     `;
@@ -7399,14 +7333,6 @@ async function runEmergencyReconnect(slotId, volumePath = "") {
     setEmergencyReconnectStatusPolling(true);
     await loadAll();
   } catch (error) {
-    if (error?.payload?.approval_required) {
-      emergencyActionStatus = "긴급 재접속에 필요한 승인이 아직 완료되지 않았습니다.";
-      appendEmergencyReconnectDetail(`approval required: ${(error.payload.missing_approvals || []).join(", ") || "EMERGENCY_UNLOCK, DISK_ONLINE"}`);
-      stopEmergencyReconnectWatch();
-      await showEmergencyReconnectApprovalRequired(error, slotId, volumePath);
-      await loadAll();
-      return;
-    }
     emergencyActionStatus = error?.payload?.error === "reauth_failed"
       ? "비밀번호 재인증에 실패했습니다. 현재 로그인한 사용자 비밀번호를 다시 확인하세요."
       : Number(error.status || 0) === 401
