@@ -4740,18 +4740,30 @@ button {
 .report-export-actions button {
   min-width: 78px;
   height: 38px;
-  display: inline-grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   border: 1px solid #d8e0e6;
   border-radius: 6px;
   background: #ffffff;
   color: #0b2e79;
   text-decoration: none;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 700;
   font-family: inherit;
   box-shadow: 0 3px 9px rgba(25, 36, 48, 0.08);
   cursor: pointer;
+}
+
+.report-export-actions a {
+  color: #52606d;
+  font-weight: 400;
+}
+
+.report-export-actions .file-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .report-view .monitoring-header {

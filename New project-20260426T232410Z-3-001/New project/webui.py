@@ -725,6 +725,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/report.xlsx":
                 self.require_auth(Permission.REPORT_EXPORT)
                 self.send_report_xlsx()
+            elif parsed.path == "/api/report.pdf":
+                self.require_auth(Permission.REPORT_EXPORT)
+                self.send_report_pdf()
             elif parsed.path == "/api/report.docx":
                 self.require_auth(Permission.REPORT_EXPORT)
                 self.send_report_docx()
@@ -5668,6 +5671,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "exports": {
                 "word": "/api/report.docx",
                 "csv": "/api/report.csv",
+                "pdf": "/api/report.pdf",
                 "excel": "/api/report.xlsx",
             },
         }
@@ -7014,6 +7018,73 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "lockfix_report.docx",
         )
+
+    def send_report_pdf(self) -> None:
+        report = self.report_summary()
+        body = self.build_pdf_report(report)
+        self.send_download(body, "application/pdf", "lockfix_report.pdf")
+
+    def build_pdf_report(self, report: dict) -> bytes:
+        lines = [
+            "LOCK-FIX Report",
+            f"Generated: {report['generated_at']}",
+            f"Customer: {report['customer']['customer_name']}",
+            f"Engineer: {report['customer']['engineer']}",
+            f"Overall: {report['summary']['overall_status']}",
+            "",
+            "Summary",
+        ]
+        for card in report["cards"]:
+            lines.append(
+                f"{card['label']}: current {card['current']} / average {card['average']} / peak {card['peak']} / {card['status']}"
+            )
+        lines.extend(["", "Inspection Items"])
+        for item in report["inspection_items"][:16]:
+            lines.append(f"{item['category']} - {item['item']}: {item['result']}")
+        return self.build_pdf(lines)
+
+    def build_pdf(self, lines: list[str]) -> bytes:
+        def pdf_text(value: object) -> str:
+            text = str(value).encode("latin-1", "replace").decode("latin-1")
+            return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+        visible_lines = [line[:110] for line in lines[:42]]
+        commands = ["BT", "/F1 16 Tf", "50 790 Td", "20 TL"]
+        if visible_lines:
+            commands.append(f"({pdf_text(visible_lines[0])}) Tj")
+        commands.extend(["/F1 10 Tf", "14 TL"])
+        for line in visible_lines[1:]:
+            commands.append("T*")
+            commands.append(f"({pdf_text(line)}) Tj")
+        commands.append("ET")
+        stream = "\n".join(commands).encode("latin-1")
+        objects = [
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream",
+        ]
+        output = io.BytesIO()
+        output.write(b"%PDF-1.4\n")
+        offsets = [0]
+        for index, obj in enumerate(objects, start=1):
+            offsets.append(output.tell())
+            output.write(f"{index} 0 obj\n".encode("ascii"))
+            output.write(obj)
+            output.write(b"\nendobj\n")
+        xref_at = output.tell()
+        output.write(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+        output.write(b"0000000000 65535 f \n")
+        for offset in offsets[1:]:
+            output.write(f"{offset:010d} 00000 n \n".encode("ascii"))
+        output.write(
+            (
+                f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+                f"startxref\n{xref_at}\n%%EOF\n"
+            ).encode("ascii")
+        )
+        return output.getvalue()
 
     def build_xlsx(self, rows: list[list[object]]) -> bytes:
         def cell_ref(row_index: int, col_index: int) -> str:
