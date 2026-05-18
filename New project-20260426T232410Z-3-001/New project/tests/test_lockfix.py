@@ -722,7 +722,7 @@ class LockFixTests(unittest.TestCase):
             'id="userManagementForm"',
             'id="userManagementBackButton"',
             'data-i18n="userManagement.actions"',
-            'v=20260518-hide-approval-workflow',
+            'v=20260518-live-reconnect-errors',
             'class="rbac-chip-list user-management-department-list"',
             '<option value="backup-operation">Backup Operation</option>',
             '<option value="SECURITY_ADMIN">SECURITY_ADMIN</option>',
@@ -1632,7 +1632,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("border: 0;", css_source)
         self.assertNotIn("border: 1px solid rgba(196, 211, 225, 0.72);", css_source)
         self.assertNotIn("border: 1px solid rgba(121, 158, 206, 0.48);", css_source)
-        self.assertIn("20260518-hide-approval-workflow", index_source)
+        self.assertIn("20260518-live-reconnect-errors", index_source)
 
     def test_isolate_reaches_isolated(self) -> None:
         tmp_path = self.make_workspace()
@@ -1857,6 +1857,22 @@ class LockFixTests(unittest.TestCase):
                 "message": "Emergency reconnect background worker is running.",
             }
         context.controller.audit.write("state.transition", slot_id="BAY-01", state="WAITING_DISK")
+        context.controller.audit.write(
+            "emergency.reconnect.background.error",
+            slot_id="BAY-01",
+            job_id=job_id,
+            error="LOCK-FIX Agent/Service is not responding.",
+            resolution="LOCK-FIX Agent/Service 워커를 실행하세요.",
+        )
+        context.controller.audit.write(
+            "emergency.reconnect.background.timeout",
+            slot_id="BAY-01",
+            job_id=job_id,
+            elapsed_seconds=182,
+            timeout_seconds=180,
+            message="재접속 작업 제한 시간을 초과했습니다.",
+            resolution="Get-Disk/Get-Partition 권한을 확인하세요.",
+        )
 
         result = context.emergency_reconnect_status("BAY-01", job_id)
         audit_text = context.config.audit_log_path.read_text(encoding="utf-8")
@@ -1864,6 +1880,9 @@ class LockFixTests(unittest.TestCase):
         self.assertEqual(result["status"], "running")
         self.assertEqual(result["flow_state"], "WAITING_DISK")
         self.assertTrue(any("WAITING_DISK" in line for line in result["detail_logs"]))
+        self.assertTrue(any("Agent/Service is not responding" in line for line in result["detail_logs"]))
+        self.assertTrue(any("BACKGROUND TIMEOUT" in line for line in result["detail_logs"]))
+        self.assertTrue(any("Get-Disk/Get-Partition" in line for line in result["detail_logs"]))
         self.assertIn("emergency.reconnect.heartbeat", audit_text)
 
     def test_logs_menu_formats_emergency_reconnect_history(self) -> None:
@@ -2312,6 +2331,18 @@ class LockFixTests(unittest.TestCase):
         self.assertNotIn("approval_password_failed", source)
         self.assertNotIn("긴급 재접속 승인 비밀번호가 일치하지 않습니다.", source)
 
+    def test_airgap_live_reconnect_errors_are_visible_in_current_log(self) -> None:
+        app_source = (Path.cwd() / "web" / "static" / "app.js").read_text(encoding="utf-8")
+        html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        webui_source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")
+
+        self.assertIn("20260518-live-reconnect-errors", html_source)
+        self.assertIn("emergency.reconnect.background.timeout", webui_source)
+        self.assertIn("BACKGROUND TIMEOUT", webui_source)
+        self.assertIn("해결 안내: ${emergencyReconnectResolutionText(result)}", app_source)
+        self.assertIn("if (text) return text;", app_source)
+        self.assertNotIn("상세 오류는 백그라운드 로그 이력에 저장됨", app_source)
+
     def test_login_success_shows_two_second_loading_splash(self) -> None:
         app_source = (Path.cwd() / "web" / "static" / "app.js").read_text(encoding="utf-8")
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -2375,7 +2406,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("height: 68px !important;", css_source)
         self.assertIn("min-height: 36px !important;", css_source)
         self.assertIn("border-bottom: 0 !important;", css_source)
-        self.assertIn("20260518-hide-approval-workflow", html_source)
+        self.assertIn("20260518-live-reconnect-errors", html_source)
 
     def test_logs_summary_cards_render_above_filter_bar(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -2383,7 +2414,7 @@ class LockFixTests(unittest.TestCase):
 
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('class="logs-range"'))
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('id="logsStart"'))
-        self.assertIn("20260518-hide-approval-workflow", html_source)
+        self.assertIn("20260518-live-reconnect-errors", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -2402,7 +2433,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260518-hide-approval-workflow", html_source)
+        self.assertIn("20260518-live-reconnect-errors", html_source)
 
     def test_monitoring_header_copy_is_hidden_while_polling_remains(self) -> None:
         root = Path.cwd()
@@ -2525,7 +2556,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("min-height: 46px;", css_source)
         self.assertIn("opacity: 0.66;", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260518-hide-approval-workflow", html_source)
+        self.assertIn("20260518-live-reconnect-errors", html_source)
 
     def test_dashboard_route_does_not_show_legacy_notification_markup(self) -> None:
         root = Path.cwd()
@@ -2543,7 +2574,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260518-hide-approval-workflow", html_source)
+        self.assertIn("20260518-live-reconnect-errors", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()

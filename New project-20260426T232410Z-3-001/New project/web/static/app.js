@@ -1206,9 +1206,10 @@ function friendlyEmergencyError(error) {
     return "해당 파일시스템은 Repair-Volume 검사를 지원하지 않아 검사를 건너뛰고 재연결 상태를 다시 확인합니다.";
   }
   if (/401|unauthorized|인증|auth/i.test(text)) {
-    return "긴급 접속 상태 확인 인증이 만료되었습니다. 최신 재접속 완료 여부는 백그라운드 로그와 상태 이력에서 다시 확인합니다.";
+    return "긴급 접속 상태 확인 인증이 만료되었습니다. 현재 화면에서 다시 로그인한 뒤 실시간 작업 로그를 확인하세요.";
   }
-  return "긴급 접속을 완료하지 못했습니다. 상세 오류는 백그라운드 로그 이력에 저장됨";
+  if (text) return text;
+  return "긴급 접속 상태 확인 응답을 받지 못했습니다. WebUI 서비스와 LOCK-FIX Agent/Service 상태를 확인하세요.";
 }
 
 async function saveReportCustomerFields() {
@@ -5866,8 +5867,12 @@ function sanitizeEmergencyReconnectMessage(message) {
 }
 
 function appendEmergencyReconnectDetail(message) {
+  const clean = sanitizeEmergencyReconnectMessage(message);
+  if (!clean) return;
   const slot = emergencyReconnectDetailSlot || "-";
-  emergencyReconnectDetailLogs.push(`${emergencyReconnectTimestamp()} - LOCK-FIX Reconnect DETAIL - slot ${slot}, ${message}`);
+  const suffix = `, ${clean}`;
+  if (emergencyReconnectDetailLogs.slice(-8).some((line) => String(line || "").endsWith(suffix))) return;
+  emergencyReconnectDetailLogs.push(`${emergencyReconnectTimestamp()} - LOCK-FIX Reconnect DETAIL - slot ${slot}, ${clean}`);
   emergencyReconnectDetailLogs = emergencyReconnectDetailLogs.slice(-120);
 }
 
@@ -5875,7 +5880,7 @@ function mergeEmergencyReconnectDetails(lines) {
   if (!Array.isArray(lines) || !lines.length) return;
   const next = [...emergencyReconnectDetailLogs];
   lines.forEach((line) => {
-    const text = String(line || "").trim();
+    const text = sanitizeEmergencyReconnectMessage(line);
     if (text && !next.includes(text)) next.push(text);
   });
   emergencyReconnectDetailLogs = next.slice(-120);
@@ -5976,6 +5981,7 @@ function setEmergencyReconnectStatusPolling(enabled) {
         } else if (status === "error") {
           const message = result.error || result.message || "긴급 볼륨 접속 작업이 오류로 종료되었습니다.";
           appendEmergencyReconnectDetail(`background job error: ${message}`);
+          appendEmergencyReconnectDetail(`해결 안내: ${emergencyReconnectResolutionText(result)}`);
           stopEmergencyReconnectWatch("긴급 볼륨 접속 작업이 오류로 종료되었습니다. 상세 로그를 확인하세요.");
           renderSources(latestSourcesData || { air_gap: fallbackAirGapSummary(true) });
         } else if (status === "complete") {
@@ -5998,6 +6004,7 @@ function setEmergencyReconnectStatusPolling(enabled) {
           mergeEmergencyReconnectDetails(latestHistory);
           completeEmergencyReconnectWatch(latestState || "ONLINE_VERIFIED_RW");
         } else {
+          mergeEmergencyReconnectDetails(latestHistory);
           const message = Number(error.status || 0) === 401
             ? "status check failed: 로그인 세션이 만료되어 재접속 상태를 확인할 수 없습니다."
             : `status check failed: ${friendlyEmergencyError(error)}`;

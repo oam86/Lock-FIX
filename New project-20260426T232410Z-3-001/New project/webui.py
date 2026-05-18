@@ -397,14 +397,21 @@ class WebContext:
             )
             state_value = str(result.get("state") or "ONLINE_VERIFIED_RW")
         except Exception as exc:
+            resolution = self.emergency_reconnect_error_resolution(str(exc))
             controller.audit.write(
                 "emergency.reconnect.background.error",
                 slot_id=slot_id,
                 job_id=job_id,
                 repository_path=repository_path,
                 error=str(exc),
+                resolution=resolution,
             )
-            status = {"status": "error", "error": str(exc), "finished_at": datetime.now().isoformat(timespec="seconds")}
+            status = {
+                "status": "error",
+                "error": str(exc),
+                "resolution": resolution,
+                "finished_at": datetime.now().isoformat(timespec="seconds"),
+            }
         else:
             controller.audit.write(
                 "emergency.reconnect.background.complete",
@@ -528,6 +535,19 @@ class WebContext:
                 flow_state = str(record.get("state") or "")
                 break
         return {"slot_id": slot_id, **job, "detail_logs": detail_logs[-80:], "flow_state": flow_state}
+
+    def emergency_reconnect_error_resolution(self, error: str) -> str:
+        text = str(error or "")
+        if "Agent/Service is not responding" in text:
+            return (
+                "LOCK-FIX Agent/Service 워커가 설치되어 실행 중인지 확인하세요. "
+                "Agent/Service는 LocalSystem 또는 관리자 권한 서비스 계정으로 실행되어야 하며, "
+                "runtime\\agent_service 요청 큐를 처리해야 합니다."
+            )
+        return (
+            "LOCK-FIX WebUI와 Agent/Service를 최신 설치 파일 기준으로 재시작하고, "
+            "Windows Storage/WMI 권한 및 Get-Disk/Get-Partition/Get-Volume 접근 권한을 확인하세요."
+        )
 
 
 class LockFixWebHandler(BaseHTTPRequestHandler):
@@ -3184,6 +3204,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "emergency.reconnect.complete",
             "emergency.reconnect.failure.diagnostic",
             "emergency.reconnect.background.error",
+            "emergency.reconnect.background.timeout",
             "emergency.reconnect.background.started",
             "emergency.reconnect.background.complete",
             "emergency.reconnect.background.not_started",
@@ -3303,7 +3324,17 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             return f"{prefix}LOCK-FIX Reconnect HEARTBEAT - slot {slot_id}, background {started}, {message}"
         if event == "emergency.reconnect.background.error":
             error = LockFixWebHandler.compact_log_value(self, record.get("error") or "background worker failed")
-            return f"{prefix}LOCK-FIX Reconnect BACKGROUND ERROR - slot {slot_id}, {error}"
+            resolution = LockFixWebHandler.compact_log_value(self, record.get("resolution") or "")
+            resolution_text = f" | 해결: {resolution}" if resolution else ""
+            return f"{prefix}LOCK-FIX Reconnect BACKGROUND ERROR - slot {slot_id}, {error}{resolution_text}"
+        if event == "emergency.reconnect.background.timeout":
+            message = LockFixWebHandler.compact_log_value(self, record.get("message") or "재접속 작업 제한 시간을 초과했습니다.")
+            elapsed = LockFixWebHandler.compact_log_value(self, record.get("elapsed_seconds") or "")
+            timeout = LockFixWebHandler.compact_log_value(self, record.get("timeout_seconds") or "")
+            resolution = LockFixWebHandler.compact_log_value(self, record.get("resolution") or "")
+            elapsed_text = f" elapsed {elapsed}s/{timeout}s," if elapsed or timeout else ""
+            resolution_text = f" | 해결: {resolution}" if resolution else ""
+            return f"{prefix}LOCK-FIX Reconnect BACKGROUND TIMEOUT - slot {slot_id},{elapsed_text} {message}{resolution_text}"
         if event == "emergency.reconnect.failure.diagnostic":
             error = LockFixWebHandler.compact_log_value(self, record.get("error") or "reconnect failed")
             access_denied = bool(record.get("get_volume_access_denied") or record.get("storage_api_access_denied"))
