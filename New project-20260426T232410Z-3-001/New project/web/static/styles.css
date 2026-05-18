@@ -5172,14 +5172,6 @@ button {
   cursor: pointer;
 }
 
-.signature-attach-button input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
-}
-
 .signature-pad {
   width: 100%;
   height: 104px;
@@ -5190,6 +5182,71 @@ button {
   cursor: crosshair;
   touch-action: none;
   box-shadow: inset 0 1px 2px rgba(23, 33, 43, 0.04);
+}
+
+.signature-draw-card {
+  position: relative;
+  width: min(860px, 100%);
+  display: grid;
+  gap: 14px;
+  border: 1px solid #d9e4f0;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 28px;
+  box-shadow: 0 28px 80px rgba(8, 24, 48, 0.24);
+}
+
+.signature-draw-card h1 {
+  margin: 0;
+  color: #06214a;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.signature-draw-card p {
+  margin: 0;
+  color: #536879;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.signature-draw-pad {
+  width: 100%;
+  height: 220px;
+  display: block;
+  border: 1px solid #cfd9e2;
+  border-radius: 8px;
+  background: #ffffff;
+  cursor: crosshair;
+  touch-action: none;
+  box-shadow: inset 0 1px 2px rgba(23, 33, 43, 0.04);
+}
+
+.signature-draw-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.signature-draw-primary,
+.signature-draw-secondary {
+  min-width: 92px;
+  height: 38px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.signature-draw-primary {
+  border: 1px solid #0b2e79;
+  background: #0b2e79;
+  color: #ffffff;
+}
+
+.signature-draw-secondary {
+  border: 1px solid #d8e0e6;
+  background: #ffffff;
+  color: #40515c;
 }
 
 .dashboard-summary {

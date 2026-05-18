@@ -87,6 +87,13 @@ const reportInspectionTable = document.querySelector("#reportInspectionTable");
 const reportInspectionSummary = document.querySelector("#reportInspectionSummary");
 const reportAttentionList = document.querySelector("#reportAttentionList");
 const reportRefreshButton = document.querySelector("#reportRefreshButton");
+const signatureDrawModal = document.querySelector("#signatureDrawModal");
+const signatureDrawTitle = document.querySelector("#signatureDrawTitle");
+const signatureDrawClose = document.querySelector("#signatureDrawClose");
+const signatureDrawCancel = document.querySelector("#signatureDrawCancel");
+const signatureDrawClear = document.querySelector("#signatureDrawClear");
+const signatureDrawUpload = document.querySelector("#signatureDrawUpload");
+const signatureDrawPad = document.querySelector("#signatureDrawPad");
 const notificationTable = document.querySelector("#notificationTable");
 const notificationUnauthorizedCount = document.querySelector("#notificationUnauthorizedCount");
 const notificationAuditAnomalyCount = document.querySelector("#notificationAuditAnomalyCount");
@@ -640,6 +647,11 @@ const translations = {
     "report.managerSignature": "Manager Signature",
     "report.attachSignature": "Attach",
     "report.clearSignature": "Clear",
+    "report.signatureModalKicker": "Electronic signature",
+    "report.signatureModalTitle": "Draw Signature",
+    "report.signatureModalDesc": "Drag inside the box to sign, then upload it to the report signature field.",
+    "report.signatureUpload": "Upload",
+    "report.signatureCancel": "Cancel",
     "airgap.title": "Post-Backup Isolation Procedure",
     "airgap.subtitle": "Veeam backup completion, isolation steps, and detail logs are monitored in real time.",
   },
@@ -874,6 +886,11 @@ const translations = {
     "report.managerSignature": "담당자 서명",
     "report.attachSignature": "첨부",
     "report.clearSignature": "지우기",
+    "report.signatureModalKicker": "전자 서명",
+    "report.signatureModalTitle": "서명 작성",
+    "report.signatureModalDesc": "상자 안에서 마우스로 드래그해 서명한 뒤 보고서 서명란에 업로드합니다.",
+    "report.signatureUpload": "업로드",
+    "report.signatureCancel": "취소",
     "airgap.title": "백업 완료 후 격리 절차",
     "airgap.subtitle": "Veeam 백업 완료 후 격리 단계와 상세 로그를 실시간으로 확인합니다.",
   },
@@ -1271,6 +1288,117 @@ function setupReportOpinion() {
   });
 }
 
+let activeSignatureCanvas = null;
+let activeSignatureStorageKey = "";
+
+function drawSignatureSourceToCanvas(canvas, source, onDone) {
+  if (!canvas || !source) return;
+  const context = canvas.getContext("2d");
+  const img = new Image();
+  img.onload = () => {
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+    const width = img.width * scale;
+    const height = img.height * scale;
+    const x = (canvas.width - width) / 2;
+    const y = (canvas.height - height) / 2;
+    context.drawImage(img, x, y, width, height);
+    if (onDone) onDone();
+  };
+  img.src = source;
+}
+
+function clearSignatureCanvas(canvas) {
+  if (!canvas) return;
+  canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+}
+
+function closeSignatureDrawModal() {
+  signatureDrawModal?.classList.add("hidden");
+  activeSignatureCanvas = null;
+  activeSignatureStorageKey = "";
+}
+
+function openSignatureDrawModal(canvas, storageKey) {
+  if (!signatureDrawModal || !signatureDrawPad || !canvas) return;
+  activeSignatureCanvas = canvas;
+  activeSignatureStorageKey = storageKey;
+  clearSignatureCanvas(signatureDrawPad);
+  const titleKey = canvas.id === "engineerSignaturePad" ? "report.engineerSignature" : "report.managerSignature";
+  if (signatureDrawTitle) signatureDrawTitle.textContent = t(titleKey);
+  const existingImage = localStorage.getItem(storageKey) || "";
+  if (existingImage) drawSignatureSourceToCanvas(signatureDrawPad, existingImage);
+  signatureDrawModal.classList.remove("hidden");
+}
+
+function setupSignatureDrawModal() {
+  if (!signatureDrawPad || signatureDrawPad.dataset.ready === "true") return;
+  const context = signatureDrawPad.getContext("2d");
+  let drawing = false;
+  let lastPoint = null;
+
+  function pointFor(event) {
+    const rect = signatureDrawPad.getBoundingClientRect();
+    const pointer = event.touches?.[0] || event;
+    return {
+      x: ((pointer.clientX - rect.left) / rect.width) * signatureDrawPad.width,
+      y: ((pointer.clientY - rect.top) / rect.height) * signatureDrawPad.height,
+    };
+  }
+
+  function drawTo(point) {
+    context.lineWidth = 4;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.strokeStyle = "#17212b";
+    context.beginPath();
+    context.moveTo(lastPoint.x, lastPoint.y);
+    context.lineTo(point.x, point.y);
+    context.stroke();
+    lastPoint = point;
+  }
+
+  function start(event) {
+    event.preventDefault();
+    drawing = true;
+    lastPoint = pointFor(event);
+  }
+
+  function move(event) {
+    if (!drawing) return;
+    event.preventDefault();
+    drawTo(pointFor(event));
+  }
+
+  function end() {
+    drawing = false;
+    lastPoint = null;
+  }
+
+  signatureDrawPad.addEventListener("mousedown", start);
+  signatureDrawPad.addEventListener("mousemove", move);
+  window.addEventListener("mouseup", end);
+  signatureDrawPad.addEventListener("touchstart", start, { passive: false });
+  signatureDrawPad.addEventListener("touchmove", move, { passive: false });
+  signatureDrawPad.addEventListener("touchend", end);
+  signatureDrawClear?.addEventListener("click", () => clearSignatureCanvas(signatureDrawPad));
+  signatureDrawCancel?.addEventListener("click", closeSignatureDrawModal);
+  signatureDrawClose?.addEventListener("click", closeSignatureDrawModal);
+  signatureDrawModal?.addEventListener("click", (event) => {
+    if (event.target === signatureDrawModal) closeSignatureDrawModal();
+  });
+  signatureDrawUpload?.addEventListener("click", () => {
+    if (!activeSignatureCanvas || !activeSignatureStorageKey) return;
+    const targetContext = activeSignatureCanvas.getContext("2d");
+    targetContext.clearRect(0, 0, activeSignatureCanvas.width, activeSignatureCanvas.height);
+    targetContext.drawImage(signatureDrawPad, 0, 0, activeSignatureCanvas.width, activeSignatureCanvas.height);
+    localStorage.setItem(activeSignatureStorageKey, activeSignatureCanvas.toDataURL("image/png"));
+    scheduleReportExtrasSave();
+    closeSignatureDrawModal();
+  });
+  signatureDrawPad.dataset.ready = "true";
+}
+
 function setupSignaturePad(canvas) {
   if (!canvas) return;
   const storageKey = `lockfix.signature.${canvas.id}`;
@@ -1308,22 +1436,6 @@ function setupSignaturePad(canvas) {
     lastPoint = point;
   }
 
-  function drawImageToCanvas(source) {
-    const img = new Image();
-    img.onload = () => {
-      context.clearRect(0, 0, canvas.width, canvas.height);
-      const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
-      const width = img.width * scale;
-      const height = img.height * scale;
-      const x = (canvas.width - width) / 2;
-      const y = (canvas.height - height) / 2;
-      context.drawImage(img, x, y, width, height);
-      localStorage.setItem(storageKey, canvas.toDataURL("image/png"));
-      scheduleReportExtrasSave();
-    };
-    img.src = source;
-  }
-
   function start(event) {
     event.preventDefault();
     drawing = true;
@@ -1355,19 +1467,15 @@ function setupSignaturePad(canvas) {
     localStorage.removeItem(storageKey);
     scheduleReportExtrasSave();
   });
-  document.querySelector(`[data-signature-upload="${canvas.id}"]`)?.addEventListener("change", (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => drawImageToCanvas(String(reader.result || ""));
-    reader.readAsDataURL(file);
-    event.target.value = "";
+  document.querySelector(`[data-signature-open="${canvas.id}"]`)?.addEventListener("click", () => {
+    openSignatureDrawModal(canvas, storageKey);
   });
   restore();
 }
 
 function setupReportSignatures() {
   setupReportOpinion();
+  setupSignatureDrawModal();
   setupSignaturePad(document.querySelector("#engineerSignaturePad"));
   setupSignaturePad(document.querySelector("#managerSignaturePad"));
 }
