@@ -65,6 +65,7 @@ DASHBOARD_CACHE_TTL_SECONDS = 2.0
 DASHBOARD_PROBE_TIMEOUT_SECONDS = 1.2
 EMERGENCY_RECONNECT_DAY_START_HOUR = 9
 EMERGENCY_RECONNECT_DAY_END_HOUR = 18
+EMERGENCY_RECONNECT_AGENT_START_TIMEOUT_SECONDS = 12
 
 
 class WebContext:
@@ -84,6 +85,8 @@ class WebContext:
         self.user_directory_path = ROOT / "runtime" / "users.json"
         self.user_directory_lock = threading.Lock()
         self.agent_service_queue_root = ROOT / "runtime" / "agent_service"
+        self.agent_worker_lock = threading.Lock()
+        self.agent_worker_thread: threading.Thread | None = None
 
     @property
     def app_config(self):
@@ -139,6 +142,8 @@ class WebContext:
             state = controller.emergency_reconnect(
                 str(payload.get("slot_id") or ""),
                 repository_path=str(payload.get("repository_path") or ""),
+                approval_bypass=bool(payload.get("approval_bypass")),
+                approval_bypass_reason=str(payload.get("approval_bypass_reason") or ""),
             )
             return {"ok": True, "operation": operation, "state": state.value, "inline_fallback": True}
         if operation == "veeam.diagnostics":
@@ -150,6 +155,26 @@ class WebContext:
 
     def run_agent_service_operation(self, operation: str, payload: dict, timeout_seconds: float | None = None) -> dict:
         return self.agent_service.submit_and_wait(operation, payload, timeout_seconds=timeout_seconds)
+
+    def start_agent_service_worker(self) -> None:
+        if str(os.environ.get("LOCKFIX_DISABLE_AGENT_WORKER", "")).strip() in {"1", "true", "TRUE", "yes", "YES"}:
+            return
+        with self.agent_worker_lock:
+            if self.agent_worker_thread and self.agent_worker_thread.is_alive():
+                return
+            worker = AgentServiceWorker(self.config_path, self.agent_service_queue_root)
+            thread = threading.Thread(
+                target=worker.run_forever,
+                name="LOCKFIXAgentServiceWorker",
+                daemon=True,
+            )
+            thread.start()
+            self.agent_worker_thread = thread
+        self.controller.audit.write(
+            "agent.service.worker.started",
+            queue_root=str(self.agent_service_queue_root),
+            message="LOCK-FIX Agent/Service worker started inside LOCKFIXWebUI Windows Service.",
+        )
 
     def veeam_backup_copy_repository_path(self) -> str:
         veeam = self.config.veeam
@@ -341,7 +366,14 @@ class WebContext:
                 "expires_at": temporary.get("expires_at", ""),
             }
 
-    def start_emergency_reconnect(self, slot_id: str, repository_path: str) -> dict:
+    def start_emergency_reconnect(
+        self,
+        slot_id: str,
+        repository_path: str,
+        *,
+        approval_bypass: bool = False,
+        approval_bypass_reason: str = "",
+    ) -> dict:
         with self.emergency_jobs_lock:
             running = self.emergency_jobs.get(slot_id)
             if running and running.get("status") == "running":
@@ -354,6 +386,8 @@ class WebContext:
                 "started_at": datetime.now().isoformat(timespec="seconds"),
                 "background_started_at": "",
                 "approved_until": "",
+                "approval_bypass": bool(approval_bypass),
+                "approval_bypass_reason": str(approval_bypass_reason or ""),
                 "message": "Emergency reconnect job started in background.",
             }
             self.emergency_jobs[slot_id] = job
@@ -367,13 +401,20 @@ class WebContext:
         )
         worker = threading.Thread(
             target=self._run_emergency_reconnect_job,
-            args=(slot_id, repository_path, job["job_id"]),
+            args=(slot_id, repository_path, job["job_id"], bool(approval_bypass), str(approval_bypass_reason or "")),
             daemon=True,
         )
         worker.start()
         return dict(job)
 
-    def _run_emergency_reconnect_job(self, slot_id: str, repository_path: str, job_id: str) -> None:
+    def _run_emergency_reconnect_job(
+        self,
+        slot_id: str,
+        repository_path: str,
+        job_id: str,
+        approval_bypass: bool = False,
+        approval_bypass_reason: str = "",
+    ) -> None:
         controller = self.controller
         background_started_at = datetime.now().isoformat(timespec="seconds")
         with self.emergency_jobs_lock:
@@ -392,7 +433,13 @@ class WebContext:
         try:
             result = self.run_agent_service_operation(
                 "emergency.reconnect",
-                {"slot_id": slot_id, "repository_path": repository_path, "job_id": job_id},
+                {
+                    "slot_id": slot_id,
+                    "repository_path": repository_path,
+                    "job_id": job_id,
+                    "approval_bypass": bool(approval_bypass),
+                    "approval_bypass_reason": str(approval_bypass_reason or ""),
+                },
                 timeout_seconds=max(180, int(getattr(self.config, "disk_wait_seconds", 60)) + 120),
             )
             state_value = str(result.get("state") or "ONLINE_VERIFIED_RW")
@@ -442,6 +489,30 @@ class WebContext:
             elapsed = 0
         job["elapsed_seconds"] = int(max(0, elapsed))
         if job.get("status") == "running" and job.get("background_started_at"):
+            if elapsed >= EMERGENCY_RECONNECT_AGENT_START_TIMEOUT_SECONDS and not self.emergency_reconnect_agent_started(slot_id, str(job.get("job_id") or "")):
+                error = "LOCK-FIX Agent/Service is not responding. Privileged disk and Veeam operations must run in the Windows Service."
+                resolution = self.emergency_reconnect_error_resolution(error)
+                updated = {
+                    **job,
+                    "status": "error",
+                    "error": error,
+                    "message": error,
+                    "resolution": resolution,
+                    "finished_at": datetime.now().isoformat(timespec="seconds"),
+                }
+                with self.emergency_jobs_lock:
+                    current = self.emergency_jobs.get(slot_id, {})
+                    if current.get("job_id") == job.get("job_id") and current.get("status") == "running":
+                        self.emergency_jobs[slot_id] = updated
+                        job = dict(updated)
+                self.controller.audit.write(
+                    "emergency.reconnect.background.error",
+                    slot_id=slot_id,
+                    job_id=job.get("job_id", ""),
+                    repository_path=job.get("repository_path", ""),
+                    error=error,
+                    resolution=resolution,
+                )
             timeout_seconds = max(180, int(getattr(self.config, "disk_wait_seconds", 60)) + 120)
             if elapsed >= timeout_seconds:
                 message = "재접속 작업 제한 시간을 초과했습니다. 실제 볼륨 연결이 완료되지 않았습니다."
@@ -535,6 +606,23 @@ class WebContext:
                 flow_state = str(record.get("state") or "")
                 break
         return {"slot_id": slot_id, **job, "detail_logs": detail_logs[-80:], "flow_state": flow_state}
+
+    def emergency_reconnect_agent_started(self, slot_id: str, job_id: str) -> bool:
+        if not job_id:
+            return False
+
+        class _ReconnectAuditProbe:
+            context = self
+
+        probe = _ReconnectAuditProbe()
+        for record in LockFixWebHandler.recent_reconnect_audit_records(probe, slot_id, limit=120, reset_on_request=False):
+            if (
+                record.get("event") == "agent.service.request.received"
+                and str(record.get("operation") or "") == "emergency.reconnect"
+                and str(record.get("job_id") or "") == job_id
+            ):
+                return True
+        return False
 
     def emergency_reconnect_error_resolution(self, error: str) -> str:
         text = str(error or "")
@@ -1035,6 +1123,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 payload = self.read_json_body()
                 slot_id = self.query_slot(parsed.query)
                 slot = self.context.config.slot(slot_id)
+                approval_bypass = False
+                approval_bypass_reason = ""
                 if self.is_daytime_emergency_reconnect_window():
                     reauth = self.verify_current_session_password(str(payload.get("reauth_password") or ""))
                     if not reauth.get("ok"):
@@ -1076,6 +1166,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                         result="SUCCESS",
                         message="Daytime emergency reconnect bypassed dual approval after current-user password re-authentication.",
                     )
+                    approval_bypass = True
+                    approval_bypass_reason = "daytime_password_reauth"
                 else:
                     missing_approvals = self.missing_emergency_reconnect_approvals(slot_id)
                     if missing_approvals:
@@ -1135,7 +1227,12 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                         )
                         return
                     repository_path = veeam_repository_path
-                job = self.context.start_emergency_reconnect(slot_id, repository_path)
+                job = self.context.start_emergency_reconnect(
+                    slot_id,
+                    repository_path,
+                    approval_bypass=approval_bypass,
+                    approval_bypass_reason=approval_bypass_reason,
+                )
                 self.send_json(
                     {
                         "slot_id": slot_id,
@@ -3210,6 +3307,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "emergency.reconnect.background.not_started",
             "emergency.reconnect.heartbeat",
             "emergency.reconnect.step",
+            "agent.service.request.received",
             "state.transition",
             "power.mock.on.start",
             "power.mock.on.tick",
@@ -3315,6 +3413,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         if event == "emergency.reconnect.background.started":
             message = LockFixWebHandler.compact_log_value(self, record.get("message") or "background worker started")
             return f"{prefix}LOCK-FIX Reconnect BACKGROUND STARTED - slot {slot_id}, {message}"
+        if event == "agent.service.request.received" and str(record.get("operation") or "") == "emergency.reconnect":
+            request_id = LockFixWebHandler.compact_log_value(self, record.get("request_id") or "-")
+            return f"{prefix}LOCK-FIX Agent STARTED - slot {slot_id}, request {request_id}"
         if event == "emergency.reconnect.background.complete":
             state = LockFixWebHandler.compact_log_value(self, record.get("state") or "complete")
             return f"{prefix}LOCK-FIX Reconnect BACKGROUND COMPLETE - slot {slot_id}, state {state}, 완료되었다"
@@ -7126,7 +7227,9 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
 
 
 def run(host: str = "127.0.0.1", port: int = 8088, config_path: Path = DEFAULT_CONFIG) -> None:
-    LockFixWebHandler.context = WebContext(config_path)
+    context = WebContext(config_path)
+    context.start_agent_service_worker()
+    LockFixWebHandler.context = context
     server = ThreadingHTTPServer((host, port), LockFixWebHandler)
     print(f"LOCK-FIX PoC UI: http://{host}:{port}")
     print(f"Config: {config_path}")

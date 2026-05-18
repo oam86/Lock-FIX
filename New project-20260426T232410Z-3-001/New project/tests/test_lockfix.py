@@ -722,7 +722,7 @@ class LockFixTests(unittest.TestCase):
             'id="userManagementForm"',
             'id="userManagementBackButton"',
             'data-i18n="userManagement.actions"',
-            'v=20260518-log-output-only',
+            'v=20260518-reconnect-agent-visible',
             'class="rbac-chip-list user-management-department-list"',
             '<option value="backup-operation">Backup Operation</option>',
             '<option value="SECURITY_ADMIN">SECURITY_ADMIN</option>',
@@ -1273,6 +1273,147 @@ class LockFixTests(unittest.TestCase):
         audit_text = load_config(config_path).audit_log_path.read_text(encoding="utf-8")
         self.assertIn('"event": "agent.service.request.received"', audit_text)
 
+    def test_agent_service_worker_runs_prevalidated_emergency_reconnect_without_dual_approval(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        queue_root = tmp_path / "agent_service"
+        request_id = "request-emergency-reconnect"
+        request_path = queue_root / "requests" / f"{request_id}.json"
+        request_path.parent.mkdir(parents=True)
+        request_path.write_text(
+            json.dumps(
+                {
+                    "request_id": request_id,
+                    "operation": "emergency.reconnect",
+                    "payload": {
+                        "slot_id": "BAY-01",
+                        "repository_path": "D:\\",
+                        "job_id": "job-daytime-reauth",
+                        "approval_bypass": True,
+                        "approval_bypass_reason": "daytime_password_reauth",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        processed = AgentServiceWorker(config_path, queue_root).process_once()
+        response = json.loads((queue_root / "responses" / f"{request_id}.json").read_text(encoding="utf-8"))
+        audit_text = load_config(config_path).audit_log_path.read_text(encoding="utf-8")
+
+        self.assertEqual(processed, 1)
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["state"], "ONLINE_VERIFIED_RW")
+        self.assertIn('"event": "emergency.unlock.prevalidated"', audit_text)
+        self.assertIn('"event": "disk.online.prevalidated"', audit_text)
+        self.assertIn('"job_id": "job-daytime-reauth"', audit_text)
+
+    def test_agent_service_worker_expires_stale_mutating_requests(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        queue_root = tmp_path / "agent_service"
+        request_id = "request-stale-emergency"
+        request_path = queue_root / "requests" / f"{request_id}.json"
+        request_path.parent.mkdir(parents=True)
+        stale_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() - 3600))
+        request_path.write_text(
+            json.dumps(
+                {
+                    "request_id": request_id,
+                    "operation": "emergency.reconnect",
+                    "payload": {"slot_id": "BAY-01", "repository_path": "D:\\", "job_id": "old-job"},
+                    "created_at": stale_time,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        processed = AgentServiceWorker(config_path, queue_root).process_once()
+        response = json.loads((queue_root / "responses" / f"{request_id}.json").read_text(encoding="utf-8"))
+        audit_text = load_config(config_path).audit_log_path.read_text(encoding="utf-8")
+
+        self.assertEqual(processed, 1)
+        self.assertFalse(response["ok"])
+        self.assertIn("expired", response["error"])
+        self.assertIn("agent.service.request.expired", audit_text)
+        self.assertNotIn("emergency.unlock.request", audit_text)
+
+    def test_agent_service_worker_expires_stale_diagnostics_requests(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        queue_root = tmp_path / "agent_service"
+        request_id = "request-stale-diagnostics"
+        request_path = queue_root / "requests" / f"{request_id}.json"
+        request_path.parent.mkdir(parents=True)
+        stale_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() - 3600))
+        request_path.write_text(
+            json.dumps(
+                {
+                    "request_id": request_id,
+                    "operation": "veeam.diagnostics",
+                    "payload": {"timeout_seconds": 8.0},
+                    "created_at": stale_time,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        processed = AgentServiceWorker(config_path, queue_root).process_once()
+        response = json.loads((queue_root / "responses" / f"{request_id}.json").read_text(encoding="utf-8"))
+        audit_text = load_config(config_path).audit_log_path.read_text(encoding="utf-8")
+
+        self.assertEqual(processed, 1)
+        self.assertFalse(response["ok"])
+        self.assertIn("expired", response["error"])
+        self.assertIn("agent.service.request.expired", audit_text)
+        self.assertNotIn("agent.service.request.received", audit_text)
+
+    def test_agent_service_worker_prioritizes_emergency_requests_with_backlog(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        queue_root = tmp_path / "agent_service"
+        requests_dir = queue_root / "requests"
+        requests_dir.mkdir(parents=True)
+        current_time = time.strftime("%Y-%m-%d %H:%M:%S")
+        emergency_path = requests_dir / "a-emergency.json"
+        diagnostics_path = requests_dir / "z-diagnostics.json"
+        emergency_path.write_text(
+            json.dumps(
+                {
+                    "request_id": "a-emergency",
+                    "operation": "emergency.reconnect",
+                    "payload": {
+                        "slot_id": "BAY-01",
+                        "repository_path": "D:\\",
+                        "job_id": "priority-job",
+                        "approval_bypass": True,
+                        "approval_bypass_reason": "daytime_password_reauth",
+                    },
+                    "created_at": current_time,
+                }
+            ),
+            encoding="utf-8",
+        )
+        diagnostics_path.write_text(
+            json.dumps(
+                {
+                    "request_id": "z-diagnostics",
+                    "operation": "veeam.diagnostics",
+                    "payload": {"timeout_seconds": 8.0},
+                    "created_at": current_time,
+                }
+            ),
+            encoding="utf-8",
+        )
+        os.utime(emergency_path, (time.time() - 60, time.time() - 60))
+        os.utime(diagnostics_path, None)
+
+        processed = AgentServiceWorker(config_path, queue_root).process_once(max_requests=1)
+
+        self.assertEqual(processed, 1)
+        self.assertTrue((queue_root / "responses" / "a-emergency.json").exists())
+        self.assertFalse((queue_root / "responses" / "z-diagnostics.json").exists())
+
     def test_agent_service_preflight_reports_permission_shortage(self) -> None:
         tmp_path = self.make_workspace()
         config_path = write_config(tmp_path)
@@ -1632,7 +1773,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("border: 0;", css_source)
         self.assertNotIn("border: 1px solid rgba(196, 211, 225, 0.72);", css_source)
         self.assertNotIn("border: 1px solid rgba(121, 158, 206, 0.48);", css_source)
-        self.assertIn("20260518-log-output-only", index_source)
+        self.assertIn("20260518-reconnect-agent-visible", index_source)
 
     def test_isolate_reaches_isolated(self) -> None:
         tmp_path = self.make_workspace()
@@ -1884,6 +2025,31 @@ class LockFixTests(unittest.TestCase):
         self.assertTrue(any("BACKGROUND TIMEOUT" in line for line in result["detail_logs"]))
         self.assertTrue(any("Get-Disk/Get-Partition" in line for line in result["detail_logs"]))
         self.assertIn("emergency.reconnect.heartbeat", audit_text)
+
+    def test_emergency_reconnect_status_fails_fast_when_agent_worker_never_picks_up_request(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        context = webui.WebContext(config_path)
+        job_id = "job-missing-agent"
+        started_at = (webui.datetime.now() - webui.timedelta(seconds=webui.EMERGENCY_RECONNECT_AGENT_START_TIMEOUT_SECONDS + 1)).isoformat(timespec="seconds")
+        with context.emergency_jobs_lock:
+            context.emergency_jobs["BAY-01"] = {
+                "job_id": job_id,
+                "slot_id": "BAY-01",
+                "repository_path": "D:\\",
+                "status": "running",
+                "started_at": started_at,
+                "background_started_at": started_at,
+                "message": "Emergency reconnect background worker is running.",
+            }
+
+        result = context.emergency_reconnect_status("BAY-01", job_id)
+        audit_text = context.config.audit_log_path.read_text(encoding="utf-8")
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("Agent/Service is not responding", result["error"])
+        self.assertTrue(any("Agent/Service is not responding" in line for line in result["detail_logs"]))
+        self.assertIn("emergency.reconnect.background.error", audit_text)
 
     def test_logs_menu_formats_emergency_reconnect_history(self) -> None:
         tmp_path = self.make_workspace()
@@ -2326,6 +2492,11 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("emergency.reconnect.reauth.success", source)
         self.assertIn("emergency.reconnect.reauth.failed", source)
         self.assertIn("emergency.reconnect.daytime_approval_bypass", source)
+        self.assertIn("approval_bypass = True", source)
+        self.assertIn('"approval_bypass": bool(approval_bypass)', source)
+        self.assertIn("daytime_password_reauth", source)
+        self.assertIn("start_agent_service_worker", source)
+        self.assertIn("LOCKFIXAgentServiceWorker", source)
         self.assertIn('self.context.controller.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)', source)
         self.assertIn('self.context.controller.approvals.require_approved("DISK_ONLINE", slot_id)', source)
         self.assertNotIn("approval_password_failed", source)
@@ -2336,14 +2507,17 @@ class LockFixTests(unittest.TestCase):
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
         webui_source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")
 
-        self.assertIn("20260518-log-output-only", html_source)
+        self.assertIn("20260518-reconnect-agent-visible", html_source)
         self.assertIn("emergency.reconnect.background.timeout", webui_source)
+        self.assertIn("EMERGENCY_RECONNECT_AGENT_START_TIMEOUT_SECONDS", webui_source)
+        self.assertIn("emergency_reconnect_agent_started", webui_source)
         self.assertIn("BACKGROUND TIMEOUT", webui_source)
         self.assertIn("해결 안내: ${emergencyReconnectResolutionText(result)}", app_source)
         self.assertIn("if (text) return text;", app_source)
         self.assertNotIn("상세 오류는 백그라운드 로그 이력에 저장됨", app_source)
         self.assertNotIn("<span>실시간 작업 로그</span>", app_source)
         self.assertNotIn("request accepted; live detail logging started", app_source)
+        self.assertNotIn("background job accepted", app_source)
         self.assertNotIn("긴급 접속 작업이 백그라운드에서 시작되었습니다.", app_source)
 
     def test_login_success_shows_two_second_loading_splash(self) -> None:
@@ -2409,7 +2583,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("height: 68px !important;", css_source)
         self.assertIn("min-height: 36px !important;", css_source)
         self.assertIn("border-bottom: 0 !important;", css_source)
-        self.assertIn("20260518-log-output-only", html_source)
+        self.assertIn("20260518-reconnect-agent-visible", html_source)
 
     def test_logs_summary_cards_render_above_filter_bar(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -2417,7 +2591,7 @@ class LockFixTests(unittest.TestCase):
 
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('class="logs-range"'))
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('id="logsStart"'))
-        self.assertIn("20260518-log-output-only", html_source)
+        self.assertIn("20260518-reconnect-agent-visible", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -2436,7 +2610,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260518-log-output-only", html_source)
+        self.assertIn("20260518-reconnect-agent-visible", html_source)
 
     def test_monitoring_header_copy_is_hidden_while_polling_remains(self) -> None:
         root = Path.cwd()
@@ -2559,7 +2733,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("min-height: 46px;", css_source)
         self.assertIn("opacity: 0.66;", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260518-log-output-only", html_source)
+        self.assertIn("20260518-reconnect-agent-visible", html_source)
 
     def test_dashboard_route_does_not_show_legacy_notification_markup(self) -> None:
         root = Path.cwd()
@@ -2577,7 +2751,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260518-log-output-only", html_source)
+        self.assertIn("20260518-reconnect-agent-visible", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()

@@ -98,9 +98,26 @@ class LockFixController:
             self.set_state(slot_id, LockFixState.ERROR, error=str(exc))
             raise
 
-    def reconnect(self, slot_id: str, repository_path: str = "") -> LockFixState:
+    def reconnect(
+        self,
+        slot_id: str,
+        repository_path: str = "",
+        *,
+        approval_bypass: bool = False,
+        approval_bypass_reason: str = "",
+    ) -> LockFixState:
         self.audit.write("disk.online.request", slot_id=slot_id, resourceType="DISK", resourceId=slot_id)
-        self.approvals.require_approved("DISK_ONLINE", slot_id)
+        if approval_bypass:
+            self.audit.write(
+                "disk.online.prevalidated",
+                slot_id=slot_id,
+                resourceType="DISK",
+                resourceId=slot_id,
+                reason=str(approval_bypass_reason or "prevalidated_emergency_reconnect"),
+                message="DISK_ONLINE approval gate was satisfied by a prevalidated Emergency Volume Access flow.",
+            )
+        else:
+            self.approvals.require_approved("DISK_ONLINE", slot_id)
         base_slot = self.config.slot(slot_id)
         remembered_path = str(self.disk.read_storage_state(base_slot).get("accessPath") or "").strip()
         reconnect_repository_path = str(repository_path or self.veeam_backup_copy_repository_path() or remembered_path).strip()
@@ -317,10 +334,29 @@ class LockFixController:
             return expected
         return slot_uid(slot)
 
-    def emergency_reconnect(self, slot_id: str, verification_hash: str = "", repository_path: str = "") -> LockFixState:
+    def emergency_reconnect(
+        self,
+        slot_id: str,
+        verification_hash: str = "",
+        repository_path: str = "",
+        *,
+        approval_bypass: bool = False,
+        approval_bypass_reason: str = "",
+    ) -> LockFixState:
         self.audit.write("emergency.unlock.request", slot_id=slot_id, resourceType="EMERGENCY", resourceId=slot_id)
-        emergency_approval = self.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)
-        emergency_reason = str((emergency_approval.get("metadata") or {}).get("reason") or "").strip()
+        if approval_bypass:
+            emergency_approval = {"metadata": {"reason": str(approval_bypass_reason or "prevalidated_emergency_reconnect")}}
+            self.audit.write(
+                "emergency.unlock.prevalidated",
+                slot_id=slot_id,
+                resourceType="EMERGENCY",
+                resourceId=slot_id,
+                reason=str(approval_bypass_reason or "prevalidated_emergency_reconnect"),
+                message="EMERGENCY_UNLOCK approval gate was satisfied by a prevalidated Emergency Volume Access flow.",
+            )
+        else:
+            emergency_approval = self.approvals.require_approved("EMERGENCY_UNLOCK", slot_id)
+        emergency_reason = str((emergency_approval.get("metadata") or {}).get("reason") or approval_bypass_reason or "").strip()
         if not emergency_reason:
             self.audit.write(
                 "emergency.unlock.denied",
@@ -402,7 +438,12 @@ class LockFixController:
             message="local secure store verification approved",
         )
         try:
-            state = self.reconnect(slot_id, repository_path=reconnect_path)
+            state = self.reconnect(
+                slot_id,
+                repository_path=reconnect_path,
+                approval_bypass=approval_bypass,
+                approval_bypass_reason=emergency_reason,
+            )
         except Exception as exc:
             diagnostic = self.disk.verify_storage_api_access(slot, "emergency_reconnect_failure")
             self.audit.write(

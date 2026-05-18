@@ -15,6 +15,10 @@ from .controller import LockFixController
 from .veeam_diagnostics import run_veeam_diagnostics
 
 
+REQUEST_MAX_AGE_SECONDS = 10 * 60
+REQUEST_BATCH_SIZE = 1
+
+
 class AgentServiceUnavailable(RuntimeError):
     """Raised when the privileged LOCK-FIX Agent/Service did not answer."""
 
@@ -97,10 +101,15 @@ class AgentServiceWorker:
         self.responses_dir.mkdir(parents=True, exist_ok=True)
         self.processed_dir.mkdir(parents=True, exist_ok=True)
 
-    def process_once(self) -> int:
+    def process_once(self, max_requests: int = REQUEST_BATCH_SIZE) -> int:
         self.ensure_dirs()
         processed = 0
-        for request_path in sorted(self.requests_dir.glob("*.json")):
+        request_paths = sorted(
+            self.requests_dir.glob("*.json"),
+            key=lambda path: (self.request_sort_priority(path), path.stat().st_mtime),
+            reverse=True,
+        )
+        for request_path in request_paths[: max(1, int(max_requests))]:
             try:
                 request = json.loads(request_path.read_text(encoding="utf-8"))
                 response = self.execute_request(request)
@@ -112,6 +121,17 @@ class AgentServiceWorker:
             request_path.replace(self.processed_dir / request_path.name)
             processed += 1
         return processed
+
+    def request_sort_priority(self, request_path: Path) -> int:
+        try:
+            text = request_path.read_text(encoding="utf-8")
+        except OSError:
+            return 0
+        if '"operation": "emergency.reconnect"' in text:
+            return 3
+        if '"operation": "disk.reconnect"' in text or '"operation": "disk.isolate"' in text:
+            return 2
+        return 1
 
     def run_forever(self, poll_seconds: float = 0.5) -> None:
         self.ensure_dirs()
@@ -125,10 +145,29 @@ class AgentServiceWorker:
         config = load_config(self.config_path)
         controller = LockFixController(config)
         request_id = str(request.get("request_id") or "")
+        if self.request_age_seconds(request) > REQUEST_MAX_AGE_SECONDS:
+            controller.audit.write(
+                "agent.service.request.expired",
+                request_id=request_id,
+                operation=operation,
+                slot_id=str(payload.get("slot_id") or ""),
+                job_id=str(payload.get("job_id") or ""),
+                repository_path=str(payload.get("repository_path") or ""),
+                message="Expired privileged request was not executed by LOCK-FIX Agent/Service.",
+            )
+            return {
+                "ok": False,
+                "request_id": request_id,
+                "operation": operation,
+                "error": "LOCK-FIX Agent/Service request expired before execution.",
+            }
         controller.audit.write(
             "agent.service.request.received",
             request_id=request_id,
             operation=operation,
+            slot_id=str(payload.get("slot_id") or ""),
+            job_id=str(payload.get("job_id") or ""),
+            repository_path=str(payload.get("repository_path") or ""),
             message="Privileged operation accepted by LOCK-FIX Agent/Service.",
         )
         if operation == "disk.isolate":
@@ -141,6 +180,8 @@ class AgentServiceWorker:
             state = controller.emergency_reconnect(
                 str(payload.get("slot_id") or ""),
                 repository_path=str(payload.get("repository_path") or ""),
+                approval_bypass=bool(payload.get("approval_bypass")),
+                approval_bypass_reason=str(payload.get("approval_bypass_reason") or ""),
             )
             return {"ok": True, "request_id": request_id, "operation": operation, "state": state.value}
         if operation == "veeam.diagnostics":
@@ -150,6 +191,15 @@ class AgentServiceWorker:
             diagnostics = self.service_preflight(payload, controller)
             return {"ok": True, "request_id": request_id, "operation": operation, "diagnostics": diagnostics}
         raise ValueError(f"Unsupported LOCK-FIX Agent/Service operation: {operation}")
+
+    def request_age_seconds(self, request: dict[str, Any]) -> float:
+        created_at = str(request.get("created_at") or "").strip()
+        if not created_at:
+            return 0.0
+        try:
+            return max(0.0, time.time() - time.mktime(time.strptime(created_at, "%Y-%m-%d %H:%M:%S")))
+        except ValueError:
+            return 0.0
 
     def run_probe(self, command: list[str], timeout: float = 8.0) -> dict[str, Any]:
         try:

@@ -7396,7 +7396,6 @@ async function runEmergencyReconnect(slotId, volumePath = "") {
     });
     emergencyActionStatus = result.message || "긴급 접속 작업이 백그라운드에서 진행 중입니다.";
     emergencyReconnectJobId = result.job_id || "";
-    appendEmergencyReconnectDetail(`background job accepted${result.job_id ? ` - ${result.job_id}` : ""}`);
     setEmergencyReconnectStatusPolling(true);
     await loadAll();
   } catch (error) {
