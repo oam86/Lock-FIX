@@ -24,8 +24,8 @@
     "job_id": "",
     "require_backup_copy": true,
     "target_repository_id": "912bec6a-e5e9-4895-a5a6-fbaa996a475f",
-    "target_repository_name": "G",
-    "target_repository_path": "G:\\",
+    "target_repository_name": "D",
+    "target_repository_path": "D:\\",
     "exclude_os_repository": true,
     "console_log_fallback_enabled": true,
     "console_log_root": "C:\\ProgramData\\Veeam\\Backup",
@@ -40,8 +40,8 @@
   "slots": [
     {
       "slot_id": "BAY-01",
-      "device": "G:\\",
-      "mount_point": "G:\\",
+      "device": "D:\\",
+      "mount_point": "D:\\",
       "expected_uid": "replace-with-registered-uid",
       "identity": {
         "serial": "TEST-SERIAL-001",
