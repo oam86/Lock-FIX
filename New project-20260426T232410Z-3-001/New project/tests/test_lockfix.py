@@ -782,7 +782,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn('elif parsed.path == "/api/report.pdf":', webui_source)
         self.assertIn("def send_report_pdf", webui_source)
         self.assertIn("application/pdf", webui_source)
-        self.assertIn("20260519-dashboard-backup-fill-width", html)
+        self.assertIn("20260519-detect-isolated-waiting", html)
 
     def test_report_inspection_result_badges_are_centered(self) -> None:
         root = Path.cwd()
@@ -817,7 +817,7 @@ class LockFixTests(unittest.TestCase):
             'id="userManagementForm"',
             'id="userManagementBackButton"',
             'data-i18n="userManagement.actions"',
-            'v=20260519-dashboard-backup-fill-width',
+            'v=20260519-detect-isolated-waiting',
             'class="rbac-chip-list user-management-department-list"',
             'data-i18n="department.backupOperation"',
             '<option value="SECURITY_ADMIN">SECURITY_ADMIN</option>',
@@ -1811,6 +1811,33 @@ class LockFixTests(unittest.TestCase):
         self.assertEqual(parts["firmware"], "FW-WEB")
         self.assertIn("Disk Size", summary["fingerprint"]["formula"])
 
+    def test_webui_detect_summary_marks_isolated_unmounted_volume_as_waiting(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+
+        class Probe:
+            context = webui.WebContext(config_path)
+
+            def emergency_access_summary(self):
+                return {
+                    "slot": {
+                        "slot_id": "BAY-01",
+                        "state": "ISOLATED",
+                        "hash_status": "WAITING_FOR_MOUNT",
+                    },
+                    "slots": [],
+                }
+
+            def detect_veeam_repository_summary(self):
+                return {"repository_name": "D REPO", "repository_path": "D:\\Backup", "eligible": True}
+
+        summary = webui.LockFixWebHandler.detect_summary(Probe())
+        fingerprint = summary["fingerprint"]
+
+        self.assertEqual(fingerprint["status"], "ISOLATED")
+        self.assertFalse(fingerprint["match"])
+        self.assertIn("오프라인/언마운트", fingerprint["conclusion"])
+
     def test_webui_detect_summary_includes_veeam_repository_from_rest(self) -> None:
         tmp_path = self.make_workspace()
         config_path = write_config(tmp_path)
@@ -1902,7 +1929,11 @@ class LockFixTests(unittest.TestCase):
         self.assertIn('logsRange.highlight = keyword;', app_source)
         self.assertIn('showView("logs2");', app_source)
         self.assertIn("logs-highlight-row", css_source)
-        self.assertIn('statusClass = isNormal ? "normal" : "abnormal"', app_source)
+        self.assertIn('const isIsolated = status === "ISOLATED";', app_source)
+        self.assertIn('statusClass = isNormal || isIsolated ? "normal" : "abnormal"', app_source)
+        self.assertIn('isIsolated ? "ISOLATED"', app_source)
+        self.assertIn('isIsolated ? "격리 볼륨"', app_source)
+        self.assertIn('ISOLATED - VERIFICATION WAITING', app_source)
         self.assertIn(".detect-judgement-normal", css_source)
         self.assertIn(".detect-judgement-abnormal", css_source)
         self.assertIn(".detect-state-row", css_source)
@@ -2029,7 +2060,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("border: 0;", css_source)
         self.assertNotIn("border: 1px solid rgba(196, 211, 225, 0.72);", css_source)
         self.assertNotIn("border: 1px solid rgba(121, 158, 206, 0.48);", css_source)
-        self.assertIn("20260519-dashboard-backup-fill-width", index_source)
+        self.assertIn("20260519-detect-isolated-waiting", index_source)
 
     def test_isolate_reaches_isolated(self) -> None:
         tmp_path = self.make_workspace()
@@ -2764,7 +2795,7 @@ class LockFixTests(unittest.TestCase):
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
         webui_source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")
 
-        self.assertIn("20260519-dashboard-backup-fill-width", html_source)
+        self.assertIn("20260519-detect-isolated-waiting", html_source)
         self.assertIn("emergency.reconnect.background.timeout", webui_source)
         self.assertIn("EMERGENCY_RECONNECT_AGENT_START_TIMEOUT_SECONDS", webui_source)
         self.assertIn("emergency_reconnect_agent_started", webui_source)
@@ -2840,7 +2871,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("height: 68px !important;", css_source)
         self.assertIn("min-height: 36px !important;", css_source)
         self.assertIn("border-bottom: 0 !important;", css_source)
-        self.assertIn("20260519-dashboard-backup-fill-width", html_source)
+        self.assertIn("20260519-detect-isolated-waiting", html_source)
 
     def test_logs_summary_cards_render_above_filter_bar(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -2849,7 +2880,7 @@ class LockFixTests(unittest.TestCase):
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('class="logs-range"'))
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('id="logsStart"'))
         self.assertNotIn('data-i18n="logs.filteredView"', logs_view)
-        self.assertIn("20260519-dashboard-backup-fill-width", html_source)
+        self.assertIn("20260519-detect-isolated-waiting", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -2868,7 +2899,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260519-dashboard-backup-fill-width", html_source)
+        self.assertIn("20260519-detect-isolated-waiting", html_source)
 
     def test_settings_service_policy_card_is_not_rendered(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -2928,7 +2959,7 @@ class LockFixTests(unittest.TestCase):
             "departmentDisplayName(department.id)",
         ]:
             self.assertIn(token, app_source)
-        self.assertIn("20260519-dashboard-backup-fill-width", html_source)
+        self.assertIn("20260519-detect-isolated-waiting", html_source)
 
     def test_monitoring_header_copy_is_hidden_while_polling_remains(self) -> None:
         root = Path.cwd()
@@ -3120,7 +3151,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("background: #ffffff;", css_source)
         self.assertIn("opacity: 0.66;", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260519-dashboard-backup-fill-width", html_source)
+        self.assertIn("20260519-detect-isolated-waiting", html_source)
         self.assertIn("grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));", css_source)
         self.assertIn(".security-dashboard-grid .backup-panel .panel-body > dl", css_source)
         self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr));", css_source)
@@ -3177,7 +3208,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260519-dashboard-backup-fill-width", html_source)
+        self.assertIn("20260519-detect-isolated-waiting", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()

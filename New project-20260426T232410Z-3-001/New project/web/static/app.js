@@ -3850,10 +3850,11 @@ function renderDetect(data) {
     const parts = Array.isArray(fingerprint.parts) ? fingerprint.parts : [];
     const status = String(fingerprint.status || "UNREGISTERED");
     const isNormal = fingerprint.match === true || status === "MATCH";
-    const statusClass = isNormal ? "normal" : "abnormal";
-    const judgementLabel = isNormal ? "REGISTERED" : status === "DIFFERENT_DISK" ? "DIFFERENT DISK" : "UNREGISTERED";
-    const judgementKorean = isNormal ? "등록된 디스크" : status === "DIFFERENT_DISK" ? "다른 디스크 감지" : "등록되지 않은 디스크";
-    const recognitionLabel = isNormal ? "NORMAL RECOGNITION" : "RECOGNITION FAILED";
+    const isIsolated = status === "ISOLATED";
+    const statusClass = isNormal || isIsolated ? "normal" : "abnormal";
+    const judgementLabel = isNormal ? "REGISTERED" : isIsolated ? "ISOLATED" : status === "DIFFERENT_DISK" ? "DIFFERENT DISK" : "UNREGISTERED";
+    const judgementKorean = isNormal ? "등록된 디스크" : isIsolated ? "격리 볼륨" : status === "DIFFERENT_DISK" ? "다른 디스크 감지" : "등록되지 않은 디스크";
+    const recognitionLabel = isNormal ? "NORMAL RECOGNITION" : isIsolated ? "ISOLATED - VERIFICATION WAITING" : "RECOGNITION FAILED";
     const diskSize = parts.find((part) => {
       const key = String(part.key || "").toLowerCase();
       const label = String(part.label || "").toLowerCase();

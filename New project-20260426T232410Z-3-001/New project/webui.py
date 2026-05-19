@@ -6129,6 +6129,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
     def detect_summary(self) -> dict:
         config = self.context.config
         if not config.slots:
+            emergency_summary = self.emergency_access_summary()
             return {
                 "title": "LOCK-FIX 기준으로 가장 안전한 판단 방식",
                 "subtitle": "디스크 식별 슬롯 설정이 등록되면 UID와 fingerprint 검증을 자동으로 표시합니다.",
@@ -6144,10 +6145,23 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     "formula": "slot configuration required",
                     "conclusion": "에이전트 설치 시 입력한 저장소/슬롯 설정을 기준으로 디스크 식별값이 구성되어야 합니다.",
                 },
-                "emergency_access": self.emergency_access_summary(),
+                "emergency_access": emergency_summary,
                 "veeam_repository": self.detect_veeam_repository_summary(),
             }
         slot = next(iter(config.slots.values()))
+        emergency_summary = self.emergency_access_summary()
+        emergency_slot = emergency_summary.get("slot") if isinstance(emergency_summary, dict) else {}
+        emergency_state = str((emergency_slot or {}).get("state") or "").upper()
+        emergency_hash_status = str((emergency_slot or {}).get("hash_status") or "").upper()
+        isolated_waiting_for_mount = emergency_state in {
+            "ISOLATED",
+            "OFFLINE",
+            "DISK_OFFLINE",
+            "DISK_OFFLINE_COMPLETE",
+            "OFFLINE_COMPLETE",
+            "UNMOUNTED",
+            "DISMOUNTED",
+        } and emergency_hash_status in {"WAITING_FOR_MOUNT", "MOUNT_ACCESS_ERROR"}
         unique_id = slot_uid(slot)
         parts = fingerprint_parts(slot)
         display_lines = ["Disk Identity Fingerprint ="]
@@ -6156,11 +6170,17 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         registered = slot.expected_uid
         registered_ready = bool(registered and registered != "replace-with-registered-uid")
         match = registered_ready and registered == unique_id
-        status = "MATCH" if match else "UNREGISTERED" if not registered_ready else "DIFFERENT_DISK"
+        status = "ISOLATED" if isolated_waiting_for_mount else "MATCH" if match else "UNREGISTERED" if not registered_ready else "DIFFERENT_DISK"
+        isolated_volume_label = str(slot.device or slot.mount_point or "볼륨")
+        conclusion = (
+            f"{isolated_volume_label} 볼륨이 오프라인/언마운트되어 실시간 UID와 크기 검증은 대기 중입니다. 격리 상태는 정상이며 재접속 시 다시 검증합니다."
+            if isolated_waiting_for_mount
+            else "이 값이 기존 등록값과 다르면 다른 디스크로 판단합니다."
+        )
         return {
             "title": "LOCK-FIX 기준으로 가장 안전한 판단 방식",
             "subtitle": "LOCK-FIX에서는 하나의 값만 보지 말고 아래 조합을 기준으로 해야 합니다.",
-            "emergency_access": self.emergency_access_summary(),
+            "emergency_access": emergency_summary,
             "veeam_repository": self.detect_veeam_repository_summary(),
             "fingerprint": {
                 "slot_id": slot.slot_id,
@@ -6172,7 +6192,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "display": display_lines,
                 "formula_title": "LOCK-FIX-DISK-FINGERPRINT =",
                 "formula": formula,
-                "conclusion": "이 값이 기존 등록값과 다르면 다른 디스크로 판단합니다.",
+                "conclusion": conclusion,
             },
         }
 
