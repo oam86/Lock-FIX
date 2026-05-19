@@ -69,9 +69,9 @@ const veeamLogCount = document.querySelector("#veeamLogCount");
 const veeamLogTable = document.querySelector("#veeamLogTable");
 const dashboardView = document.querySelector("#dashboardView");
 const dashboardKpiOrderKey = "lockfix.dashboard.kpiOrder.v1";
-const dashboardKpiSizeKey = "lockfix.dashboard.kpiSize.v2";
+const dashboardKpiSizeKey = "lockfix.dashboard.kpiSize.v3";
 const dashboardPanelOrderKey = "lockfix.dashboard.panelOrder.v1";
-const dashboardPanelSizeKey = "lockfix.dashboard.panelSize.v1";
+const dashboardPanelSizeKey = "lockfix.dashboard.panelSize.v2";
 const dashboardEventsKey = "lockfix.dashboard.eventsVisible.v1";
 const dashboardAlertsKey = "lockfix.dashboard.alertsVisible.v1";
 const opsEventsVisibleKey = "lockfix.ops.eventsVisible.v2";
@@ -2945,6 +2945,30 @@ function saveDashboardPanelSizes(sizes) {
   }
 }
 
+function clampDashboardPixels(value, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return min;
+  return Math.max(min, Math.min(max, number));
+}
+
+function dashboardResizeBounds(board, defaults) {
+  const boardWidth = board?.getBoundingClientRect?.().width || window.innerWidth || defaults.maxWidth;
+  return {
+    ...defaults,
+    maxWidth: Math.max(defaults.minWidth, Math.min(defaults.maxWidth, Math.floor(boardWidth))),
+  };
+}
+
+function dashboardSpanFromPixels(board, width, totalColumns, minSpan, maxSpan) {
+  const boardWidth = Math.max(1, board?.getBoundingClientRect?.().width || window.innerWidth || width);
+  const unitWidth = boardWidth / totalColumns;
+  return Math.max(minSpan, Math.min(maxSpan, Math.ceil(width / unitWidth)));
+}
+
+function dashboardRowsFromPixels(height, rowHeight, minRows, maxRows) {
+  return Math.max(minRows, Math.min(maxRows, Math.ceil(height / rowHeight)));
+}
+
 function enableDashboardKpiDrag(board) {
   if (!board || board.dataset.dragReady === "true") return;
   board.dataset.dragReady = "true";
@@ -2959,10 +2983,21 @@ function enableDashboardKpiDrag(board) {
 
   const applyCardSize = (card, size) => {
     if (!card || !size) return;
-    const cols = Math.max(1, Math.min(3, Number(size.cols || 1)));
-    const rows = Math.max(1, Math.min(2, Number(size.rows || 1)));
+    const bounds = dashboardResizeBounds(board, { minWidth: 180, maxWidth: 560, minHeight: 96, maxHeight: 220 });
+    const cols = Math.max(1, Math.min(3, Number(size.cols || card.dataset.cols || 1)));
+    const rows = Math.max(1, Math.min(2, Number(size.rows || card.dataset.rows || 1)));
+    card.dataset.cols = String(cols);
+    card.dataset.rows = String(rows);
     card.style.gridColumnEnd = `span ${cols}`;
     card.style.gridRowEnd = `span ${rows}`;
+    if (size.width) {
+      card.dataset.width = String(clampDashboardPixels(size.width, bounds.minWidth, bounds.maxWidth));
+      card.style.width = `${card.dataset.width}px`;
+    }
+    if (size.height) {
+      card.dataset.height = String(clampDashboardPixels(size.height, bounds.minHeight, bounds.maxHeight));
+      card.style.height = `${card.dataset.height}px`;
+    }
   };
 
   const getCard = (target) => target?.closest?.("[data-dashboard-kpi]");
@@ -3023,6 +3058,8 @@ function enableDashboardKpiDrag(board) {
       axis,
       startX: event.clientX,
       startY: event.clientY,
+      startWidth: card.getBoundingClientRect().width,
+      startHeight: card.getBoundingClientRect().height,
       startCols: Number(card.dataset.cols || 1),
       startRows: Number(card.dataset.rows || 1),
     };
@@ -3032,16 +3069,22 @@ function enableDashboardKpiDrag(board) {
       if (!resizing) return;
       const dx = event.clientX - resizing.startX;
       const dy = event.clientY - resizing.startY;
-      const nextCols = resizing.axis === "y"
-        ? resizing.startCols
-        : Math.max(1, Math.min(3, resizing.startCols + Math.round(dx / 140)));
-      const nextRows = resizing.axis === "x"
-        ? resizing.startRows
-        : Math.max(1, Math.min(2, resizing.startRows + Math.round(dy / 70)));
-      resizing.card.dataset.cols = String(nextCols);
-      resizing.card.dataset.rows = String(nextRows);
-      resizing.card.style.gridColumnEnd = `span ${nextCols}`;
-      resizing.card.style.gridRowEnd = `span ${nextRows}`;
+      const bounds = dashboardResizeBounds(board, { minWidth: 180, maxWidth: 560, minHeight: 96, maxHeight: 220 });
+      if (resizing.axis === "x") {
+        const nextWidth = Math.round(clampDashboardPixels(resizing.startWidth + dx, bounds.minWidth, bounds.maxWidth));
+        const nextCols = dashboardSpanFromPixels(board, nextWidth, 5, 1, 3);
+        resizing.card.dataset.width = String(nextWidth);
+        resizing.card.dataset.cols = String(nextCols);
+        resizing.card.style.width = `${nextWidth}px`;
+        resizing.card.style.gridColumnEnd = `span ${nextCols}`;
+      } else {
+        const nextHeight = Math.round(clampDashboardPixels(resizing.startHeight + dy, bounds.minHeight, bounds.maxHeight));
+        const nextRows = dashboardRowsFromPixels(nextHeight, 108, 1, 2);
+        resizing.card.dataset.height = String(nextHeight);
+        resizing.card.dataset.rows = String(nextRows);
+        resizing.card.style.height = `${nextHeight}px`;
+        resizing.card.style.gridRowEnd = `span ${nextRows}`;
+      }
     };
 
     const onMouseUp = () => {
@@ -3056,7 +3099,9 @@ function enableDashboardKpiDrag(board) {
         if (!key) return;
         const cols = Number(card.dataset.cols || 1);
         const rows = Number(card.dataset.rows || 1);
-        sizes[key] = { cols, rows };
+        const width = Number(card.dataset.width || 0);
+        const height = Number(card.dataset.height || 0);
+        sizes[key] = { cols, rows, width, height };
       });
       saveDashboardKpiSizes(sizes);
       resizing = null;
@@ -3089,12 +3134,21 @@ function enableDashboardPanelDrag(board) {
   const getPanel = (target) => target?.closest?.("[data-dashboard-panel]");
   const applyPanelSize = (panel, size) => {
     if (!panel || !size || !panel.dataset.panelResizable) return;
+    const bounds = dashboardResizeBounds(board, { minWidth: 300, maxWidth: 1280, minHeight: 66, maxHeight: 660 });
     const cols = Math.max(3, Math.min(12, Number(size.cols || panel.dataset.cols || 4)));
     const rows = Math.max(1, Math.min(5, Number(size.rows || panel.dataset.rows || 3)));
     panel.dataset.cols = String(cols);
     panel.dataset.rows = String(rows);
     panel.style.gridColumnEnd = `span ${cols}`;
-    panel.style.minHeight = `${Math.max(66, rows * 78)}px`;
+    panel.style.minHeight = `${Math.max(bounds.minHeight, rows * 78)}px`;
+    if (size.width) {
+      panel.dataset.width = String(clampDashboardPixels(size.width, bounds.minWidth, bounds.maxWidth));
+      panel.style.width = `${panel.dataset.width}px`;
+    }
+    if (size.height) {
+      panel.dataset.height = String(clampDashboardPixels(size.height, bounds.minHeight, bounds.maxHeight));
+      panel.style.height = `${panel.dataset.height}px`;
+    }
   };
   const applyPanelOrder = () => {
     const panels = panelsById();
@@ -3153,6 +3207,8 @@ function enableDashboardPanelDrag(board) {
       axis,
       startX: event.clientX,
       startY: event.clientY,
+      startWidth: panel.getBoundingClientRect().width,
+      startHeight: panel.getBoundingClientRect().height,
       startCols: Number(panel.dataset.cols || 4),
       startRows: Number(panel.dataset.rows || 3),
     };
@@ -3162,13 +3218,16 @@ function enableDashboardPanelDrag(board) {
       if (!resizing) return;
       const dx = event.clientX - resizing.startX;
       const dy = event.clientY - resizing.startY;
-      const nextCols = resizing.axis === "y"
-        ? resizing.startCols
-        : Math.max(3, Math.min(12, resizing.startCols + Math.round(dx / 120)));
-      const nextRows = resizing.axis === "x"
-        ? resizing.startRows
-        : Math.max(1, Math.min(5, resizing.startRows + Math.round(dy / 72)));
-      applyPanelSize(resizing.panel, { cols: nextCols, rows: nextRows });
+      const bounds = dashboardResizeBounds(board, { minWidth: 300, maxWidth: 1280, minHeight: 66, maxHeight: 660 });
+      if (resizing.axis === "x") {
+        const nextWidth = Math.round(clampDashboardPixels(resizing.startWidth + dx, bounds.minWidth, bounds.maxWidth));
+        const nextCols = dashboardSpanFromPixels(board, nextWidth, 12, 3, 12);
+        applyPanelSize(resizing.panel, { cols: nextCols, width: nextWidth });
+      } else {
+        const nextHeight = Math.round(clampDashboardPixels(resizing.startHeight + dy, bounds.minHeight, bounds.maxHeight));
+        const nextRows = dashboardRowsFromPixels(nextHeight, 78, 1, 5);
+        applyPanelSize(resizing.panel, { rows: nextRows, height: nextHeight });
+      }
     };
 
     const onMouseUp = () => {
@@ -3184,6 +3243,8 @@ function enableDashboardPanelDrag(board) {
         sizes[key] = {
           cols: Number(panel.dataset.cols || 4),
           rows: Number(panel.dataset.rows || 3),
+          width: Number(panel.dataset.width || 0),
+          height: Number(panel.dataset.height || 0),
         };
       });
       saveDashboardPanelSizes(sizes);

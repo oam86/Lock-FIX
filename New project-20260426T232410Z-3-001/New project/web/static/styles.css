@@ -9848,6 +9848,8 @@ td {
   position: relative;
   grid-column: auto;
   grid-row: span 1;
+  box-sizing: border-box;
+  max-width: 100%;
   min-height: 108px;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -9991,6 +9993,8 @@ td {
 
 .security-panel[data-dashboard-panel] {
   position: relative;
+  box-sizing: border-box;
+  max-width: 100%;
   transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
 }
 
