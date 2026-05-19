@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LOCK-FIX PoC</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260519-dashboard-flow-cards" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260519-monitoring-date-inline" />
   </head>
   <body>
     <section class="login-screen" id="loginScreen">
@@ -131,7 +131,7 @@
           <div class="monitoring-title-row">
             <h2 id="monitoringTitle" data-i18n="monitoring.panelTitle">OAM Lock-FIX Usage Monitoring</h2>
             <div class="monitoring-actions">
-              <div class="date-range">
+              <div class="date-range monitoring-date-range">
                 <label><span data-i18n="monitoring.startDate">Start Date</span><input id="monitoringStart" type="date" /></label>
                 <label><span data-i18n="monitoring.endDate">End Date</span><input id="monitoringEnd" type="date" /></label>
                 <button type="button" class="date-apply-button" id="monitoringRangeApply" data-i18n="monitoring.applyRange">Apply</button>
@@ -1147,7 +1147,7 @@
       </div>
     </template>
 
-    <script src="/static/app.js?v=20260519-dashboard-flow-cards"></script>
+    <script src="/static/app.js?v=20260519-monitoring-date-inline"></script>
   </body>
 </html>
 
