@@ -782,7 +782,29 @@ class LockFixTests(unittest.TestCase):
         self.assertIn('elif parsed.path == "/api/report.pdf":', webui_source)
         self.assertIn("def send_report_pdf", webui_source)
         self.assertIn("application/pdf", webui_source)
-        self.assertIn("20260519-monitoring-date-inline", html)
+        self.assertIn("20260519-report-result-centered", html)
+
+    def test_report_inspection_result_badges_are_centered(self) -> None:
+        root = Path.cwd()
+        html = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        css = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
+        checklist_panel = html.split('data-i18n="report.checklist"', 1)[1].split('id="reportInspectionTable"', 1)[0]
+        usage_panel = html.split('data-i18n="report.usageDetails"', 1)[1].split('id="reportTable"', 1)[0]
+
+        self.assertLess(html.index('class="report-table-panel report-inspection-panel"'), html.index('data-i18n="report.checklist"'))
+        self.assertIn('class="report-table report-inspection-table"', checklist_panel)
+        self.assertNotIn("report-inspection-panel", usage_panel)
+        self.assertNotIn("report-inspection-table", usage_panel)
+        self.assertIn(".report-table td:last-child {\n  text-align: left;", css)
+        self.assertIn(".report-inspection-panel .report-table-wrap {", css)
+        self.assertIn("padding: 0 12px 14px;", css)
+        self.assertIn(".report-inspection-table th:first-child,", css)
+        self.assertIn(".report-inspection-table th:last-child,", css)
+        self.assertIn("width: 130px;", css)
+        self.assertIn("text-align: center;", css)
+        self.assertIn(".report-inspection-table .report-result-badge {", css)
+        self.assertIn("margin-left: auto;", css)
+        self.assertIn("margin-right: auto;", css)
 
     def test_user_management_ui_has_i18n_actions_and_cache_bust(self) -> None:
         root = Path.cwd()
@@ -795,7 +817,7 @@ class LockFixTests(unittest.TestCase):
             'id="userManagementForm"',
             'id="userManagementBackButton"',
             'data-i18n="userManagement.actions"',
-            'v=20260519-monitoring-date-inline',
+            'v=20260519-report-result-centered',
             'class="rbac-chip-list user-management-department-list"',
             'data-i18n="department.backupOperation"',
             '<option value="SECURITY_ADMIN">SECURITY_ADMIN</option>',
@@ -2007,7 +2029,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("border: 0;", css_source)
         self.assertNotIn("border: 1px solid rgba(196, 211, 225, 0.72);", css_source)
         self.assertNotIn("border: 1px solid rgba(121, 158, 206, 0.48);", css_source)
-        self.assertIn("20260519-monitoring-date-inline", index_source)
+        self.assertIn("20260519-report-result-centered", index_source)
 
     def test_isolate_reaches_isolated(self) -> None:
         tmp_path = self.make_workspace()
@@ -2742,7 +2764,7 @@ class LockFixTests(unittest.TestCase):
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
         webui_source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")
 
-        self.assertIn("20260519-monitoring-date-inline", html_source)
+        self.assertIn("20260519-report-result-centered", html_source)
         self.assertIn("emergency.reconnect.background.timeout", webui_source)
         self.assertIn("EMERGENCY_RECONNECT_AGENT_START_TIMEOUT_SECONDS", webui_source)
         self.assertIn("emergency_reconnect_agent_started", webui_source)
@@ -2818,7 +2840,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("height: 68px !important;", css_source)
         self.assertIn("min-height: 36px !important;", css_source)
         self.assertIn("border-bottom: 0 !important;", css_source)
-        self.assertIn("20260519-monitoring-date-inline", html_source)
+        self.assertIn("20260519-report-result-centered", html_source)
 
     def test_logs_summary_cards_render_above_filter_bar(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -2827,7 +2849,7 @@ class LockFixTests(unittest.TestCase):
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('class="logs-range"'))
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('id="logsStart"'))
         self.assertNotIn('data-i18n="logs.filteredView"', logs_view)
-        self.assertIn("20260519-monitoring-date-inline", html_source)
+        self.assertIn("20260519-report-result-centered", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -2846,7 +2868,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260519-monitoring-date-inline", html_source)
+        self.assertIn("20260519-report-result-centered", html_source)
 
     def test_settings_service_policy_card_is_not_rendered(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -2906,7 +2928,7 @@ class LockFixTests(unittest.TestCase):
             "departmentDisplayName(department.id)",
         ]:
             self.assertIn(token, app_source)
-        self.assertIn("20260519-monitoring-date-inline", html_source)
+        self.assertIn("20260519-report-result-centered", html_source)
 
     def test_monitoring_header_copy_is_hidden_while_polling_remains(self) -> None:
         root = Path.cwd()
@@ -3074,7 +3096,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("background: #ffffff;", css_source)
         self.assertIn("opacity: 0.66;", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260519-monitoring-date-inline", html_source)
+        self.assertIn("20260519-report-result-centered", html_source)
         self.assertIn(".backup-panel dt,", css_source)
         self.assertIn("font-size: 12.5px;", css_source)
         self.assertIn("line-height: 1.45;", css_source)
@@ -3123,7 +3145,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260519-monitoring-date-inline", html_source)
+        self.assertIn("20260519-report-result-centered", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()

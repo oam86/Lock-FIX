@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LOCK-FIX PoC</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260519-monitoring-date-inline" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260519-report-result-centered" />
   </head>
   <body>
     <section class="login-screen" id="loginScreen">
@@ -231,7 +231,7 @@
             </table>
           </div>
         </section>
-        <section class="report-table-panel">
+        <section class="report-table-panel report-inspection-panel">
           <div class="report-table-head">
             <h2 data-i18n="report.checklist">Server Inspection Checklist</h2>
             <span data-i18n="report.checklistDesc">Generated in the same structure as the attached inspection report</span>
@@ -239,7 +239,7 @@
           <div class="report-inspection-summary" id="reportInspectionSummary"></div>
           <div class="report-attention-list" id="reportAttentionList"></div>
           <div class="report-table-wrap">
-            <table class="report-table">
+            <table class="report-table report-inspection-table">
               <thead>
                 <tr>
                   <th data-i18n="report.category">Category</th>
@@ -1147,7 +1147,7 @@
       </div>
     </template>
 
-    <script src="/static/app.js?v=20260519-monitoring-date-inline"></script>
+    <script src="/static/app.js?v=20260519-report-result-centered"></script>
   </body>
 </html>
 
