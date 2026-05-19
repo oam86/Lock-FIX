@@ -64,6 +64,10 @@ AIRGAP_AUTO_ISOLATE_LOCK = threading.Lock()
 AIRGAP_AUTO_ISOLATE_STALE_SECONDS = 120
 DASHBOARD_CACHE_TTL_SECONDS = 0.8
 DASHBOARD_PROBE_TIMEOUT_SECONDS = 1.2
+SOURCES_CACHE_TTL_SECONDS = 0.8
+SOURCE_INVENTORY_CACHE_TTL_SECONDS = 30.0
+DETECT_CACHE_TTL_SECONDS = 2.0
+VEEAM_DIAGNOSTICS_WAIT_BUFFER_SECONDS = 0.5
 EMERGENCY_RECONNECT_AGENT_START_TIMEOUT_SECONDS = 12
 
 
@@ -644,6 +648,12 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
     session_ttl_seconds = 60 * 60 * 8
     dashboard_cache_lock = threading.Lock()
     dashboard_cache_by_key: dict[str, tuple[float, dict]] = {}
+    sources_cache_lock = threading.Lock()
+    sources_cache_by_key: dict[str, tuple[float, dict]] = {}
+    source_inventory_cache_lock = threading.Lock()
+    source_inventory_cache_by_key: dict[str, tuple[float, dict]] = {}
+    detect_cache_lock = threading.Lock()
+    detect_cache_by_key: dict[str, tuple[float, dict]] = {}
 
     def log_message(self, format: str, *args: object) -> None:
         print("[webui] " + format % args)
@@ -744,7 +754,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 self.send_json(self.notification_settings(redact=True))
             elif parsed.path == "/api/detect":
                 self.require_auth(Permission.AIRGAP_POLICY_VIEW)
-                self.send_json(self.detect_summary())
+                params = parse_qs(parsed.query)
+                live_request = (params.get("live") or [""])[0] == "1"
+                self.send_json(self.detect_summary(live=live_request))
             elif parsed.path == "/api/threat-detection":
                 self.require_auth(Permission.AIRGAP_POLICY_VIEW)
                 self.send_json(self.threat_detection_summary())
@@ -786,9 +798,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 self.send_json(self.license_status())
             elif parsed.path == "/api/sources":
                 self.require_auth(Permission.AIRGAP_POLICY_VIEW)
-                inventory = integrated_source_inventory()
-                inventory["air_gap"] = self.air_gap_summary()
-                self.send_json(inventory)
+                params = parse_qs(parsed.query)
+                live_request = (params.get("live") or [""])[0] == "1"
+                self.send_json(self.sources_summary(live=live_request))
             elif parsed.path == "/api/emergency-reconnect/status":
                 self.require_auth(Permission.DISK_ONLINE_APPROVE)
                 params = parse_qs(parsed.query)
@@ -2845,11 +2857,11 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         self.save_policy_guard_state(state)
         return events[-12:]
 
-    def air_gap_summary(self) -> dict:
+    def air_gap_summary(self, fast: bool = False) -> dict:
         summary = self.summary()
         now = time.time()
         tick = int(now)
-        veeam_runtime = self.veeam_interlock_runtime(now)
+        veeam_runtime = self.veeam_interlock_runtime(now, poll_api=not fast)
         current_step = veeam_runtime["current_step"]
         veeam_connected = bool(veeam_runtime.get("api_synced") or veeam_runtime.get("connected"))
         if int(veeam_runtime.get("current_step") or 1) <= 1 and int(veeam_runtime.get("progress_percent") or 0) <= 0:
@@ -2988,6 +3000,50 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             },
             "emergency_access": self.emergency_access_summary(summary),
         }
+
+    @staticmethod
+    def clone_payload(payload: dict) -> dict:
+        return json.loads(json.dumps(payload, ensure_ascii=False))
+
+    def cached_integrated_source_inventory(self) -> dict:
+        cache_key = str(ROOT)
+        now_monotonic = time.monotonic()
+        with LockFixWebHandler.source_inventory_cache_lock:
+            cached = LockFixWebHandler.source_inventory_cache_by_key.get(cache_key)
+            if cached and now_monotonic - cached[0] < SOURCE_INVENTORY_CACHE_TTL_SECONDS:
+                return LockFixWebHandler.clone_payload(cached[1])
+        inventory = integrated_source_inventory()
+        with LockFixWebHandler.source_inventory_cache_lock:
+            LockFixWebHandler.source_inventory_cache_by_key[cache_key] = (time.monotonic(), inventory)
+        return LockFixWebHandler.clone_payload(inventory)
+
+    def sources_summary(self, live: bool = False) -> dict:
+        cache_key = str(self.context.config_path)
+        now_monotonic = time.monotonic()
+        if not live:
+            with LockFixWebHandler.sources_cache_lock:
+                cached = LockFixWebHandler.sources_cache_by_key.get(cache_key)
+                if cached and now_monotonic - cached[0] < SOURCES_CACHE_TTL_SECONDS:
+                    payload = LockFixWebHandler.clone_payload(cached[1])
+                    live_status = dict(payload.get("live_status") or {})
+                    live_status.update({
+                        "cache_hit": True,
+                        "source_age_seconds": round(now_monotonic - cached[0], 3),
+                    })
+                    payload["live_status"] = live_status
+                    return payload
+
+        payload = self.cached_integrated_source_inventory()
+        payload["air_gap"] = self.air_gap_summary(fast=True)
+        payload["generated_at"] = datetime.now().isoformat(timespec="seconds")
+        payload["live_status"] = {
+            "cache_hit": False,
+            "generated_at": payload["generated_at"],
+            "source_age_seconds": 0,
+        }
+        with LockFixWebHandler.sources_cache_lock:
+            LockFixWebHandler.sources_cache_by_key[cache_key] = (time.monotonic(), payload)
+        return LockFixWebHandler.clone_payload(payload)
 
     def emergency_access_summary(self, summary: dict | None = None) -> dict:
         config = self.context.config
@@ -3452,7 +3508,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             return record
         return {}
 
-    def veeam_interlock_runtime(self, now: float) -> dict:
+    def veeam_interlock_runtime(self, now: float, poll_api: bool = True) -> dict:
         runtime_path = ROOT / "runtime" / "veeam_interlock_state.json"
         payload = {}
         if runtime_path.exists():
@@ -3468,8 +3524,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         configured_port = configured_url.port or 9419
         server = str(payload.get("server") or os.environ.get("LOCKFIX_VEEAM_HOST") or install_props.get("veeam_host") or configured_server)
         port = int(payload.get("port") or os.environ.get("LOCKFIX_VEEAM_PORT") or install_props.get("veeam_port") or configured_port)
-        port_open = self.tcp_port_open(server, port)
-        api_payload = self.poll_veeam_api(server, port, payload)
+        port_open = self.tcp_port_open(server, port) if poll_api else bool(payload.get("port_open"))
+        api_payload = self.poll_veeam_api(server, port, payload) if poll_api else payload
         payload = api_payload or {}
         server = str(payload.get("server") or server)
         port = int(payload.get("port") or port)
@@ -4788,10 +4844,11 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
 
     def run_veeam_diagnostics_limited(self, veeam_config: dict, timeout_seconds: float = 8.0) -> dict:
         try:
-            wait_timeout = max(float(timeout_seconds), 30.0)
+            diagnostics_timeout = max(float(timeout_seconds), 0.2)
+            wait_timeout = diagnostics_timeout + VEEAM_DIAGNOSTICS_WAIT_BUFFER_SECONDS
             response = self.context.run_agent_service_operation(
                 "veeam.diagnostics",
-                {"timeout_seconds": timeout_seconds},
+                {"timeout_seconds": diagnostics_timeout},
                 timeout_seconds=wait_timeout,
             )
             diagnostics = response.get("diagnostics")
@@ -6142,7 +6199,20 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "results": [base_result, caution_result, danger_result],
         }
 
-    def detect_summary(self) -> dict:
+    def detect_summary(self, live: bool = False) -> dict:
+        cache_key = str(self.context.config_path)
+        now_monotonic = time.monotonic()
+        if not live:
+            with LockFixWebHandler.detect_cache_lock:
+                cached = LockFixWebHandler.detect_cache_by_key.get(cache_key)
+                if cached and now_monotonic - cached[0] < DETECT_CACHE_TTL_SECONDS:
+                    return LockFixWebHandler.clone_payload(cached[1])
+        payload = LockFixWebHandler.detect_summary_uncached(self)
+        with LockFixWebHandler.detect_cache_lock:
+            LockFixWebHandler.detect_cache_by_key[cache_key] = (time.monotonic(), payload)
+        return LockFixWebHandler.clone_payload(payload)
+
+    def detect_summary_uncached(self) -> dict:
         config = self.context.config
         if not config.slots:
             emergency_summary = self.emergency_access_summary()
@@ -6162,7 +6232,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     "conclusion": "에이전트 설치 시 입력한 저장소/슬롯 설정을 기준으로 디스크 식별값이 구성되어야 합니다.",
                 },
                 "emergency_access": emergency_summary,
-                "veeam_repository": self.detect_veeam_repository_summary(),
+                "veeam_repository": LockFixWebHandler.detect_veeam_repository_summary(self, fast=isinstance(self, LockFixWebHandler)),
             }
         slot = next(iter(config.slots.values()))
         emergency_summary = self.emergency_access_summary()
@@ -6197,7 +6267,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "title": "LOCK-FIX 기준으로 가장 안전한 판단 방식",
             "subtitle": "LOCK-FIX에서는 하나의 값만 보지 말고 아래 조합을 기준으로 해야 합니다.",
             "emergency_access": emergency_summary,
-            "veeam_repository": self.detect_veeam_repository_summary(),
+            "veeam_repository": LockFixWebHandler.detect_veeam_repository_summary(self, fast=isinstance(self, LockFixWebHandler)),
             "fingerprint": {
                 "slot_id": slot.slot_id,
                 "value": unique_id,
@@ -6212,7 +6282,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             },
         }
 
-    def detect_veeam_repository_summary(self) -> dict:
+    def detect_veeam_repository_summary(self, fast: bool = False) -> dict:
         veeam_config = get_veeam_config(self.context.app_config) or {}
         configured_path = str(veeam_config.get("target_repository_path") or self.context.veeam_backup_copy_repository_path() or "").strip()
         configured_name = str(veeam_config.get("target_repository_name") or "").strip()
@@ -6242,7 +6312,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "eligible": configured_allowed,
             "blocked_reason": "" if configured_allowed else "protected_or_unconfigured_repository_volume",
         }
-        if not veeam_config.get("enabled", False):
+        if fast or not veeam_config.get("enabled", False):
             return fallback
         try:
             runner = getattr(self, "run_veeam_diagnostics_limited", None)

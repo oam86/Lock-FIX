@@ -309,6 +309,8 @@ let airgapPollTimer = null;
 let veeamPollTimer = null;
 let dashboardPollTimer = null;
 let opsOverviewPollTimer = null;
+let sourcesLiveInFlight = null;
+let opsOverviewLiveInFlight = null;
 let globalRefreshTimer = null;
 let emergencyReconnectPollTimer = null;
 let emergencyReconnectDetailTimer = null;
@@ -2602,7 +2604,7 @@ function showView(name) {
   }
   if (targetView === "detect2") {
     renderDetectFallback();
-    requestJson("/api/detect")
+    requestJson("/api/detect", { timeoutMs: 6000 })
       .then((data) => renderDetect(data))
       .catch((error) => {
         console.warn("Unable to reload Detect view", error);
@@ -6549,20 +6551,26 @@ async function controlLockfixService(action) {
 
 async function reloadSources() {
   renderSources({ air_gap: fallbackAirGapSummary(true) });
-  const sources = await requestJson("/api/sources");
+  const sources = await requestJson("/api/sources", { timeoutMs: 8000 });
   renderSources(sources);
 }
 
 async function pollSourcesLive() {
   if (!currentSession.authenticated || appRoot.classList.contains("app-locked")) return;
   if (activeViewId() !== "sourcesView") return;
-  try {
-    const sources = await requestJson("/api/sources?live=1", { live: true });
-    renderSources(sources);
-    finalizeEmergencyReconnectFromSources(sources);
-  } catch (error) {
-    console.warn("Unable to poll Air-Gap live status", error);
-  }
+  if (sourcesLiveInFlight) return sourcesLiveInFlight;
+  sourcesLiveInFlight = (async () => {
+    try {
+      const sources = await requestJson("/api/sources?live=1", { live: true, timeoutMs: 6000 });
+      renderSources(sources);
+      finalizeEmergencyReconnectFromSources(sources);
+    } catch (error) {
+      console.warn("Unable to poll Air-Gap live status", error);
+    } finally {
+      sourcesLiveInFlight = null;
+    }
+  })();
+  return sourcesLiveInFlight;
 }
 
 async function syncVeeamExecutionConfig(button) {
@@ -6624,25 +6632,31 @@ function setDashboardLivePolling(enabled) {
 async function pollOpsOverviewLive() {
   if (!currentSession.authenticated || appRoot.classList.contains("app-locked")) return;
   if (activeViewId() !== "monitoringView") return;
+  if (opsOverviewLiveInFlight) return opsOverviewLiveInFlight;
   markLiveRequest(opsOverviewLiveState);
-  try {
-    const [sourcesResult, dashboardResult] = await Promise.allSettled([
-      requestJson("/api/sources?live=1", { live: true }),
-      requestJson("/api/dashboard?live=1", { live: true }),
-    ]);
-    if (sourcesResult.status === "fulfilled") latestSourcesData = sourcesResult.value;
-    if (dashboardResult.status === "fulfilled") latestDashboardData = dashboardResult.value;
-    const failures = [sourcesResult, dashboardResult].filter((result) => result.status === "rejected");
-    if (failures.length) {
-      markLiveFailure(opsOverviewLiveState, failures[0].reason);
-    } else {
-      markLiveSuccess(opsOverviewLiveState);
+  opsOverviewLiveInFlight = (async () => {
+    try {
+      const [sourcesResult, dashboardResult] = await Promise.allSettled([
+        requestJson("/api/sources?live=1", { live: true, timeoutMs: 6000 }),
+        requestJson("/api/dashboard?live=1", { live: true, timeoutMs: 6000 }),
+      ]);
+      if (sourcesResult.status === "fulfilled") latestSourcesData = sourcesResult.value;
+      if (dashboardResult.status === "fulfilled") latestDashboardData = dashboardResult.value;
+      const failures = [sourcesResult, dashboardResult].filter((result) => result.status === "rejected");
+      if (failures.length) {
+        markLiveFailure(opsOverviewLiveState, failures[0].reason);
+      } else {
+        markLiveSuccess(opsOverviewLiveState);
+      }
+      renderOperationsOverview();
+    } catch (error) {
+      markLiveFailure(opsOverviewLiveState, error);
+      console.warn("Unable to poll operations overview", error);
+    } finally {
+      opsOverviewLiveInFlight = null;
     }
-    renderOperationsOverview();
-  } catch (error) {
-    markLiveFailure(opsOverviewLiveState, error);
-    console.warn("Unable to poll operations overview", error);
-  }
+  })();
+  return opsOverviewLiveInFlight;
 }
 
 function setOpsOverviewLivePolling(enabled) {
@@ -8047,7 +8061,6 @@ async function loadAll() {
     dashboard: requestJson("/api/dashboard"),
     report: requestJson("/api/report"),
     notification: requestJson("/api/notification"),
-    detect: requestJson("/api/detect"),
     threat: requestJson("/api/threat-detection"),
     networkStatus: requestJson("/api/network-status"),
     logs: requestJson(logsUrl()),
