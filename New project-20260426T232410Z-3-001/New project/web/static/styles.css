@@ -11257,15 +11257,18 @@ td {
 
 .backup-panel dl {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   flex: 1;
-  align-content: space-evenly;
-  gap: 10px;
+  align-content: start;
+  gap: 10px 12px;
   margin: 0;
   position: relative;
+  width: 100%;
 }
 
 .backup-panel dl::before {
   content: "";
+  display: none;
   position: absolute;
   left: 119px;
   top: 4px;
@@ -11276,10 +11279,15 @@ td {
 
 .backup-panel dl div {
   display: grid;
-  grid-template-columns: 118px minmax(0, 1fr);
-  justify-content: start;
-  column-gap: 2px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  justify-content: stretch;
   align-items: start;
+  min-height: 54px;
+  border: 1px solid #e1e9f2;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  padding: 10px 12px;
 }
 
 .backup-panel dt,
