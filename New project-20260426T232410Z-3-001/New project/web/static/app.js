@@ -3341,6 +3341,18 @@ function renderIntegrated(data) {
   `;
 }
 
+function dashboardFlowLabel(lines, index) {
+  const defaults = ["Backup Done", "Flush", "I/O Check", "Unmount", "Offline"];
+  const text = (Array.isArray(lines) ? lines.join(" ") : String(lines || "")).trim();
+  const normalized = text.replace(/\s+/g, " ").toLowerCase();
+  if (index === 0 || /backup|백업/.test(normalized)) return "Backup Done";
+  if (index === 1 || /flush/.test(normalized)) return "Flush";
+  if (index === 2 || /i\/o|io|입출력|종료/.test(normalized)) return "I/O Check";
+  if (index === 3 || /unmount|dismount|disk|디스크|power|오프라인/.test(normalized)) return "Unmount";
+  if (index === 4 || /offline|air-gap|airgap|격리|활성/.test(normalized)) return "Offline";
+  return defaults[index] || text || `Step ${index + 1}`;
+}
+
 function renderDashboard(data) {
   latestDashboardData = data;
   const copy = dashboardCopy();
@@ -3361,11 +3373,11 @@ function renderDashboard(data) {
   const flowItems = Array.isArray(data.flow) && data.flow.length
     ? data.flow
     : [
-      { icon: "backup-complete", lines: ["백업", "완료"], state: "done" },
-      { icon: "flush-run", lines: ["Flush", "실행"], state: "done" },
-      { icon: "io-check", lines: ["I/O 종료", "확인"], state: "done" },
-      { icon: "power-off", lines: ["디스크", "오프라인"], state: "done" },
-      { icon: "airgap-logo", lines: ["Air-Gap", "활성"], state: "done" },
+      { lines: ["Backup Done"], state: "done" },
+      { lines: ["Flush"], state: "done" },
+      { lines: ["I/O Check"], state: "done" },
+      { lines: ["Unmount"], state: "done" },
+      { lines: ["Offline"], state: "done" },
     ];
   const backup = data.backup || {};
   const events = Array.isArray(data.logs) ? data.logs.slice(0, 5) : [];
@@ -3446,12 +3458,15 @@ function renderDashboard(data) {
         <div class="panel-body">
           <p>${copy.protectedMessage.replace("Offline", "<b>Offline</b>").replace("offline", "<b>offline</b>")}</p>
           <div class="security-flow">
-            ${flowItems.map(({ icon, lines, state }) => `
-              <div class="flow-step ${state === "done" ? "flow-step-active" : ""}">
-                <i class="security-icon security-icon-${icon}" aria-hidden="true"></i>
-                <span>${(lines || []).map((line) => `<b>${escapeHtml(line)}</b>`).join("")}</span>
+            ${flowItems.map(({ lines, state }, index) => {
+              const label = dashboardFlowLabel(lines, index);
+              return `
+              <div class="flow-step-card ${state === "done" ? "flow-step-card-active" : ""}">
+                <span class="flow-step-number">${index + 1}</span>
+                <strong>${escapeHtml(label)}</strong>
               </div>
-            `).join("")}
+            `;
+            }).join("")}
           </div>
         </div>
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-x" data-resize-axis="x" aria-hidden="true" title="Resize width"></span>
