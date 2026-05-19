@@ -3431,6 +3431,15 @@ function dashboardFlowLabel(lines, index) {
   return defaults[index] || text || `Step ${index + 1}`;
 }
 
+function dashboardHealthValueClass(label, value) {
+  const labelText = String(label || "").toLowerCase();
+  const valueText = String(value || "").toLowerCase();
+  if (/(failed|fail|error|detected)/.test(valueText)) return "health-value-danger";
+  if (labelText.includes("disk offline") && !/(normal|ok|offline complete|complete)/.test(valueText)) return "health-value-danger";
+  if (/(normal|isolated|visible|none|ok|success|complete)/.test(valueText)) return "health-value-ok";
+  return "health-value-neutral";
+}
+
 function markLiveRequest(state) {
   state.status = "pending";
   state.lastRequestAt = emergencyReconnectTimestamp();
@@ -3537,7 +3546,11 @@ function renderDashboard(data) {
     ? events.map((event) => `<div class="event-row"><span><i class="event-clock" aria-hidden="true"></i>${escapeHtml(event.date || "-")}</span><strong>${escapeHtml(event.content || "-")}</strong></div>`).join("")
     : `<div class="dashboard-empty-row">최근 이벤트가 없습니다. Veeam, Air-Gap, 감사 로그가 수집되면 표시됩니다.</div>`;
   const alertRows = alerts.length
-    ? alerts.map((item) => `<div class="health-row"><span>${escapeHtml(item.label || "-")}</span><b>${escapeHtml(item.value || "-")}</b></div>`).join("")
+    ? alerts.map((item) => {
+      const label = item.label || "-";
+      const value = item.value || "-";
+      return `<div class="health-row"><span>${escapeHtml(label)}</span><b class="${dashboardHealthValueClass(label, value)}">${escapeHtml(value)}</b></div>`;
+    }).join("")
     : `<div class="dashboard-empty-row">현재 표시할 경고 항목이 없습니다.</div>`;
   const auditCounts = [
     ["관리자 수동 조작", auditSummary.manual_operations ?? 0],

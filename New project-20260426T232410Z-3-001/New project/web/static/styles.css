@@ -11641,6 +11641,21 @@ td {
   font-weight: 800;
 }
 
+.health-value-danger {
+  color: #b91c1c !important;
+  font-weight: 950 !important;
+}
+
+.health-value-ok {
+  color: #047857 !important;
+  font-weight: 900 !important;
+}
+
+.health-value-neutral {
+  color: #475569 !important;
+  font-weight: 850 !important;
+}
+
 .audit-count-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
