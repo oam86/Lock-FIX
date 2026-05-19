@@ -3480,7 +3480,7 @@ function renderDashboard(data) {
       ${orderedKpis.map(({ icon, label, value, tone, meta, key, detail, rawValue }) => {
         const valueTitle = rawValue && rawValue !== value ? rawValue : meta;
         return `
-        <article class="security-kpi security-kpi-${icon}" data-dashboard-kpi="${escapeHtml(key)}" data-cols="${escapeHtml(String(kpiSizes[key]?.cols || 1))}" data-rows="${escapeHtml(String(kpiSizes[key]?.rows || 1))}">
+        <article class="security-kpi security-kpi-${icon} security-kpi-tone-${tone}" data-tone="${escapeHtml(tone || "dark")}" data-dashboard-kpi="${escapeHtml(key)}" data-cols="${escapeHtml(String(kpiSizes[key]?.cols || 1))}" data-rows="${escapeHtml(String(kpiSizes[key]?.rows || 1))}">
           <span class="dashboard-kpi-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag to reorder"></span>
           <span class="dashboard-kpi-resize-line dashboard-kpi-resize-line-x" data-resize-axis="x" aria-hidden="true" title="Resize width"></span>
           <span class="dashboard-kpi-resize-line dashboard-kpi-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>
