@@ -782,7 +782,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn('elif parsed.path == "/api/report.pdf":', webui_source)
         self.assertIn("def send_report_pdf", webui_source)
         self.assertIn("application/pdf", webui_source)
-        self.assertIn("20260519-dashboard-kpi-status-colors", html)
+        self.assertIn("20260519-realtime-live-health", html)
 
     def test_report_inspection_result_badges_are_centered(self) -> None:
         root = Path.cwd()
@@ -817,7 +817,7 @@ class LockFixTests(unittest.TestCase):
             'id="userManagementForm"',
             'id="userManagementBackButton"',
             'data-i18n="userManagement.actions"',
-            'v=20260519-dashboard-kpi-status-colors',
+            'v=20260519-realtime-live-health',
             'class="rbac-chip-list user-management-department-list"',
             'data-i18n="department.backupOperation"',
             '<option value="SECURITY_ADMIN">SECURITY_ADMIN</option>',
@@ -2060,7 +2060,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("border: 0;", css_source)
         self.assertNotIn("border: 1px solid rgba(196, 211, 225, 0.72);", css_source)
         self.assertNotIn("border: 1px solid rgba(121, 158, 206, 0.48);", css_source)
-        self.assertIn("20260519-dashboard-kpi-status-colors", index_source)
+        self.assertIn("20260519-realtime-live-health", index_source)
 
     def test_isolate_reaches_isolated(self) -> None:
         tmp_path = self.make_workspace()
@@ -2795,7 +2795,7 @@ class LockFixTests(unittest.TestCase):
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
         webui_source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")
 
-        self.assertIn("20260519-dashboard-kpi-status-colors", html_source)
+        self.assertIn("20260519-realtime-live-health", html_source)
         self.assertIn("emergency.reconnect.background.timeout", webui_source)
         self.assertIn("EMERGENCY_RECONNECT_AGENT_START_TIMEOUT_SECONDS", webui_source)
         self.assertIn("emergency_reconnect_agent_started", webui_source)
@@ -2871,7 +2871,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("height: 68px !important;", css_source)
         self.assertIn("min-height: 36px !important;", css_source)
         self.assertIn("border-bottom: 0 !important;", css_source)
-        self.assertIn("20260519-dashboard-kpi-status-colors", html_source)
+        self.assertIn("20260519-realtime-live-health", html_source)
 
     def test_logs_summary_cards_render_above_filter_bar(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -2880,7 +2880,7 @@ class LockFixTests(unittest.TestCase):
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('class="logs-range"'))
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('id="logsStart"'))
         self.assertNotIn('data-i18n="logs.filteredView"', logs_view)
-        self.assertIn("20260519-dashboard-kpi-status-colors", html_source)
+        self.assertIn("20260519-realtime-live-health", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -2899,7 +2899,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260519-dashboard-kpi-status-colors", html_source)
+        self.assertIn("20260519-realtime-live-health", html_source)
 
     def test_settings_service_policy_card_is_not_rendered(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -2959,7 +2959,7 @@ class LockFixTests(unittest.TestCase):
             "departmentDisplayName(department.id)",
         ]:
             self.assertIn(token, app_source)
-        self.assertIn("20260519-dashboard-kpi-status-colors", html_source)
+        self.assertIn("20260519-realtime-live-health", html_source)
 
     def test_monitoring_header_copy_is_hidden_while_polling_remains(self) -> None:
         root = Path.cwd()
@@ -3014,10 +3014,15 @@ class LockFixTests(unittest.TestCase):
             side_effect=AssertionError("Dashboard should read an audit tail, not the full audit log"),
         ):
             summary = handler.dashboard_summary()
+            summary_cached = handler.dashboard_summary()
+            summary_live = handler.dashboard_summary(live=True)
 
         self.assertEqual(summary["security_kpis"][2]["value"], "Offline")
         self.assertEqual(summary["alerts"][2]["value"], "Not visible")
         self.assertEqual(summary["backup"]["result"], "Offline Complete")
+        self.assertFalse(summary["live_status"]["cache_hit"])
+        self.assertTrue(summary_cached["live_status"]["cache_hit"])
+        self.assertFalse(summary_live["live_status"]["cache_hit"])
 
     def test_dashboard_reload_deduplicates_slow_requests(self) -> None:
         app_source = (Path.cwd() / "web" / "static" / "app.js").read_text(encoding="utf-8")
@@ -3025,14 +3030,28 @@ class LockFixTests(unittest.TestCase):
 
         self.assertIn("let dashboardReloadInFlight = null;", app_source)
         self.assertIn("if (dashboardReloadInFlight) return dashboardReloadInFlight;", app_source)
-        self.assertIn('requestJson("/api/dashboard", { timeoutMs: 30000 })', app_source)
+        self.assertIn('requestJson(live ? "/api/dashboard?live=1" : "/api/dashboard", { timeoutMs: 30000, live })', app_source)
         self.assertIn("if (latestDashboardData)", app_source)
         self.assertIn("DASHBOARD_CACHE_TTL_SECONDS = 0.8", webui_source)
         self.assertIn("DASHBOARD_PROBE_TIMEOUT_SECONDS = 1.2", webui_source)
         self.assertIn("dashboard_cache_by_key", webui_source)
-        self.assertIn('"generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")', webui_source)
+        self.assertIn('"generated_at": generated_at', webui_source)
+        self.assertIn("def dashboard_summary(self, live: bool = False) -> dict:", webui_source)
+        self.assertIn("if not live and cached", webui_source)
+        self.assertIn('"cache_hit": True', webui_source)
+        self.assertIn('"source_age_seconds": round(now_monotonic - cached[0], 3)', webui_source)
+        self.assertIn('"cache_hit": False', webui_source)
+        self.assertIn('live_request = (params.get("live") or [""])[0] == "1"', webui_source)
         self.assertIn("const REALTIME_POLL_INTERVAL_MS = 1000;", app_source)
         self.assertIn("dashboardPollTimer = setInterval(pollDashboardLive, REALTIME_POLL_INTERVAL_MS);", app_source)
+        self.assertIn("fetchOptions.cache = \"no-store\";", app_source)
+        self.assertIn('headers.set("Cache-Control", "no-store");', app_source)
+        self.assertIn("markLiveFailure(dashboardLiveState, error)", app_source)
+        self.assertIn("copy.liveStale", app_source)
+        self.assertIn("copy.liveError", app_source)
+        self.assertIn("markLiveFailure(opsOverviewLiveState", app_source)
+        self.assertIn("liveStateMeta(opsOverviewLiveState)", app_source)
+        self.assertIn('self.send_header("Cache-Control", "no-store, max-age=0")', webui_source)
         self.assertIn("def audit_log_tail_lines", webui_source)
         self.assertIn("audit_log_tail_lines(self, limit=1000", webui_source)
 
@@ -3167,7 +3186,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("background: #ffffff;", css_source)
         self.assertIn("opacity: 0.66;", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260519-dashboard-kpi-status-colors", html_source)
+        self.assertIn("20260519-realtime-live-health", html_source)
         self.assertIn("grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));", css_source)
         self.assertIn(".security-dashboard-grid .backup-panel .panel-body > dl", css_source)
         self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr));", css_source)
@@ -3228,7 +3247,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260519-dashboard-kpi-status-colors", html_source)
+        self.assertIn("20260519-realtime-live-health", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()

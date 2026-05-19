@@ -733,7 +733,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 self.send_report_docx()
             elif parsed.path == "/api/dashboard":
                 self.require_auth(Permission.DASHBOARD_VIEW)
-                self.send_json(self.dashboard_summary())
+                params = parse_qs(parsed.query)
+                live_request = (params.get("live") or [""])[0] == "1"
+                self.send_json(self.dashboard_summary(live=live_request))
             elif parsed.path == "/api/notification":
                 self.require_auth(Permission.DASHBOARD_VIEW)
                 self.send_json(self.notification_summary())
@@ -5711,14 +5713,22 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             {"category": "OS", "item": "Network", "detail": "TX/RX traffic flow", "criteria": f"< {by_id['network']['threshold']}%", "result": result("network"), "metric": f"{by_id['network']['current']}%"},
         ]
 
-    def dashboard_summary(self) -> dict:
+    def dashboard_summary(self, live: bool = False) -> dict:
         runtime_root = self.context.config.audit_log_path.parent
         cache_key = str(self.context.config.audit_log_path)
         now_monotonic = time.monotonic()
         with LockFixWebHandler.dashboard_cache_lock:
             cached = LockFixWebHandler.dashboard_cache_by_key.get(cache_key)
-            if cached and now_monotonic - cached[0] < DASHBOARD_CACHE_TTL_SECONDS:
-                return cached[1]
+            if not live and cached and now_monotonic - cached[0] < DASHBOARD_CACHE_TTL_SECONDS:
+                cached_payload = dict(cached[1])
+                live_status = dict(cached_payload.get("live_status") or {})
+                live_status.update({
+                    "cache_hit": True,
+                    "generated_at": cached_payload.get("generated_at"),
+                    "source_age_seconds": round(now_monotonic - cached[0], 3),
+                })
+                cached_payload["live_status"] = live_status
+                return cached_payload
 
         def read_json(path: Path, fallback: object) -> object:
             try:
@@ -5834,8 +5844,14 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         logs = recent_events or [{"type": "INFO", "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "content": "No recent LOCK-FIX events."}]
         result_label = "Offline Complete" if airgap_ok else ("Offline Failed" if offline_failed else airgap_state)
 
+        generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         payload = {
-            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "generated_at": generated_at,
+            "live_status": {
+                "cache_hit": False,
+                "generated_at": generated_at,
+                "source_age_seconds": 0,
+            },
             "cards": [
                 {"id": "detect", "label": "Detect", "description": f"Disk {disk_number or '-'} {disk_name}", "value": 0 if disk_probe else 1},
                 {"id": "warning", "label": "Warning", "description": "Live operation issues", "value": warning_count},
@@ -7312,9 +7328,14 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
     def send_json(self, payload: dict, status: int = 200, headers=None) -> None:
         payload = LockFixWebHandler.sanitize_json_payload(self, payload)
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        header_names = {str(key).lower() for key in (headers or {})}
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
+        if "cache-control" not in header_names:
+            self.send_header("Cache-Control", "no-store, max-age=0")
+        if "pragma" not in header_names:
+            self.send_header("Pragma", "no-cache")
         for key, value in (headers or {}).items():
             self.send_header(key, value)
         self.end_headers()

@@ -290,6 +290,8 @@ let latestReportData = null;
 let latestSourcesData = null;
 let latestDashboardData = null;
 let dashboardReloadInFlight = null;
+let dashboardLiveState = { status: "idle", lastRequestAt: "", lastSuccessAt: "", lastError: "", consecutiveFailures: 0 };
+let opsOverviewLiveState = { status: "idle", lastRequestAt: "", lastSuccessAt: "", lastError: "", consecutiveFailures: 0 };
 let latestLogsData = null;
 let latestUserManagementData = { users: [], departments: [], windowsAdminStatus: null };
 let latestAuditData = [];
@@ -1485,6 +1487,9 @@ function dashboardCopy() {
       audit: "Audit Log Summary",
       policy: "Policy Summary",
       livePolling: "LIVE 1s",
+      livePending: "SYNCING",
+      liveStale: "STALE",
+      liveError: "ERROR",
       liveUpdated: "Updated",
       protectedMessage: "Current backup storage is offline and external access is unavailable.",
       backupStart: "Backup completed detected",
@@ -1526,6 +1531,9 @@ function dashboardCopy() {
     audit: "감사 로그 요약",
     policy: "정책 설정 요약",
     livePolling: "LIVE 1초",
+    livePending: "갱신 중",
+    liveStale: "지연",
+    liveError: "오류",
     liveUpdated: "갱신",
     protectedMessage: "현재 백업 저장소는 Offline 상태로 외부 접근이 불가능합니다.",
     backupStart: "백업 완료 감지",
@@ -2331,10 +2339,26 @@ async function applyPendingUiSettings() {
   }
 }
 
+function liveRequestUrl(url) {
+  const separator = String(url).includes("?") ? "&" : "?";
+  const liveParam = String(url).includes("live=1") ? "" : "live=1&";
+  return `${url}${separator}${liveParam}_=${Date.now()}`;
+}
+
 async function requestJson(url, options = {}) {
   const timeoutMs = Number(options.timeoutMs || 15000);
   const fetchOptions = { ...options };
+  const liveRequest = Boolean(fetchOptions.live);
   delete fetchOptions.timeoutMs;
+  delete fetchOptions.live;
+  if (liveRequest) {
+    url = liveRequestUrl(url);
+    fetchOptions.cache = "no-store";
+    const headers = new Headers(fetchOptions.headers || {});
+    headers.set("Cache-Control", "no-store");
+    headers.set("Pragma", "no-cache");
+    fetchOptions.headers = headers;
+  }
   const controller = new AbortController();
   const timeoutId = Number.isFinite(timeoutMs) && timeoutMs > 0
     ? window.setTimeout(() => controller.abort(), timeoutMs)
@@ -3414,6 +3438,75 @@ function dashboardFlowLabel(lines, index) {
   return defaults[index] || text || `Step ${index + 1}`;
 }
 
+function markLiveRequest(state) {
+  state.status = "pending";
+  state.lastRequestAt = emergencyReconnectTimestamp();
+}
+
+function markLiveSuccess(state) {
+  state.status = "live";
+  state.lastSuccessAt = emergencyReconnectTimestamp();
+  state.lastError = "";
+  state.consecutiveFailures = 0;
+}
+
+function markLiveFailure(state, error) {
+  state.status = state.lastSuccessAt ? "stale" : "error";
+  state.lastError = error?.message || String(error || "request failed");
+  state.consecutiveFailures += 1;
+}
+
+function liveStateSnapshot(state) {
+  return {
+    status: state.status,
+    last_request_at: state.lastRequestAt,
+    last_success_at: state.lastSuccessAt,
+    last_error: state.lastError,
+    consecutive_failures: state.consecutiveFailures,
+  };
+}
+
+function dashboardDataWithLiveState(data, state) {
+  if (!data) return data;
+  return {
+    ...data,
+    _live: liveStateSnapshot(state),
+  };
+}
+
+function liveStateMeta(state) {
+  if (!state?.lastSuccessAt && state?.status !== "pending") return uiSettings.language === "ko" ? "연동 대기" : "Waiting for live sync";
+  if (state.status === "pending") return uiSettings.language === "ko" ? `갱신 요청 ${state.lastRequestAt || "-"}` : `Sync requested ${state.lastRequestAt || "-"}`;
+  if (state.status === "live") return uiSettings.language === "ko" ? `최근 갱신 ${state.lastSuccessAt || "-"}` : `Updated ${state.lastSuccessAt || "-"}`;
+  return uiSettings.language === "ko"
+    ? `지연 ${state.consecutiveFailures || 1}회 · ${state.lastError || "응답 없음"}`
+    : `Stale ${state.consecutiveFailures || 1}x · ${state.lastError || "No response"}`;
+}
+
+function dashboardLiveBadge(data, copy, fallbackUpdatedAt) {
+  const clientLive = data?._live || {};
+  const serverLive = data?.live_status || {};
+  const rawStatus = String(clientLive.status || (serverLive.cache_hit ? "stale" : "live")).toLowerCase();
+  const state = ["pending", "stale", "error", "live"].includes(rawStatus) ? rawStatus : "live";
+  const label = state === "pending"
+    ? copy.livePending
+    : state === "stale"
+    ? copy.liveStale
+    : state === "error"
+    ? copy.liveError
+    : copy.livePolling;
+  const updatedAt = clientLive.last_success_at || serverLive.generated_at || data?.generated_at || fallbackUpdatedAt || "-";
+  const detail = clientLive.last_error || (serverLive.cache_hit ? "cached dashboard payload" : "");
+  const title = `${copy.liveUpdated}: ${updatedAt}${detail ? ` · ${detail}` : ""}`;
+  return `
+    <span class="dashboard-live-badge dashboard-live-badge-${escapeHtml(state)}" title="${escapeHtml(title)}">
+      <i aria-hidden="true"></i>
+      <b>${escapeHtml(label)}</b>
+      <em>${escapeHtml(updatedAt)}</em>
+    </span>
+  `;
+}
+
 function renderDashboard(data) {
   latestDashboardData = data;
   const copy = dashboardCopy();
@@ -3446,13 +3539,7 @@ function renderDashboard(data) {
   const auditSummary = data.audit_summary || {};
   const threat = data.threat_detection || {};
   const liveUpdatedAt = data.generated_at || data.checked_at || threat.last_scan_at || backup.ended_at || auditSummary.latest_at || "-";
-  const liveBadge = `
-    <span class="dashboard-live-badge" title="${escapeHtml(`${copy.liveUpdated}: ${liveUpdatedAt}`)}">
-      <i aria-hidden="true"></i>
-      <b>${escapeHtml(copy.livePolling)}</b>
-      <em>${escapeHtml(liveUpdatedAt)}</em>
-    </span>
-  `;
+  const liveBadge = dashboardLiveBadge(data, copy, liveUpdatedAt);
   const eventRows = events.length
     ? events.map((event) => `<div class="event-row"><span><i class="event-clock" aria-hidden="true"></i>${escapeHtml(event.date || "-")}</span><strong>${escapeHtml(event.content || "-")}</strong></div>`).join("")
     : `<div class="dashboard-empty-row">최근 이벤트가 없습니다. Veeam, Air-Gap, 감사 로그가 수집되면 표시됩니다.</div>`;
@@ -5303,12 +5390,13 @@ function renderOperationsOverview() {
   const timeline = Array.isArray(airGap.timeline) ? airGap.timeline : [];
   const activeStep = timeline.find((item) => /ACTIVE|RUNNING|WORKING/i.test(String(item.state || "")));
   const lastStep = timeline.filter((item) => /DONE|COMPLETED|SUCCESS/i.test(String(item.state || ""))).pop();
+  const liveProblem = ["stale", "error"].includes(String(opsOverviewLiveState.status || ""));
   const cards = [
     {
       label: "Veeam REST",
-      value: apiSynced ? "Connected" : "Waiting",
-      meta: `${veeam.server || "127.0.0.1"}:${veeam.port || 9419} · ${formatOpsLatency(veeam)}`,
-      tone: apiSynced ? "ok" : "warn",
+      value: liveProblem ? (uiSettings.language === "ko" ? "지연" : "Stale") : apiSynced ? "Connected" : "Waiting",
+      meta: `${veeam.server || "127.0.0.1"}:${veeam.port || 9419} · ${formatOpsLatency(veeam)} · ${liveStateMeta(opsOverviewLiveState)}`,
+      tone: liveProblem ? "danger" : apiSynced ? "ok" : "warn",
     },
     {
       label: "Backup",
@@ -5393,17 +5481,22 @@ async function reloadMonitoring() {
   renderMonitoring(monitoring);
 }
 
-async function reloadDashboard() {
+async function reloadDashboard(options = {}) {
   if (dashboardReloadInFlight) return dashboardReloadInFlight;
+  const live = Boolean(options.live);
   dashboardReloadInFlight = (async () => {
     try {
-      const dashboard = await requestJson("/api/dashboard", { timeoutMs: 30000 });
-      renderDashboard(dashboard);
+      if (live) markLiveRequest(dashboardLiveState);
+      const dashboard = await requestJson(live ? "/api/dashboard?live=1" : "/api/dashboard", { timeoutMs: 30000, live });
+      if (live) markLiveSuccess(dashboardLiveState);
+      const renderedDashboard = live ? dashboardDataWithLiveState(dashboard, dashboardLiveState) : dashboard;
+      renderDashboard(renderedDashboard);
       return dashboard;
     } catch (error) {
       console.warn("Unable to reload Dashboard view", error);
+      if (live) markLiveFailure(dashboardLiveState, error);
       if (latestDashboardData) {
-        renderDashboard(latestDashboardData);
+        renderDashboard(live ? dashboardDataWithLiveState(latestDashboardData, dashboardLiveState) : latestDashboardData);
       } else {
         renderDashboardFallback(error?.message || "");
       }
@@ -6464,7 +6557,7 @@ async function pollSourcesLive() {
   if (!currentSession.authenticated || appRoot.classList.contains("app-locked")) return;
   if (activeViewId() !== "sourcesView") return;
   try {
-    const sources = await requestJson("/api/sources");
+    const sources = await requestJson("/api/sources?live=1", { live: true });
     renderSources(sources);
     finalizeEmergencyReconnectFromSources(sources);
   } catch (error) {
@@ -6514,7 +6607,7 @@ function setAirGapLivePolling(enabled) {
 async function pollDashboardLive() {
   if (!currentSession.authenticated || appRoot.classList.contains("app-locked")) return;
   if (activeViewId() !== "dashboardView") return;
-  await reloadDashboard();
+  await reloadDashboard({ live: true });
 }
 
 function setDashboardLivePolling(enabled) {
@@ -6531,15 +6624,23 @@ function setDashboardLivePolling(enabled) {
 async function pollOpsOverviewLive() {
   if (!currentSession.authenticated || appRoot.classList.contains("app-locked")) return;
   if (activeViewId() !== "monitoringView") return;
+  markLiveRequest(opsOverviewLiveState);
   try {
     const [sourcesResult, dashboardResult] = await Promise.allSettled([
-      requestJson("/api/sources"),
-      requestJson("/api/dashboard"),
+      requestJson("/api/sources?live=1", { live: true }),
+      requestJson("/api/dashboard?live=1", { live: true }),
     ]);
     if (sourcesResult.status === "fulfilled") latestSourcesData = sourcesResult.value;
     if (dashboardResult.status === "fulfilled") latestDashboardData = dashboardResult.value;
+    const failures = [sourcesResult, dashboardResult].filter((result) => result.status === "rejected");
+    if (failures.length) {
+      markLiveFailure(opsOverviewLiveState, failures[0].reason);
+    } else {
+      markLiveSuccess(opsOverviewLiveState);
+    }
     renderOperationsOverview();
   } catch (error) {
+    markLiveFailure(opsOverviewLiveState, error);
     console.warn("Unable to poll operations overview", error);
   }
 }

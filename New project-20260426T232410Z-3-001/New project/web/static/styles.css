@@ -11472,8 +11472,41 @@ td {
   box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.12);
 }
 
+.dashboard-live-badge-pending {
+  border-color: rgba(37, 99, 235, 0.22);
+  background: rgba(239, 246, 255, 0.82);
+  color: #1d4ed8 !important;
+}
+
+.dashboard-live-badge-pending i {
+  background: #3b82f6;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
+}
+
+.dashboard-live-badge-stale {
+  border-color: rgba(245, 158, 11, 0.28);
+  background: rgba(255, 251, 235, 0.88);
+  color: #b45309 !important;
+}
+
+.dashboard-live-badge-stale i {
+  background: #f59e0b;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.14);
+}
+
+.dashboard-live-badge-error {
+  border-color: rgba(239, 68, 68, 0.28);
+  background: rgba(254, 242, 242, 0.9);
+  color: #b91c1c !important;
+}
+
+.dashboard-live-badge-error i {
+  background: #ef4444;
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.13);
+}
+
 .dashboard-live-badge b {
-  color: #0f766e;
+  color: currentColor;
   font-size: inherit;
   font-weight: 700;
 }
