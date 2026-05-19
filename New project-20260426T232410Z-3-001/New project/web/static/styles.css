@@ -349,49 +349,53 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 9px;
+  gap: 10px;
   height: 54px;
-  border: 1px solid #d6e5f7;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-  color: #0b2e79;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  box-shadow: 0 8px 22px rgba(11, 46, 121, 0.08);
+  border: 1px solid #dbe8f8;
+  border-radius: 13px;
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+  color: #0f2342;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  box-shadow: 0 8px 20px rgba(15, 35, 66, 0.07);
   margin-top: 0;
   transition: border-color 160ms ease, box-shadow 160ms ease, color 160ms ease, transform 160ms ease;
 }
 
 .qr-submit::before {
   content: "";
-  width: 19px;
-  height: 19px;
-  flex: 0 0 19px;
-  border-radius: 4px;
-  /* grid-like QR icon */
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  border-radius: 5px;
+  /* benchmarked compact QR mark */
   background:
-    linear-gradient(#08182f 0 0) 0 0 / 4px 4px no-repeat,
-    linear-gradient(#08182f 0 0) 5px 0 / 4px 4px no-repeat,
-    linear-gradient(#08182f 0 0) 0 5px / 4px 4px no-repeat,
-    linear-gradient(#08182f 0 0) 10px 0 / 4px 4px no-repeat,
-    linear-gradient(#08182f 0 0) 15px 0 / 4px 4px no-repeat,
-    linear-gradient(#08182f 0 0) 10px 5px / 4px 4px no-repeat,
-    linear-gradient(#08182f 0 0) 15px 5px / 4px 4px no-repeat,
-    linear-gradient(#08182f 0 0) 0 10px / 4px 4px no-repeat,
-    linear-gradient(#08182f 0 0) 5px 10px / 4px 4px no-repeat,
-    linear-gradient(#08182f 0 0) 0 15px / 4px 4px no-repeat,
-    linear-gradient(#1d6fd6 0 0) 10px 10px / 4px 4px no-repeat,
-    linear-gradient(#1d6fd6 0 0) 15px 15px / 4px 4px no-repeat,
+    linear-gradient(#0f172a 0 0) 0 0 / 4px 4px no-repeat,
+    linear-gradient(#0f172a 0 0) 5px 0 / 4px 4px no-repeat,
+    linear-gradient(#0f172a 0 0) 0 5px / 4px 4px no-repeat,
+    linear-gradient(#0f172a 0 0) 5px 5px / 4px 4px no-repeat,
+    linear-gradient(#0f172a 0 0) 12px 0 / 4px 4px no-repeat,
+    linear-gradient(#0f172a 0 0) 16px 0 / 4px 4px no-repeat,
+    linear-gradient(#0f172a 0 0) 12px 4px / 4px 4px no-repeat,
+    linear-gradient(#0f172a 0 0) 16px 4px / 4px 4px no-repeat,
+    linear-gradient(#0f172a 0 0) 0 12px / 4px 4px no-repeat,
+    linear-gradient(#0f172a 0 0) 4px 12px / 4px 4px no-repeat,
+    linear-gradient(#0f172a 0 0) 0 16px / 4px 4px no-repeat,
+    linear-gradient(#0f172a 0 0) 4px 16px / 4px 4px no-repeat,
+    linear-gradient(#1267d9 0 0) 11px 11px / 4px 4px no-repeat,
+    linear-gradient(#1267d9 0 0) 16px 16px / 4px 4px no-repeat,
+    linear-gradient(#0f172a 0 0) 16px 11px / 4px 4px no-repeat,
+    linear-gradient(#0f172a 0 0) 11px 16px / 4px 4px no-repeat,
     #ffffff;
-  box-shadow: 0 0 0 1px rgba(11, 46, 121, 0.12);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.12), 0 4px 10px rgba(15, 35, 66, 0.08);
 }
 
 .qr-submit:hover,
 .qr-submit:focus-visible {
   border-color: #94bdf0;
-  color: #063684;
-  box-shadow: 0 10px 26px rgba(11, 46, 121, 0.14);
+  color: #0b2e79;
+  box-shadow: 0 10px 26px rgba(11, 46, 121, 0.13);
   transform: translateY(-1px);
 }
 
