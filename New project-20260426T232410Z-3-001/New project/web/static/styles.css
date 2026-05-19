@@ -11143,7 +11143,9 @@ td {
 
 .backup-panel dt,
 .backup-panel dd {
+  font-size: 12.5px;
   font-weight: 400;
+  line-height: 1.45;
 }
 
 .backup-panel dd {
@@ -11298,31 +11300,32 @@ td {
 }
 
 .event-row {
-  grid-template-columns: 98px 1fr;
-  min-height: 36px;
-  column-gap: 10px;
+  grid-template-columns: 112px 1fr;
+  min-height: 40px;
+  column-gap: 12px;
 }
 
 .event-row span {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   color: #52606d;
-  font-size: 10px;
+  font-size: 11.5px;
   font-weight: 800;
 }
 
 .event-row strong {
-  font-size: 10.5px;
+  font-size: 12px;
+  line-height: 1.35;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .event-clock {
-  width: 13px;
-  height: 13px;
-  border: 1.6px solid #6f7f8d;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #52606d;
   border-radius: 50%;
   position: relative;
 }
@@ -11333,18 +11336,18 @@ td {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 1.4px;
-  background: #6f7f8d;
+  width: 1.8px;
+  background: #52606d;
   transform-origin: bottom center;
 }
 
 .event-clock::before {
-  height: 4px;
+  height: 5px;
   transform: translate(-50%, -100%);
 }
 
 .event-clock::after {
-  height: 3px;
+  height: 4px;
   transform: translate(-50%, -100%) rotate(90deg);
 }
 
@@ -11366,7 +11369,7 @@ td {
   margin: 0;
   border-bottom: 1px solid #e4e9ef;
   color: #17212b;
-  font-size: 13px;
+  font-size: 14.5px;
   font-weight: 800;
 }
 
@@ -11376,8 +11379,12 @@ td {
   min-height: 34px;
 }
 
+.health-row span {
+  font-size: 12px;
+}
+
 .health-row b {
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 800;
 }
 
@@ -11399,7 +11406,7 @@ td {
 
 .audit-count-grid span {
   color: #52606d;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -11407,7 +11414,7 @@ td {
   display: block;
   margin-top: 6px;
   color: #1267d9;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 900;
 }
 
@@ -11420,7 +11427,7 @@ td {
   background: rgba(248, 251, 255, 0.58);
   color: #64748b;
   padding: 5px 9px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
 }
 
