@@ -782,7 +782,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn('elif parsed.path == "/api/report.pdf":', webui_source)
         self.assertIn("def send_report_pdf", webui_source)
         self.assertIn("application/pdf", webui_source)
-        self.assertIn("20260519-detect-isolated-waiting", html)
+        self.assertIn("20260519-dashboard-protection-full-width", html)
 
     def test_report_inspection_result_badges_are_centered(self) -> None:
         root = Path.cwd()
@@ -817,7 +817,7 @@ class LockFixTests(unittest.TestCase):
             'id="userManagementForm"',
             'id="userManagementBackButton"',
             'data-i18n="userManagement.actions"',
-            'v=20260519-detect-isolated-waiting',
+            'v=20260519-dashboard-protection-full-width',
             'class="rbac-chip-list user-management-department-list"',
             'data-i18n="department.backupOperation"',
             '<option value="SECURITY_ADMIN">SECURITY_ADMIN</option>',
@@ -2060,7 +2060,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("border: 0;", css_source)
         self.assertNotIn("border: 1px solid rgba(196, 211, 225, 0.72);", css_source)
         self.assertNotIn("border: 1px solid rgba(121, 158, 206, 0.48);", css_source)
-        self.assertIn("20260519-detect-isolated-waiting", index_source)
+        self.assertIn("20260519-dashboard-protection-full-width", index_source)
 
     def test_isolate_reaches_isolated(self) -> None:
         tmp_path = self.make_workspace()
@@ -2795,7 +2795,7 @@ class LockFixTests(unittest.TestCase):
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
         webui_source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")
 
-        self.assertIn("20260519-detect-isolated-waiting", html_source)
+        self.assertIn("20260519-dashboard-protection-full-width", html_source)
         self.assertIn("emergency.reconnect.background.timeout", webui_source)
         self.assertIn("EMERGENCY_RECONNECT_AGENT_START_TIMEOUT_SECONDS", webui_source)
         self.assertIn("emergency_reconnect_agent_started", webui_source)
@@ -2871,7 +2871,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("height: 68px !important;", css_source)
         self.assertIn("min-height: 36px !important;", css_source)
         self.assertIn("border-bottom: 0 !important;", css_source)
-        self.assertIn("20260519-detect-isolated-waiting", html_source)
+        self.assertIn("20260519-dashboard-protection-full-width", html_source)
 
     def test_logs_summary_cards_render_above_filter_bar(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -2880,7 +2880,7 @@ class LockFixTests(unittest.TestCase):
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('class="logs-range"'))
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('id="logsStart"'))
         self.assertNotIn('data-i18n="logs.filteredView"', logs_view)
-        self.assertIn("20260519-detect-isolated-waiting", html_source)
+        self.assertIn("20260519-dashboard-protection-full-width", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -2899,7 +2899,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260519-detect-isolated-waiting", html_source)
+        self.assertIn("20260519-dashboard-protection-full-width", html_source)
 
     def test_settings_service_policy_card_is_not_rendered(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -2959,7 +2959,7 @@ class LockFixTests(unittest.TestCase):
             "departmentDisplayName(department.id)",
         ]:
             self.assertIn(token, app_source)
-        self.assertIn("20260519-detect-isolated-waiting", html_source)
+        self.assertIn("20260519-dashboard-protection-full-width", html_source)
 
     def test_monitoring_header_copy_is_hidden_while_polling_remains(self) -> None:
         root = Path.cwd()
@@ -3045,7 +3045,8 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("dashboardPanelOrderKey", app_source)
         self.assertIn("dashboardPanelSizeKey", app_source)
         self.assertIn('const dashboardKpiSizeKey = "lockfix.dashboard.kpiSize.v3";', app_source)
-        self.assertIn('const dashboardPanelSizeKey = "lockfix.dashboard.panelSize.v2";', app_source)
+        self.assertIn('const dashboardPanelOrderKey = "lockfix.dashboard.panelOrder.v2";', app_source)
+        self.assertIn('const dashboardPanelSizeKey = "lockfix.dashboard.panelSize.v3";', app_source)
         self.assertIn("enableDashboardPanelDrag", app_source)
         self.assertIn("function clampDashboardPixels", app_source)
         self.assertIn("function dashboardResizeBounds", app_source)
@@ -3056,11 +3057,16 @@ class LockFixTests(unittest.TestCase):
         self.assertIn('class="dashboard-kpi-grip" draggable="true"', app_source)
         self.assertIn('class="dashboard-panel-grip" draggable="true"', app_source)
         self.assertIn('data-drag-axis="xy"', app_source)
+        self.assertIn('data-drag-axis="y"', app_source)
+        self.assertIn('title="Drag card up or down"', app_source)
         self.assertIn('data-dashboard-panel="events"', app_source)
         self.assertIn('data-dashboard-panel="alerts"', app_source)
         self.assertIn('data-dashboard-panel="audit"', app_source)
         self.assertIn('data-dashboard-panel="protection" data-panel-resizable="true"', app_source)
         self.assertIn('data-dashboard-panel="backup" data-panel-resizable="true"', app_source)
+        self.assertIn('data-dashboard-panel="protection" data-panel-resizable="true" data-cols="12"', app_source)
+        self.assertIn('data-dashboard-panel="backup" data-panel-resizable="true" data-cols="12" data-rows="2"', app_source)
+        self.assertIn("const insertBefore = event.clientY < rect.top + rect.height / 2;", app_source)
         self.assertIn('data-panel-resizable="true"', app_source)
         self.assertNotIn('class="security-icon security-icon-${icon}"', app_source)
         self.assertNotIn('class="security-icon security-icon-${icon} security-tone-${tone}"', app_source)
@@ -3151,7 +3157,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("background: #ffffff;", css_source)
         self.assertIn("opacity: 0.66;", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260519-detect-isolated-waiting", html_source)
+        self.assertIn("20260519-dashboard-protection-full-width", html_source)
         self.assertIn("grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));", css_source)
         self.assertIn(".security-dashboard-grid .backup-panel .panel-body > dl", css_source)
         self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr));", css_source)
@@ -3179,9 +3185,13 @@ class LockFixTests(unittest.TestCase):
         self.assertIn('class="flow-step-card ${state === "done" ? "flow-step-card-active" : ""}"', app_source)
         self.assertIn('class="flow-step-number"', app_source)
         self.assertIn('copy.protectedMessage.replace("Offline", "<b>Offline</b>")', app_source)
-        self.assertIn("--flow-gap: clamp(18px, 2.6vw, 44px);", css_source)
-        self.assertIn("grid-template-columns: repeat(5, minmax(132px, 1fr));", css_source)
-        self.assertIn("width: min(100%, 1160px);", css_source)
+        self.assertIn("--flow-gap: clamp(28px, 4vw, 72px);", css_source)
+        self.assertIn("grid-template-columns: repeat(5, minmax(154px, 1fr));", css_source)
+        self.assertIn("width: 100%;", css_source)
+        self.assertIn("max-width: none;", css_source)
+        self.assertIn("word-break: keep-all;", css_source)
+        self.assertIn("justify-content: stretch;", css_source)
+        self.assertIn("padding: 0 8px;", css_source)
         self.assertIn(".flow-step-card {", css_source)
         self.assertIn("min-height: 104px;", css_source)
         self.assertIn(".flow-step-card:not(:last-child)::after", css_source)
@@ -3208,7 +3218,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260519-detect-isolated-waiting", html_source)
+        self.assertIn("20260519-dashboard-protection-full-width", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()

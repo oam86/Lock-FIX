@@ -70,8 +70,8 @@ const veeamLogTable = document.querySelector("#veeamLogTable");
 const dashboardView = document.querySelector("#dashboardView");
 const dashboardKpiOrderKey = "lockfix.dashboard.kpiOrder.v1";
 const dashboardKpiSizeKey = "lockfix.dashboard.kpiSize.v3";
-const dashboardPanelOrderKey = "lockfix.dashboard.panelOrder.v1";
-const dashboardPanelSizeKey = "lockfix.dashboard.panelSize.v2";
+const dashboardPanelOrderKey = "lockfix.dashboard.panelOrder.v2";
+const dashboardPanelSizeKey = "lockfix.dashboard.panelSize.v3";
 const dashboardEventsKey = "lockfix.dashboard.eventsVisible.v1";
 const dashboardAlertsKey = "lockfix.dashboard.alertsVisible.v1";
 const opsEventsVisibleKey = "lockfix.ops.eventsVisible.v2";
@@ -3184,7 +3184,7 @@ function enableDashboardPanelDrag(board) {
     if (!panel || panel === dragging) return;
     event.preventDefault();
     const rect = panel.getBoundingClientRect();
-    const insertBefore = event.clientY < rect.top + rect.height / 2 || event.clientX < rect.left + rect.width / 2;
+    const insertBefore = event.clientY < rect.top + rect.height / 2;
     board.querySelectorAll(".dashboard-panel-drop-target").forEach((node) => node.classList.remove("dashboard-panel-drop-target"));
     panel.classList.add("dashboard-panel-drop-target");
     board.insertBefore(dragging, insertBefore ? panel : panel.nextSibling);
@@ -3514,8 +3514,8 @@ function renderDashboard(data) {
     </section>
 
     <div class="security-dashboard-grid dashboard-content-grid" id="dashboardContentBoard">
-      <section class="security-panel security-flow-panel" data-dashboard-panel="protection" data-panel-resizable="true" data-cols="8" data-rows="3" aria-live="polite">
-        <header class="security-flow-header"><h2>${copy.liveProtection}</h2>${liveBadge}<span class="dashboard-panel-info">ⓘ</span><span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span></header>
+      <section class="security-panel security-flow-panel" data-dashboard-panel="protection" data-panel-resizable="true" data-cols="12" data-rows="3" aria-live="polite">
+        <header class="security-flow-header"><h2>${copy.liveProtection}</h2>${liveBadge}<span class="dashboard-panel-info">ⓘ</span><span class="dashboard-panel-grip" draggable="true" data-drag-axis="y" aria-hidden="true" title="Drag card up or down"></span></header>
         <div class="panel-body">
           <p>${copy.protectedMessage.replace("Offline", "<b>Offline</b>").replace("offline", "<b>offline</b>")}</p>
           <div class="security-flow">
@@ -3534,8 +3534,8 @@ function renderDashboard(data) {
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>
       </section>
 
-      <section class="security-panel backup-panel" data-dashboard-panel="backup" data-panel-resizable="true" data-cols="4" data-rows="3">
-        <header><h2>${copy.backupLink}</h2><span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span></header>
+      <section class="security-panel backup-panel" data-dashboard-panel="backup" data-panel-resizable="true" data-cols="12" data-rows="2">
+        <header><h2>${copy.backupLink}</h2><span class="dashboard-panel-grip" draggable="true" data-drag-axis="y" aria-hidden="true" title="Drag card up or down"></span></header>
         <div class="panel-body">
           <dl>
             <div><dt>연동 백업 솔루션</dt><dd>${escapeHtml(backup.solution || "Veeam Backup & Replication")}</dd></div>
@@ -3553,7 +3553,7 @@ function renderDashboard(data) {
       <section class="security-panel event-panel ${dashboardEventsVisible ? "event-panel-visible" : "event-panel-hidden"}" data-dashboard-panel="events" data-panel-resizable="true" data-cols="4" data-rows="${dashboardEventsVisible ? "3" : "1"}">
         <header class="event-panel-header">
           <h2>${copy.event}</h2>
-          <span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span>
+          <span class="dashboard-panel-grip" draggable="true" data-drag-axis="y" aria-hidden="true" title="Drag card up or down"></span>
         </header>
         <div class="panel-body dashboard-event-body">
           ${eventRows}
@@ -3566,7 +3566,7 @@ function renderDashboard(data) {
       <section class="security-panel alert-panel ${dashboardAlertsVisible ? "alert-panel-visible" : "alert-panel-hidden"}" data-dashboard-panel="alerts" data-panel-resizable="true" data-cols="4" data-rows="${dashboardAlertsVisible ? "3" : "1"}">
         <header class="alert-panel-header">
           <h2>${copy.alert}</h2>
-          <span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span>
+          <span class="dashboard-panel-grip" draggable="true" data-drag-axis="y" aria-hidden="true" title="Drag card up or down"></span>
         </header>
         <div class="panel-body dashboard-alert-body">
           <div class="alert-ok"><span>${alerts.some((item) => String(item.value || "").match(/Failed|Detected|Error/i)) ? "확인 필요" : copy.noCritical}</span></div>
@@ -3578,7 +3578,7 @@ function renderDashboard(data) {
       </section>
 
       <section class="security-panel audit-summary-panel" data-dashboard-panel="audit" data-panel-resizable="true" data-cols="4" data-rows="3">
-        <header><h2>${copy.audit}</h2><span class="dashboard-panel-grip" draggable="true" data-drag-axis="xy" aria-hidden="true" title="Drag card"></span></header>
+        <header><h2>${copy.audit}</h2><span class="dashboard-panel-grip" draggable="true" data-drag-axis="y" aria-hidden="true" title="Drag card up or down"></span></header>
         <div class="panel-body">
           <div class="audit-count-grid">
             ${auditCounts.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}건</strong></div>`).join("")}
