@@ -311,6 +311,7 @@ let dashboardPollTimer = null;
 let opsOverviewPollTimer = null;
 let sourcesLiveInFlight = null;
 let opsOverviewLiveInFlight = null;
+let detectReloadInFlight = null;
 let globalRefreshTimer = null;
 let emergencyReconnectPollTimer = null;
 let emergencyReconnectDetailTimer = null;
@@ -2371,7 +2372,7 @@ async function requestJson(url, options = {}) {
   } catch (error) {
     const aborted = error?.name === "AbortError";
     const message = aborted
-      ? "WebUI 서버 응답이 지연되어 중단했습니다. 현재 접속 주소가 http://127.0.0.1:8088 인지 확인하고, WebUI/Python 서버를 새로고침 또는 재시작하세요."
+      ? "요청 시간이 초과되었습니다. 최신 상태를 다시 확인 중입니다."
       : window.location.protocol === "file:"
       ? "현재 화면이 파일로 직접 열려 있어 WebUI 서버 API에 연결할 수 없습니다. http://127.0.0.1:8088 또는 실행 중인 WebUI 주소로 접속하세요."
       : "WebUI 서버에 연결하지 못했습니다. LOCK-FIX WebUI/Python 서버가 실행 중인지 확인하세요.";
@@ -2424,8 +2425,8 @@ async function checkSession() {
   if (session.authenticated) {
     renderLicenseStatus(session.license);
     updateLicenseGate(session.license);
-    await loadAll();
     showView(initialRouteView());
+    refreshAllInBackground("session bootstrap");
   }
 }
 
@@ -2468,10 +2469,8 @@ async function showLoginSplashThenEnter() {
   };
   applyMenuVisibility();
   renderSidebarUserMenu();
-  await Promise.all([
-    loadAll(),
-    new Promise((resolve) => setTimeout(resolve, LOGIN_SPLASH_DURATION_MS)),
-  ]);
+  refreshAllInBackground("login bootstrap");
+  await new Promise((resolve) => setTimeout(resolve, LOGIN_SPLASH_DURATION_MS));
   setAuthenticated(true);
   showView(initialRouteView());
 }
@@ -2604,15 +2603,7 @@ function showView(name) {
   }
   if (targetView === "detect2") {
     renderDetectFallback();
-    requestJson("/api/detect", { timeoutMs: 6000 })
-      .then((data) => renderDetect(data))
-      .catch((error) => {
-        console.warn("Unable to reload Detect view", error);
-        renderDetectFallback(
-          "탐지 내역을 표시할 수 없습니다.",
-          error?.message || "WebUI 서버 연결, 로그인 권한, 또는 AIRGAP_POLICY_VIEW 권한을 확인해 주세요."
-        );
-      });
+    reloadDetect();
   }
   if (targetView === "threat") {
     reloadThreatDetection().catch((error) => {
@@ -5510,6 +5501,34 @@ async function reloadDashboard(options = {}) {
   return dashboardReloadInFlight;
 }
 
+async function reloadDetect(attempt = 0) {
+  if (detectReloadInFlight) return detectReloadInFlight;
+  detectReloadInFlight = requestJson("/api/detect?live=1", { live: true, timeoutMs: 2500 })
+    .then((data) => {
+      renderDetect(data);
+      return data;
+    })
+    .catch((error) => {
+      console.warn("Unable to reload Detect view", error);
+      if (activeViewId() === "detect2View") {
+        renderDetectFallback(
+          "실시간 탐지 상태를 다시 확인 중입니다.",
+          "서버 응답이 늦어도 화면은 유지하고 다음 갱신에서 자동으로 반영합니다."
+        );
+        if (attempt < 2) {
+          window.setTimeout(() => {
+            if (activeViewId() === "detect2View") reloadDetect(attempt + 1);
+          }, 1000);
+        }
+      }
+      return null;
+    })
+    .finally(() => {
+      detectReloadInFlight = null;
+    });
+  return detectReloadInFlight;
+}
+
 async function reloadLogs() {
   const logs = await requestJson(logsUrl());
   renderLogs(logs);
@@ -8078,6 +8097,12 @@ async function loadAll() {
     console.warn("Unable to refresh data", entry.reason);
   });
   lastUpdated.textContent = new Date().toLocaleString();
+}
+
+function refreshAllInBackground(reason = "background refresh") {
+  return loadAll().catch((error) => {
+    console.warn(`Unable to refresh all data during ${reason}`, error);
+  });
 }
 
 async function runAction(action, slotId) {
