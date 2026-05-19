@@ -9963,7 +9963,16 @@ td {
 
 @media (max-width: 1360px) {
   .security-kpi-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .security-kpi {
+    padding-inline: 18px;
+  }
+
+  .security-kpi strong {
+    font-size: clamp(20px, 1.7vw, 24px);
   }
 }
 
