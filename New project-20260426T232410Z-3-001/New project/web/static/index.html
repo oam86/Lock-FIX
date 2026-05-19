@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LOCK-FIX PoC</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260520-offline-alert-red" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260520-report-export-polish" />
   </head>
   <body>
     <section class="login-screen" id="loginScreen">
@@ -173,7 +173,7 @@
           </div>
           <div class="report-export-actions">
             <button type="button" id="reportRefreshButton" data-i18n="report.refresh">Refresh</button>
-            <a href="/api/report.csv" class="report-export-link report-export-csv"><i class="file-icon file-csv" aria-hidden="true"></i><span>CSV</span></a>
+            <a href="/api/report.xlsx" class="report-export-link report-export-csv"><i class="file-icon file-csv" aria-hidden="true"></i><span data-i18n="report.exportExcel">Excel</span></a>
             <a href="/api/report.pdf" class="report-export-link report-export-pdf"><i class="file-icon file-pdf" aria-hidden="true"></i><span data-i18n="report.exportPdf">PDF</span></a>
             <a href="/api/report.docx" class="report-export-link report-export-word"><i class="file-icon file-word" aria-hidden="true"></i><span data-i18n="report.exportWord">Word</span></a>
           </div>
@@ -1147,7 +1147,7 @@
       </div>
     </template>
 
-    <script src="/static/app.js?v=20260520-offline-alert-red"></script>
+    <script src="/static/app.js?v=20260520-report-export-polish"></script>
   </body>
 </html>
 

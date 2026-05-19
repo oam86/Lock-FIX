@@ -16,6 +16,7 @@ import ssl
 import hashlib
 import socket
 import subprocess
+import textwrap
 import threading
 import time
 import uuid
@@ -7069,6 +7070,10 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         report = self.report_summary()
         extras = report["extras"]
         rows = [
+            ["LOCK-FIX System Inspection Report"],
+            [f"Generated: {report['generated_at']}", "Overall Status", report["summary"]["overall_status"]],
+            [report["summary"]["analysis"]],
+            [],
             ["Customer / Inspection Information"],
             ["Customer Name", report["customer"]["customer_name"], "Inspection Date", report["customer"]["inspection_date"]],
             ["Customer Contact", report["customer"]["customer_contact"], "Engineer", report["customer"]["engineer"]],
@@ -7131,23 +7136,115 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         self.send_download(body, "application/pdf", "lockfix_report.pdf")
 
     def build_pdf_report(self, report: dict) -> bytes:
-        lines = [
-            "LOCK-FIX Report",
-            f"Generated: {report['generated_at']}",
-            f"Customer: {report['customer']['customer_name']}",
-            f"Engineer: {report['customer']['engineer']}",
-            f"Overall: {report['summary']['overall_status']}",
-            "",
-            "Summary",
+        def pdf_text(value: object) -> str:
+            text = str(value).encode("latin-1", "replace").decode("latin-1")
+            return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+        def text_at(x: float, y: float, value: object, size: int = 9, color: str = "0 0 0", bold: bool = False) -> None:
+            font = "/F2" if bold else "/F1"
+            commands.append(f"BT {color} rg {font} {size} Tf {x:.1f} {y:.1f} Td ({pdf_text(value)}) Tj ET")
+
+        def line(x1: float, y1: float, x2: float, y2: float, color: str = "0.82 0.87 0.92", width: float = 0.8) -> None:
+            commands.append(f"q {color} RG {width:.1f} w {x1:.1f} {y1:.1f} m {x2:.1f} {y2:.1f} l S Q")
+
+        def rect(x: float, y: float, w: float, h: float, stroke: str = "0.82 0.87 0.92", fill: str = "1 1 1", width: float = 0.8) -> None:
+            commands.append(f"q {fill} rg {stroke} RG {width:.1f} w {x:.1f} {y:.1f} {w:.1f} {h:.1f} re B Q")
+
+        def status_color(value: str) -> str:
+            text = str(value).lower()
+            if "warning" in text or "attention" in text:
+                return "0.78 0.32 0"
+            if "fail" in text or "error" in text:
+                return "0.72 0.11 0.11"
+            return "0.02 0.48 0.25"
+
+        def card(x: float, y: float, w: float, h: float, label: str, value: str, color: str = "0.04 0.18 0.47") -> None:
+            rect(x, y, w, h, stroke="0.76 0.83 0.91", fill="0.98 0.99 1")
+            text_at(x + 12, y + h - 18, label.upper(), 8, "0.32 0.40 0.50", True)
+            text_at(x + 12, y + 16, value, 16, color, True)
+
+        def table(x: float, y: float, widths: list[float], rows: list[list[object]], header: bool = True, row_h: float = 21) -> float:
+            current_y = y
+            for row_index, row in enumerate(rows):
+                fill = "0.93 0.96 0.99" if header and row_index == 0 else "1 1 1"
+                rect(x, current_y - row_h, sum(widths), row_h, stroke="0.82 0.87 0.92", fill=fill, width=0.5)
+                current_x = x
+                for col_index, width in enumerate(widths):
+                    if col_index:
+                        line(current_x, current_y - row_h, current_x, current_y, width=0.4)
+                    text = str(row[col_index] if col_index < len(row) else "")
+                    clipped = textwrap.shorten(text, width=max(8, int(width / 5.4)), placeholder="...")
+                    text_at(current_x + 6, current_y - 14, clipped, 7 if row_index else 8, "0.05 0.13 0.24", row_index == 0)
+                    current_x += width
+                current_y -= row_h
+            return current_y
+
+        page_w, page_h = 842, 595
+        commands: list[str] = []
+        rect(24, 24, page_w - 48, page_h - 48, stroke="0.84 0.89 0.95", fill="1 1 1")
+        text_at(42, 548, "LOCK-FIX System Inspection Report", 22, "0.04 0.12 0.24", True)
+        text_at(42, 528, f"Generated: {report['generated_at']}   Overall: {report['summary']['overall_status']}", 9, status_color(report["summary"]["overall_status"]), True)
+        text_at(42, 512, "Enterprise backup isolation / Air-Gap verification summary", 9, "0.34 0.42 0.52")
+
+        customer = report["customer"]
+        server = report["server"]
+        card(42, 460, 175, 40, "Customer", customer["customer_name"])
+        card(229, 460, 175, 40, "Engineer", customer["engineer"])
+        card(416, 460, 175, 40, "Inspection Date", customer["inspection_date"])
+        card(603, 460, 175, 40, "Service", server["service"])
+
+        text_at(42, 436, "Resource Summary", 12, "0.04 0.12 0.24", True)
+        summary_rows = [["Metric", "Current", "Average", "Peak", "Threshold", "Result"]]
+        for item in report["cards"]:
+            summary_rows.append([item["label"], item["current"], item["average"], item["peak"], item["threshold"], item["status"]])
+        next_y = table(42, 422, [120, 80, 80, 80, 80, 120], summary_rows)
+
+        text_at(42, next_y - 20, "Server Inspection Checklist", 12, "0.04 0.12 0.24", True)
+        inspection_rows = [["Category", "Inspection Item", "Details", "Criteria", "Metric", "Result"]]
+        for item in report["inspection_items"][:13]:
+            inspection_rows.append([item["category"], item["item"], item["detail"], item["criteria"], item["metric"], item["result"]])
+        table(42, next_y - 34, [62, 120, 175, 120, 90, 90], inspection_rows)
+
+        extras = report["extras"]
+        rect(42, 38, 356, 46, stroke="0.82 0.87 0.92", fill="0.99 1 1")
+        text_at(54, 66, "Engineer Opinion", 9, "0.32 0.40 0.50", True)
+        text_at(54, 50, textwrap.shorten(extras.get("engineer_opinion") or "-", width=76, placeholder="..."), 8, "0.05 0.13 0.24")
+        rect(412, 38, 174, 46, stroke="0.82 0.87 0.92", fill="0.99 1 1")
+        text_at(424, 66, "Engineer Signature", 9, "0.32 0.40 0.50", True)
+        text_at(424, 50, "Attached" if extras.get("engineer_signature") else "-", 9, "0.05 0.13 0.24", True)
+        rect(604, 38, 174, 46, stroke="0.82 0.87 0.92", fill="0.99 1 1")
+        text_at(616, 66, "Manager Signature", 9, "0.32 0.40 0.50", True)
+        text_at(616, 50, "Attached" if extras.get("manager_signature") else "-", 9, "0.05 0.13 0.24", True)
+
+        stream = "\n".join(commands).encode("latin-1")
+        objects = [
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>",
+            b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream",
         ]
-        for card in report["cards"]:
-            lines.append(
-                f"{card['label']}: current {card['current']} / average {card['average']} / peak {card['peak']} / {card['status']}"
-            )
-        lines.extend(["", "Inspection Items"])
-        for item in report["inspection_items"][:16]:
-            lines.append(f"{item['category']} - {item['item']}: {item['result']}")
-        return self.build_pdf(lines)
+        output = io.BytesIO()
+        output.write(b"%PDF-1.4\n")
+        offsets = [0]
+        for index, obj in enumerate(objects, start=1):
+            offsets.append(output.tell())
+            output.write(f"{index} 0 obj\n".encode("ascii"))
+            output.write(obj)
+            output.write(b"\nendobj\n")
+        xref_at = output.tell()
+        output.write(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+        output.write(b"0000000000 65535 f \n")
+        for offset in offsets[1:]:
+            output.write(f"{offset:010d} 00000 n \n".encode("ascii"))
+        output.write(
+            (
+                f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+                f"startxref\n{xref_at}\n%%EOF\n"
+            ).encode("ascii")
+        )
+        return output.getvalue()
 
     def build_pdf(self, lines: list[str]) -> bytes:
         def pdf_text(value: object) -> str:
@@ -7201,23 +7298,72 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                 letters = chr(65 + remainder) + letters
             return f"{letters}{row_index}"
 
+        section_titles = {
+            "LOCK-FIX System Inspection Report",
+            "Customer / Inspection Information",
+            "Server Basic Information",
+            "Engineer Opinion",
+            "Electronic Signature",
+        }
+        table_headers = {
+            "Metric",
+            "Category",
+            "Time",
+            "Customer Name",
+            "OS Version",
+            "Content",
+            "Engineer Inspection Signature",
+        }
+
         sheet_rows = []
         for row_index, row in enumerate(rows, start=1):
+            first_value = str(row[0] if row else "")
+            if first_value in section_titles:
+                style_id = 1
+                height = ' ht="24" customHeight="1"'
+            elif first_value in table_headers:
+                style_id = 2
+                height = ' ht="21" customHeight="1"'
+            else:
+                style_id = 0
+                height = ""
             cells = []
             for col_index, value in enumerate(row, start=1):
                 ref = cell_ref(row_index, col_index)
                 if isinstance(value, (int, float)):
-                    cells.append(f'<c r="{ref}"><v>{value}</v></c>')
+                    cells.append(f'<c r="{ref}" s="{style_id}"><v>{value}</v></c>')
                 else:
-                    cells.append(f'<c r="{ref}" t="inlineStr"><is><t>{escape(str(value))}</t></is></c>')
-            sheet_rows.append(f'<row r="{row_index}">{"".join(cells)}</row>')
-        sheet = f'<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{"".join(sheet_rows)}</sheetData></worksheet>'
+                    cells.append(f'<c r="{ref}" s="{style_id}" t="inlineStr"><is><t>{escape(str(value))}</t></is></c>')
+            sheet_rows.append(f'<row r="{row_index}"{height}>{"".join(cells)}</row>')
+        sheet = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
+            '<cols><col min="1" max="1" width="22" customWidth="1"/><col min="2" max="2" width="24" customWidth="1"/>'
+            '<col min="3" max="3" width="18" customWidth="1"/><col min="4" max="4" width="18" customWidth="1"/>'
+            '<col min="5" max="5" width="18" customWidth="1"/><col min="6" max="6" width="18" customWidth="1"/>'
+            '<col min="7" max="7" width="44" customWidth="1"/></cols>'
+            f'<sheetData>{"".join(sheet_rows)}</sheetData>'
+            '</worksheet>'
+        )
+        styles = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            '<fonts count="3"><font><sz val="10"/><name val="Calibri"/></font><font><b/><sz val="13"/><color rgb="FF0B2E79"/><name val="Calibri"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts>'
+            '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEAF1F8"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0B2E79"/><bgColor indexed="64"/></patternFill></fill></fills>'
+            '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFD9E2EA"/></left><right style="thin"><color rgb="FFD9E2EA"/></right><top style="thin"><color rgb="FFD9E2EA"/></top><bottom style="thin"><color rgb="FFD9E2EA"/></bottom><diagonal/></border></borders>'
+            '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+            '<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="1" fillId="1" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf></cellXfs>'
+            '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
+            '</styleSheet>'
+        )
         output = io.BytesIO()
         with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
-            archive.writestr("[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>')
+            archive.writestr("[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>')
             archive.writestr("_rels/.rels", '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')
             archive.writestr("xl/workbook.xml", '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Report" sheetId="1" r:id="rId1"/></sheets></workbook>')
-            archive.writestr("xl/_rels/workbook.xml.rels", '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>')
+            archive.writestr("xl/_rels/workbook.xml.rels", '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>')
+            archive.writestr("xl/styles.xml", styles)
             archive.writestr("xl/worksheets/sheet1.xml", sheet)
         return output.getvalue()
 
@@ -7330,7 +7476,7 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         ]
 
         body = [
-            para("System Inspection Report", "title"),
+            para("LOCK-FIX System Inspection Report", "title"),
             para(f"Report No. #1    Generated: {report['generated_at']}"),
             para(f"Overall Status: {report['summary']['overall_status']}"),
             para(report["summary"]["analysis"]),
