@@ -7461,8 +7461,8 @@ function renderSources(data) {
 
 function drawLineChart(series) {
   const width = 920;
-  const height = 280;
-  const pad = { left: 96, right: 22, top: 10, bottom: 40 };
+  const height = 250;
+  const pad = { left: 96, right: 22, top: 8, bottom: 34 };
   const chartWidth = width - pad.left - pad.right;
   const chartHeight = height - pad.top - pad.bottom;
   const visibleCount = Math.max(8, Math.round(series.length / monitoringZoom));
