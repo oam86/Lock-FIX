@@ -799,17 +799,18 @@ class LockFixTests(unittest.TestCase):
 
         self.assertIn('class="qr-submit"', html)
         self.assertIn(".qr-submit::before", css)
-        self.assertIn("muted bracketed QR mark", css)
-        self.assertIn("width: 30px;", css)
-        self.assertIn("filter: grayscale(1) opacity(0.38)", css)
+        self.assertIn("blue bracket QR mark", css)
+        self.assertIn("width: 32px;", css)
+        self.assertIn("linear-gradient(#0b79ff 0 0)", css)
+        self.assertIn("linear-gradient(#172033 0 0)", css)
         self.assertIn(".qr-submit:hover::before", css)
-        self.assertIn("opacity(0.96)", css)
+        self.assertIn("rgba(11, 121, 255, 0.18)", css)
         self.assertIn("background: #ffffff;", css)
         self.assertIn("color: #d6e8fb;", css)
         self.assertIn("font-size: 18px;", css)
         self.assertIn("font-weight: 600;", css)
         self.assertIn(".qr-submit:hover,", css)
-        self.assertIn("20260520-muted-qr-logo", html)
+        self.assertIn("20260520-blue-qr-logo", html)
 
     def test_sidebar_user_menu_has_logout_and_account_switch(self) -> None:
         root = Path.cwd()
