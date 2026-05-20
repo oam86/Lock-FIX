@@ -365,29 +365,30 @@ body {
 
 .qr-submit::before {
   content: "";
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  /* bracketed QR mark */
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  /* muted bracketed QR mark */
   background:
-    linear-gradient(#4a4a4a 0 0) 0 0 / 9px 3px no-repeat,
-    linear-gradient(#4a4a4a 0 0) 0 0 / 3px 9px no-repeat,
-    linear-gradient(#4a4a4a 0 0) 19px 0 / 9px 3px no-repeat,
-    linear-gradient(#4a4a4a 0 0) 25px 0 / 3px 9px no-repeat,
-    linear-gradient(#4a4a4a 0 0) 0 25px / 9px 3px no-repeat,
-    linear-gradient(#4a4a4a 0 0) 0 19px / 3px 9px no-repeat,
-    linear-gradient(#4a4a4a 0 0) 19px 25px / 9px 3px no-repeat,
-    linear-gradient(#4a4a4a 0 0) 25px 19px / 3px 9px no-repeat,
-    linear-gradient(#4a4a4a 0 0) 8px 8px / 5px 5px no-repeat,
-    linear-gradient(#ffffff 0 0) 10px 10px / 1px 1px no-repeat,
-    linear-gradient(#4a4a4a 0 0) 17px 8px / 5px 5px no-repeat,
-    linear-gradient(#ffffff 0 0) 19px 10px / 1px 1px no-repeat,
-    linear-gradient(#4a4a4a 0 0) 8px 17px / 5px 5px no-repeat,
-    linear-gradient(#ffffff 0 0) 10px 19px / 1px 1px no-repeat,
-    linear-gradient(#4a4a4a 0 0) 14px 10px / 3px 8px no-repeat,
-    linear-gradient(#4a4a4a 0 0) 14px 18px / 8px 3px no-repeat,
-    linear-gradient(#4a4a4a 0 0) 19px 21px / 3px 3px no-repeat;
-  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.8));
+    linear-gradient(#4a4a4a 0 0) 0 0 / 10px 4px no-repeat,
+    linear-gradient(#4a4a4a 0 0) 0 0 / 4px 10px no-repeat,
+    linear-gradient(#4a4a4a 0 0) 20px 0 / 10px 4px no-repeat,
+    linear-gradient(#4a4a4a 0 0) 26px 0 / 4px 10px no-repeat,
+    linear-gradient(#4a4a4a 0 0) 0 26px / 10px 4px no-repeat,
+    linear-gradient(#4a4a4a 0 0) 0 20px / 4px 10px no-repeat,
+    linear-gradient(#4a4a4a 0 0) 20px 26px / 10px 4px no-repeat,
+    linear-gradient(#4a4a4a 0 0) 26px 20px / 4px 10px no-repeat,
+    linear-gradient(#4a4a4a 0 0) 8px 8px / 7px 7px no-repeat,
+    linear-gradient(#ffffff 0 0) 11px 11px / 2px 2px no-repeat,
+    linear-gradient(#4a4a4a 0 0) 18px 8px / 7px 7px no-repeat,
+    linear-gradient(#ffffff 0 0) 21px 11px / 2px 2px no-repeat,
+    linear-gradient(#4a4a4a 0 0) 8px 18px / 7px 7px no-repeat,
+    linear-gradient(#ffffff 0 0) 11px 21px / 2px 2px no-repeat,
+    linear-gradient(#4a4a4a 0 0) 16px 10px / 4px 9px no-repeat,
+    linear-gradient(#4a4a4a 0 0) 16px 20px / 9px 4px no-repeat,
+    linear-gradient(#4a4a4a 0 0) 23px 22px / 4px 4px no-repeat;
+  filter: grayscale(1) opacity(0.38) drop-shadow(0 1px 0 rgba(255, 255, 255, 0.8));
+  transition: filter 160ms ease, transform 160ms ease;
 }
 
 .qr-submit:hover,
@@ -396,6 +397,12 @@ body {
   color: #0b2e79;
   box-shadow: 0 10px 26px rgba(11, 46, 121, 0.13);
   transform: translateY(-1px);
+}
+
+.qr-submit:hover::before,
+.qr-submit:focus-visible::before {
+  filter: grayscale(1) opacity(0.96) drop-shadow(0 1px 0 rgba(255, 255, 255, 0.8));
+  transform: scale(1.03);
 }
 
 .qr-submit:focus-visible {
