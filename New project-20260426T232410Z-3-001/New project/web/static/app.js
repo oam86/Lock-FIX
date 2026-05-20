@@ -32,6 +32,8 @@ const sidebarUserStatus = document.querySelector("#sidebarUserStatus");
 const sidebarUserId = document.querySelector("#sidebarUserId");
 const sidebarUserRoleDetail = document.querySelector("#sidebarUserRoleDetail");
 const sidebarUserDepartment = document.querySelector("#sidebarUserDepartment");
+const sidebarAccountSwitchButton = document.querySelector("#sidebarAccountSwitchButton");
+const sidebarUserLogoutButton = document.querySelector("#sidebarUserLogoutButton");
 const sideItems = document.querySelectorAll(".side-item[data-view]");
 const views = document.querySelectorAll(".view");
 const monitoringChart = document.querySelector("#monitoringChart");
@@ -444,6 +446,8 @@ const translations = {
     "userMenu.department": "Department",
     "userMenu.loggedIn": "Logged in",
     "userMenu.loggedOut": "Logged out",
+    "userMenu.switchAccount": "Switch account",
+    "userMenu.logout": "Logout",
     "nav.customerWorkspace": "",
     "nav.operatorWorkspace": "Operation",
     "nav.adminWorkspace": "Admin / Developer",
@@ -871,6 +875,8 @@ const translations = {
     "userMenu.department": "부서",
     "userMenu.loggedIn": "로그인됨",
     "userMenu.loggedOut": "로그아웃",
+    "userMenu.switchAccount": "계정 전환",
+    "userMenu.logout": "로그아웃",
     "nav.customerWorkspace": "",
     "nav.operatorWorkspace": "운영 작업",
     "nav.adminWorkspace": "관리 / 개발",
@@ -2537,9 +2543,15 @@ async function logout() {
   } catch (error) {
     console.warn("Logout request failed; clearing local session state.", error);
   } finally {
+    setSidebarUserPanel(false);
     setAuthenticated(false);
     if (window.location.hash) history.replaceState(null, "", window.location.pathname || "/");
   }
+}
+
+async function switchAccount() {
+  await logout();
+  loginEmail?.focus();
 }
 
 function openAccountGuide() {
@@ -8236,6 +8248,16 @@ qrLoginButton.addEventListener("click", startQrLogin);
 qrCodeBox.addEventListener("click", confirmQrLogin);
 logoutButton.addEventListener("click", logout);
 logoutSideButton.addEventListener("click", (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  logout();
+});
+sidebarAccountSwitchButton?.addEventListener("click", (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  switchAccount();
+});
+sidebarUserLogoutButton?.addEventListener("click", (event) => {
   event.preventDefault();
   event.stopPropagation();
   logout();
