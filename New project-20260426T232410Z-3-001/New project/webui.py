@@ -91,6 +91,9 @@ class WebContext:
         self.agent_service_queue_root = ROOT / "runtime" / "agent_service"
         self.agent_worker_lock = threading.Lock()
         self.agent_worker_thread: threading.Thread | None = None
+        self.veeam_steering_lock = threading.Lock()
+        self.veeam_steering_thread: threading.Thread | None = None
+        self.veeam_steering_state_path = ROOT / "runtime" / "veeam_steering_state.json"
 
     @property
     def app_config(self):
@@ -181,6 +184,77 @@ class WebContext:
             queue_root=str(self.agent_service_queue_root),
             message="LOCK-FIX Agent/Service worker started inside LOCKFIXWebUI Windows Service.",
         )
+
+    def start_veeam_steering_worker(self) -> None:
+        if str(os.environ.get("LOCKFIX_DISABLE_VEEAM_STEERING", "")).strip() in {"1", "true", "TRUE", "yes", "YES"}:
+            return
+        if not self.config.veeam.enabled:
+            return
+        with self.veeam_steering_lock:
+            if self.veeam_steering_thread and self.veeam_steering_thread.is_alive():
+                return
+            thread = threading.Thread(
+                target=self.run_veeam_steering_forever,
+                name="LOCKFIXVeeamSteeringWorker",
+                daemon=True,
+            )
+            thread.start()
+            self.veeam_steering_thread = thread
+        self.controller.audit.write(
+            "veeam.steering.worker.started",
+            state_path=str(self.veeam_steering_state_path),
+            message="LOCK-FIX Veeam/Air-Gap steering worker started automatically inside LOCKFIXWebUI.",
+        )
+
+    def run_veeam_steering_forever(self) -> None:
+        while True:
+            interval = 10
+            try:
+                config = self.config
+                interval = max(1, int(getattr(config.veeam, "poll_interval_seconds", 10) or 10))
+                if config.veeam.enabled:
+                    self.run_veeam_steering_once()
+            except Exception as exc:
+                self.write_veeam_steering_state(
+                    {
+                        "ok": False,
+                        "last_error": str(exc),
+                        "last_run_at": datetime.now().isoformat(timespec="seconds"),
+                    }
+                )
+                try:
+                    self.controller.audit.write(
+                        "veeam.steering.failed",
+                        error=str(exc),
+                        message="Automatic Veeam/Air-Gap steering tick failed; worker will retry on the next interval.",
+                    )
+                except Exception:
+                    pass
+            time.sleep(interval)
+
+    def run_veeam_steering_once(self) -> dict:
+        probe = object.__new__(LockFixWebHandler)
+        probe.context = self
+        runtime = LockFixWebHandler.veeam_interlock_runtime(probe, time.time(), poll_api=True)
+        auto_isolate = runtime.get("auto_isolate") if isinstance(runtime.get("auto_isolate"), dict) else {}
+        state = {
+            "ok": True,
+            "last_run_at": datetime.now().isoformat(timespec="seconds"),
+            "worker": "LOCKFIXVeeamSteeringWorker",
+            "job": runtime.get("job"),
+            "status": runtime.get("status"),
+            "progress_percent": runtime.get("progress_percent"),
+            "current_step": runtime.get("current_step"),
+            "auto_isolate_state": auto_isolate.get("state") or "",
+            "auto_isolate_triggered": bool(auto_isolate.get("triggered")),
+            "auto_isolate_message": auto_isolate.get("message") or "",
+        }
+        self.write_veeam_steering_state(state)
+        return state
+
+    def write_veeam_steering_state(self, state: dict) -> None:
+        self.veeam_steering_state_path.parent.mkdir(parents=True, exist_ok=True)
+        self.veeam_steering_state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def veeam_backup_copy_repository_path(self) -> str:
         veeam = self.config.veeam
@@ -7576,6 +7650,7 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
 def run(host: str = "127.0.0.1", port: int = 8088, config_path: Path = DEFAULT_CONFIG) -> None:
     context = WebContext(config_path)
     context.start_agent_service_worker()
+    context.start_veeam_steering_worker()
     LockFixWebHandler.context = context
     server = ThreadingHTTPServer((host, port), LockFixWebHandler)
     print(f"LOCK-FIX PoC UI: http://{host}:{port}")

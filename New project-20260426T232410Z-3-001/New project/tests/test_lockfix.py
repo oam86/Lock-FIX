@@ -2807,6 +2807,17 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("os.startfile", source)
         self.assertIn("local access only", source)
 
+    def test_webui_starts_automatic_veeam_steering_worker(self) -> None:
+        source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")
+
+        self.assertIn("def start_veeam_steering_worker", source)
+        self.assertIn("LOCKFIXVeeamSteeringWorker", source)
+        self.assertIn("run_veeam_steering_once", source)
+        self.assertIn("veeam_steering_state.json", source)
+        self.assertIn("context.start_veeam_steering_worker()", source)
+        self.assertIn("LOCKFIX_DISABLE_VEEAM_STEERING", source)
+        self.assertIn("veeam_interlock_runtime(probe, time.time(), poll_api=True)", source)
+
     def test_webui_uses_password_reauth_only_for_emergency_reconnect(self) -> None:
         source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")
         app_source = (Path.cwd() / "web" / "static" / "app.js").read_text(encoding="utf-8")
