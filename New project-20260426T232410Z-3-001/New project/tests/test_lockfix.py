@@ -799,13 +799,12 @@ class LockFixTests(unittest.TestCase):
 
         self.assertIn('class="qr-submit"', html)
         self.assertIn(".qr-submit::before", css)
-        self.assertIn("uploaded blue QR mark", css)
+        self.assertIn("uploaded QR2 image mark", css)
         self.assertIn("width: 32px;", css)
-        self.assertIn("23px 0 / 9px 2px no-repeat", css)
-        self.assertNotIn("linear-gradient(#172033 0 0)", css)
-        self.assertIn("linear-gradient(#ffffff 0 0) 10px 10px / 3px 3px no-repeat", css)
+        self.assertIn('url("/static/qr-login-icon.png?v=20260520-qr2") center / contain no-repeat', css)
+        self.assertIn("qr-login-icon.png", css)
         self.assertIn("filter: opacity(0.42)", css)
-        self.assertIn("saturate(0.82)", css)
+        self.assertIn("saturate(0.86)", css)
         self.assertIn(".qr-submit:hover::before", css)
         self.assertIn("filter: opacity(1)", css)
         self.assertIn("rgba(11, 121, 255, 0.2)", css)
@@ -814,7 +813,8 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("font-size: 18px;", css)
         self.assertIn("font-weight: 600;", css)
         self.assertIn(".qr-submit:hover,", css)
-        self.assertIn("20260520-uploaded-qr-logo", html)
+        self.assertIn("20260520-qr2-image-logo", html)
+        self.assertTrue((root / "web" / "static" / "qr-login-icon.png").exists())
 
     def test_sidebar_user_menu_has_logout_and_account_switch(self) -> None:
         root = Path.cwd()

@@ -368,34 +368,9 @@ body {
   width: 32px;
   height: 32px;
   flex: 0 0 32px;
-  /* uploaded blue QR mark */
-  background:
-    linear-gradient(#0b79ff 0 0) 0 0 / 9px 2px no-repeat,
-    linear-gradient(#0b79ff 0 0) 0 0 / 2px 9px no-repeat,
-    linear-gradient(#0b79ff 0 0) 23px 0 / 9px 2px no-repeat,
-    linear-gradient(#0b79ff 0 0) 30px 0 / 2px 9px no-repeat,
-    linear-gradient(#0b79ff 0 0) 0 30px / 9px 2px no-repeat,
-    linear-gradient(#0b79ff 0 0) 0 23px / 2px 9px no-repeat,
-    linear-gradient(#0b79ff 0 0) 23px 30px / 9px 2px no-repeat,
-    linear-gradient(#0b79ff 0 0) 30px 23px / 2px 9px no-repeat,
-    linear-gradient(#0b79ff 0 0) 7px 7px / 8px 8px no-repeat,
-    linear-gradient(#ffffff 0 0) 10px 10px / 3px 3px no-repeat,
-    linear-gradient(#0b79ff 0 0) 18px 7px / 8px 8px no-repeat,
-    linear-gradient(#ffffff 0 0) 21px 10px / 3px 3px no-repeat,
-    linear-gradient(#0b79ff 0 0) 7px 18px / 8px 8px no-repeat,
-    linear-gradient(#ffffff 0 0) 10px 21px / 3px 3px no-repeat,
-    linear-gradient(#0b79ff 0 0) 15px 7px / 3px 3px no-repeat,
-    linear-gradient(#0b79ff 0 0) 15px 11px / 3px 3px no-repeat,
-    linear-gradient(#0b79ff 0 0) 12px 14px / 3px 3px no-repeat,
-    linear-gradient(#0b79ff 0 0) 18px 14px / 3px 3px no-repeat,
-    linear-gradient(#0b79ff 0 0) 21px 17px / 3px 3px no-repeat,
-    linear-gradient(#0b79ff 0 0) 15px 18px / 3px 3px no-repeat,
-    linear-gradient(#0b79ff 0 0) 19px 20px / 3px 3px no-repeat,
-    linear-gradient(#0b79ff 0 0) 24px 20px / 3px 6px no-repeat,
-    linear-gradient(#0b79ff 0 0) 16px 24px / 6px 3px no-repeat,
-    linear-gradient(#0b79ff 0 0) 22px 26px / 3px 3px no-repeat,
-    #ffffff;
-  filter: opacity(0.42) saturate(0.82) drop-shadow(0 1px 0 rgba(255, 255, 255, 0.8));
+  /* uploaded QR2 image mark */
+  background: url("/static/qr-login-icon.png?v=20260520-qr2") center / contain no-repeat;
+  filter: opacity(0.42) saturate(0.86) drop-shadow(0 1px 0 rgba(255, 255, 255, 0.8));
   transition: filter 160ms ease, transform 160ms ease;
 }
 
