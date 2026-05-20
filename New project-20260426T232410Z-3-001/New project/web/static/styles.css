@@ -4403,8 +4403,9 @@ button {
 }
 
 .emergency-access-copy p {
-  max-width: 720px;
+  max-width: none;
   margin: 0;
+  white-space: nowrap;
 }
 
 .emergency-access-control-card {
