@@ -3452,6 +3452,40 @@ function dashboardHealthValueClass(label, value) {
   return "health-value-neutral";
 }
 
+function dashboardAlertTarget(label, value) {
+  const text = `${label || ""} ${value || ""}`.toLowerCase();
+  if (/veeam|repository|auto isolation|isolation|disk offline|offline error|offline/.test(text)) return "sources";
+  if (/audit|login|approval|policy/.test(text)) return "logs2";
+  if (/network|port|latency|traffic/.test(text)) return "network2";
+  if (/hardware|disk|memory|cpu|raid/.test(text)) return "detect2";
+  return "monitoring";
+}
+
+function dashboardAlertTitle(label, value, target) {
+  const names = {
+    sources: uiSettings.language === "ko" ? "에어갭 화면" : "Air-Gap view",
+    logs2: uiSettings.language === "ko" ? "로그 화면" : "Logs view",
+    network2: uiSettings.language === "ko" ? "네트워크 화면" : "Network view",
+    detect2: uiSettings.language === "ko" ? "탐지 내역 화면" : "Detection view",
+    monitoring: uiSettings.language === "ko" ? "모니터링 화면" : "Monitoring view",
+  };
+  return uiSettings.language === "ko"
+    ? `${label || "알림"}: ${value || "-"} - ${names[target] || names.monitoring}에서 상세 확인`
+    : `${label || "Alert"}: ${value || "-"} - open ${names[target] || names.monitoring}`;
+}
+
+function bindDashboardAlertLinks() {
+  document.querySelectorAll(".health-row[data-alert-target]").forEach((row) => {
+    row.addEventListener("click", () => showView(row.dataset.alertTarget || "monitoring"));
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        showView(row.dataset.alertTarget || "monitoring");
+      }
+    });
+  });
+}
+
 function markLiveRequest(state) {
   state.status = "pending";
   state.lastRequestAt = emergencyReconnectTimestamp();
@@ -3561,7 +3595,10 @@ function renderDashboard(data) {
     ? alerts.map((item) => {
       const label = item.label || "-";
       const value = item.value || "-";
-      return `<div class="health-row"><span>${escapeHtml(label)}</span><b class="${dashboardHealthValueClass(label, value)}">${escapeHtml(value)}</b></div>`;
+      const target = dashboardAlertTarget(label, value);
+      const valueClass = dashboardHealthValueClass(label, value);
+      const rowClass = valueClass === "health-value-danger" ? "health-row health-row-danger" : "health-row";
+      return `<button type="button" class="${rowClass}" data-alert-target="${escapeHtml(target)}" title="${escapeHtml(dashboardAlertTitle(label, value, target))}"><span>${escapeHtml(label)}</span><b class="${valueClass}">${escapeHtml(value)}</b></button>`;
     }).join("")
     : `<div class="dashboard-empty-row">현재 표시할 경고 항목이 없습니다.</div>`;
   const auditCounts = [
@@ -3674,7 +3711,6 @@ function renderDashboard(data) {
           <span class="dashboard-panel-grip" draggable="true" data-drag-axis="y" aria-hidden="true" title="Drag card up or down"></span>
         </header>
         <div class="panel-body dashboard-alert-body">
-          <div class="alert-ok"><span>${alerts.some((item) => String(item.value || "").match(/Failed|Detected|Error/i)) ? "확인 필요" : copy.noCritical}</span></div>
           ${alertRows}
           <a>${copy.detail} ›</a>
         </div>
@@ -3704,6 +3740,7 @@ function renderDashboard(data) {
   `;
   enableDashboardKpiDrag(document.querySelector("#dashboardKpiBoard"));
   enableDashboardPanelDrag(document.querySelector("#dashboardContentBoard"));
+  bindDashboardAlertLinks();
 }
 
 function renderDashboardFallback(message = "") {

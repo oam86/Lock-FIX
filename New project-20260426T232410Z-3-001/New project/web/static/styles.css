@@ -11721,30 +11721,48 @@ td {
   text-decoration: none;
 }
 
-.alert-ok {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 76px;
-  margin: 0;
-  border-bottom: 1px solid #e4e9ef;
-  color: #17212b;
-  font-size: 14.5px;
-  font-weight: 800;
-}
-
 .health-row,
 .policy-row {
   grid-template-columns: 1fr auto;
   min-height: 34px;
 }
 
+.health-row {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid #e4e9ef;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.health-row:hover,
+.health-row:focus-visible {
+  background: #f8fbff;
+  border-color: #cddbf0;
+  outline: none;
+  box-shadow: inset 3px 0 0 #2563eb;
+}
+
+.health-row-danger {
+  background: #fff7f7;
+  border-color: #fecaca;
+}
+
+.health-row-danger:hover,
+.health-row-danger:focus-visible {
+  background: #fff1f2;
+  border-color: #fca5a5;
+  box-shadow: inset 3px 0 0 #b91c1c;
+}
+
 .health-row span {
-  font-size: 12px;
+  font-size: 14.5px;
 }
 
 .health-row b {
-  font-size: 12.5px;
+  font-size: 14.5px;
   font-weight: 800;
 }
 
