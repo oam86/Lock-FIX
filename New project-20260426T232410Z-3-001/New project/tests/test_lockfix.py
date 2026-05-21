@@ -5,6 +5,7 @@ import os
 import time
 import unittest
 import uuid
+import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -793,6 +794,40 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("cellXfs", webui_source)
         self.assertNotIn('"LOCK-FIX Report"', webui_source)
         self.assertIn("20260520-sidebar-account-actions", html)
+
+    def test_report_exports_are_balanced_documents(self) -> None:
+        tmp_path = self.make_workspace()
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(write_config(tmp_path))
+        report = handler.report_summary()
+
+        pdf_body = handler.build_pdf_report(report)
+        webui_source = Path.cwd().joinpath("webui.py").read_text(encoding="utf-8")
+        self.assertTrue(pdf_body.startswith(b"%PDF-1.4"))
+        self.assertIn(b"LOCK-FIX System Inspection Report", pdf_body)
+        self.assertIn("def fit_text", webui_source)
+        self.assertIn("value_size = 13 if len(value_text) <= 20 else 10", webui_source)
+        self.assertNotIn(b"(LOCK-FIX Hardware Detection Monitoring)", pdf_body)
+
+        xlsx_body = handler.build_xlsx([
+            ["LOCK-FIX System Inspection Report"],
+            ["Metric", "Current", "Average", "Peak", "Threshold", "Status", "Recommendation"],
+            ["Memory", 92.3, 92.2, 92.9, 80, "Warning", "Check resident services"],
+        ])
+        self.assertTrue(zipfile.is_zipfile(webui.io.BytesIO(xlsx_body)))
+        with zipfile.ZipFile(webui.io.BytesIO(xlsx_body)) as archive:
+            self.assertIn("xl/worksheets/sheet1.xml", archive.namelist())
+            sheet_xml = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
+            self.assertIn("LOCK-FIX System Inspection Report", sheet_xml)
+            self.assertIn('wrapText="1"', archive.read("xl/styles.xml").decode("utf-8"))
+
+        docx_body = handler.build_docx(report)
+        self.assertTrue(zipfile.is_zipfile(webui.io.BytesIO(docx_body)))
+        with zipfile.ZipFile(webui.io.BytesIO(docx_body)) as archive:
+            self.assertIn("word/document.xml", archive.namelist())
+            document_xml = archive.read("word/document.xml").decode("utf-8")
+            self.assertIn("LOCK-FIX System Inspection Report", document_xml)
+            self.assertIn("<w:tbl>", document_xml)
 
     def test_qr_login_button_has_visible_icon_treatment(self) -> None:
         root = Path.cwd()

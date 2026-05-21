@@ -7232,10 +7232,17 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                 return "0.72 0.11 0.11"
             return "0.02 0.48 0.25"
 
+        def fit_text(value: object, width: float, size: int, minimum: int = 8) -> str:
+            # Approximate Helvetica width so long values stay inside fixed PDF cards.
+            limit = max(minimum, int(width / max(size * 0.48, 1)))
+            return textwrap.shorten(str(value), width=limit, placeholder="...")
+
         def card(x: float, y: float, w: float, h: float, label: str, value: str, color: str = "0.04 0.18 0.47") -> None:
             rect(x, y, w, h, stroke="0.76 0.83 0.91", fill="0.98 0.99 1")
-            text_at(x + 12, y + h - 18, label.upper(), 8, "0.32 0.40 0.50", True)
-            text_at(x + 12, y + 16, value, 16, color, True)
+            value_text = str(value)
+            value_size = 13 if len(value_text) <= 20 else 10
+            text_at(x + 12, y + h - 14, fit_text(label.upper(), w - 24, 7), 7, "0.32 0.40 0.50", True)
+            text_at(x + 12, y + 12, fit_text(value_text, w - 24, value_size), value_size, color, True)
 
         def table(x: float, y: float, widths: list[float], rows: list[list[object]], header: bool = True, row_h: float = 21) -> float:
             current_y = y
@@ -7262,10 +7269,10 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
 
         customer = report["customer"]
         server = report["server"]
-        card(42, 460, 175, 40, "Customer", customer["customer_name"])
-        card(229, 460, 175, 40, "Engineer", customer["engineer"])
-        card(416, 460, 175, 40, "Inspection Date", customer["inspection_date"])
-        card(603, 460, 175, 40, "Service", server["service"])
+        card(42, 456, 175, 44, "Customer", customer["customer_name"])
+        card(229, 456, 175, 44, "Engineer", customer["engineer"])
+        card(416, 456, 175, 44, "Inspection Date", customer["inspection_date"])
+        card(603, 456, 175, 44, "Service", server["service"])
 
         text_at(42, 436, "Resource Summary", 12, "0.04 0.12 0.24", True)
         summary_rows = [["Metric", "Current", "Average", "Peak", "Threshold", "Result"]]
