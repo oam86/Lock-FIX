@@ -2948,7 +2948,20 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("dashboardLogs", app_source)
         self.assertIn("latestLogsData", app_source)
         self.assertIn("opsEventsToggle?.addEventListener", app_source)
-        self.assertIn("v=20260521-compact-monitoring-chart", html_source)
+        self.assertIn("v=20260521-regular-log-text", html_source)
+
+    def test_logs_timeline_text_uses_regular_weight(self) -> None:
+        root = Path.cwd()
+        html_source = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        css_source = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn(".logs-history-table td {", css_source)
+        self.assertIn(".history-type {\n  font-weight: 400;", css_source)
+        self.assertIn(".log-message-button {\n  font-size: 13px !important;\n  font-weight: 400 !important;", css_source)
+        self.assertIn(".severity-info,\n.severity-notice {\n  color: #12935f;\n  font-weight: 400;", css_source)
+        self.assertIn(".log-severity-badge {", css_source)
+        self.assertIn("font-weight: 400;", css_source)
+        self.assertIn("v=20260521-regular-log-text", html_source)
 
     def test_network_detail_cards_use_subtle_show_toggles(self) -> None:
         root = Path.cwd()
@@ -3375,7 +3388,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("word-break: keep-all;", css_source)
         self.assertIn(".emergency-access-copy p", css_source)
         self.assertIn("white-space: nowrap;", css_source)
-        self.assertIn("20260521-compact-monitoring-chart", html_source)
+        self.assertIn("20260521-regular-log-text", html_source)
         self.assertIn("justify-content: stretch;", css_source)
         self.assertIn("padding: 0 8px;", css_source)
         self.assertIn(".flow-step-card {", css_source)

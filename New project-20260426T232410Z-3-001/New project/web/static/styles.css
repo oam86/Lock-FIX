@@ -6473,7 +6473,7 @@ button {
 .logs-history-table td {
   color: #3e4a52;
   background: #ffffff;
-  font-weight: 600;
+  font-weight: 400;
   line-height: 1.35;
 }
 
@@ -6512,7 +6512,7 @@ button {
   color: #1f2937;
   text-align: left;
   font: inherit;
-  font-weight: 650;
+  font-weight: 400;
   line-height: 1.35;
   cursor: default;
 }
@@ -6682,12 +6682,12 @@ button {
 
 .logs-history-table td {
   color: #223446;
-  font-weight: 750;
+  font-weight: 400;
 }
 
 .log-message-button {
   font-size: 13px !important;
-  font-weight: 850;
+  font-weight: 400 !important;
   line-height: 1.35 !important;
   cursor: pointer;
 }
@@ -7084,7 +7084,7 @@ button {
 }
 
 .history-type {
-  font-weight: 900;
+  font-weight: 400;
 }
 
 .history-warning {
@@ -7105,19 +7105,19 @@ button {
 
 .severity-warn {
   color: #ff8a00;
-  font-weight: 900;
+  font-weight: 400;
 }
 
 .severity-error,
 .severity-critical {
   color: #e11d2e;
-  font-weight: 900;
+  font-weight: 400;
 }
 
 .severity-info,
 .severity-notice {
   color: #12935f;
-  font-weight: 900;
+  font-weight: 400;
 }
 
 .log-severity-badge {
@@ -7129,7 +7129,7 @@ button {
   border-radius: 999px;
   padding: 0 9px;
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 400;
 }
 
 .log-severity-badge.severity-error,
