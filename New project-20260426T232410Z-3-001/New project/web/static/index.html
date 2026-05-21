@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LOCK-FIX PoC</title>
-    <!-- cache history: v=20260520-sidebar-account-actions, v=20260520-alert-link-routing, v=20260520-qr-icon-restore, v=20260520-muted-qr-logo, v=20260520-blue-qr-logo, v=20260520-centered-qr-logo, v=20260520-uploaded-qr-logo, v=20260520-qr2-image-logo, v=20260521-hide-ops-events-panel -->
-    <link rel="stylesheet" href="/static/styles.css?v=20260521-hide-ops-events-panel" />
+    <!-- cache history: v=20260520-sidebar-account-actions, v=20260520-alert-link-routing, v=20260520-qr-icon-restore, v=20260520-muted-qr-logo, v=20260520-blue-qr-logo, v=20260520-centered-qr-logo, v=20260520-uploaded-qr-logo, v=20260520-qr2-image-logo, v=20260521-hide-ops-events-panel, v=20260521-compact-monitoring-chart -->
+    <link rel="stylesheet" href="/static/styles.css?v=20260521-compact-monitoring-chart" />
   </head>
   <body>
     <section class="login-screen" id="loginScreen">
@@ -158,7 +158,7 @@
           </div>
           <div class="legend metric-filter" role="group" aria-label="Monitoring metric filter"><button type="button" class="metric-filter-button active" data-metric="cpu"><i class="cpu-dot"></i>CPU</button><button type="button" class="metric-filter-button" data-metric="memory"><i class="memory-dot"></i>Memory</button><button type="button" class="metric-filter-button" data-metric="disk"><i class="disk-dot"></i>Disk</button><button type="button" class="metric-filter-button" data-metric="network"><i class="network-dot"></i>Network</button><button type="button" class="metric-filter-button" data-metric="interface"><i class="interface-dot"></i>Interface</button></div>
           <div class="monitoring-summary-strip" id="monitoringSummaryStrip" aria-live="polite"></div>
-          <svg class="line-chart" id="monitoringChart" viewBox="0 0 920 250" role="img" aria-label="hardware usage chart"></svg>
+          <svg class="line-chart" id="monitoringChart" viewBox="0 0 920 210" role="img" aria-label="hardware usage chart"></svg>
           <div class="current-divider" data-i18n="monitoring.currentState">Current status</div>
           <div class="gauge-grid">
             <div class="gauge-card" id="cpuGauge"></div>
@@ -1152,7 +1152,7 @@
       </div>
     </template>
 
-    <script src="/static/app.js?v=20260521-hide-ops-events-panel"></script>
+    <script src="/static/app.js?v=20260521-compact-monitoring-chart"></script>
   </body>
 </html>
 

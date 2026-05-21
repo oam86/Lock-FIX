@@ -7719,8 +7719,8 @@ function renderSources(data) {
 
 function drawLineChart(series) {
   const width = 920;
-  const height = 250;
-  const pad = { left: 96, right: 22, top: 8, bottom: 34 };
+  const height = 210;
+  const pad = { left: 90, right: 22, top: 6, bottom: 28 };
   const chartWidth = width - pad.left - pad.right;
   const chartHeight = height - pad.top - pad.bottom;
   const visibleCount = Math.max(8, Math.round(series.length / monitoringZoom));
@@ -7750,7 +7750,7 @@ function drawLineChart(series) {
   const grid = [0, 20, 40, 60, 80, 100]
     .map((tick) => {
       const yy = y(tick).toFixed(1);
-      return `<line x1="${pad.left}" y1="${yy}" x2="${width - pad.right}" y2="${yy}" class="grid-line"></line><text x="${pad.left - 16}" y="${Number(yy) + 4}" class="axis-label" text-anchor="end">${tick}.00%</text>`;
+      return `<line x1="${pad.left}" y1="${yy}" x2="${width - pad.right}" y2="${yy}" class="grid-line"></line><text x="${pad.left - 14}" y="${Number(yy) + 3.5}" class="axis-label" text-anchor="end">${tick}.00%</text>`;
     })
     .join("");
 
@@ -7758,7 +7758,7 @@ function drawLineChart(series) {
     .filter((_, index) => index % Math.max(1, Math.ceil(visibleSeries.length / 6)) === 0 || index === visibleSeries.length - 1)
     .map((item) => {
       const realIndex = visibleSeries.indexOf(item);
-      return `<text x="${x(realIndex)}" y="${height - 22}" class="axis-label" text-anchor="middle">${item.label.slice(0, 5)}</text>`;
+      return `<text x="${x(realIndex)}" y="${height - 18}" class="axis-label" text-anchor="middle">${item.label.slice(0, 5)}</text>`;
     })
     .join("");
 

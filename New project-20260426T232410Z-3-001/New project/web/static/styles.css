@@ -2285,7 +2285,7 @@ button {
 .line-chart {
   width: 100%;
   height: auto;
-  min-height: 210px;
+  min-height: 172px;
 }
 
 .grid-line {
@@ -2295,12 +2295,12 @@ button {
 
 .axis-label {
   fill: #6d7c86;
-  font-size: 10.5px;
+  font-size: 9.4px;
 }
 
 .axis-title {
   fill: #4d626f;
-  font-size: 10.5px;
+  font-size: 9.6px;
   font-weight: 800;
 }
 
