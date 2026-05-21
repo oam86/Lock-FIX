@@ -7162,8 +7162,21 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             ["Engineer Opinion"],
             ["Content", extras["engineer_opinion"] or "-"],
             ["Electronic Signature"],
-            ["Engineer Inspection Signature", "Attached" if extras["engineer_signature"] else "-"],
-            ["Manager Signature", "Attached" if extras["manager_signature"] else "-"],
+            ["Signature Confirmation", "Role", "Status", "Signature Date", "Signature / Seal"],
+            [
+                "Engineer Inspection Signature",
+                "Engineer",
+                "Signed" if extras["engineer_signature"] else "Not Signed",
+                report["generated_at"] if extras["engineer_signature"] else "-",
+                "Attached" if extras["engineer_signature"] else "Pending",
+            ],
+            [
+                "Manager Signature",
+                "Manager",
+                "Signed" if extras["manager_signature"] else "Not Signed",
+                report["generated_at"] if extras["manager_signature"] else "-",
+                "Attached" if extras["manager_signature"] else "Pending",
+            ],
             [],
             ["Metric", "Current", "Average", "Peak", "Threshold", "Status", "Recommendation"],
             *[
@@ -7291,11 +7304,13 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         text_at(54, 66, "Engineer Opinion", 9, "0.32 0.40 0.50", True)
         text_at(54, 50, textwrap.shorten(extras.get("engineer_opinion") or "-", width=76, placeholder="..."), 8, "0.05 0.13 0.24")
         rect(412, 38, 174, 46, stroke="0.82 0.87 0.92", fill="0.99 1 1")
-        text_at(424, 66, "Engineer Signature", 9, "0.32 0.40 0.50", True)
-        text_at(424, 50, "Attached" if extras.get("engineer_signature") else "-", 9, "0.05 0.13 0.24", True)
+        text_at(424, 68, "Signature Confirmation", 8, "0.32 0.40 0.50", True)
+        text_at(424, 55, "Engineer: " + ("Signed" if extras.get("engineer_signature") else "Not Signed"), 8, "0.05 0.13 0.24", True)
+        text_at(424, 43, "Date: " + (report["generated_at"] if extras.get("engineer_signature") else "-"), 7, "0.32 0.40 0.50")
         rect(604, 38, 174, 46, stroke="0.82 0.87 0.92", fill="0.99 1 1")
-        text_at(616, 66, "Manager Signature", 9, "0.32 0.40 0.50", True)
-        text_at(616, 50, "Attached" if extras.get("manager_signature") else "-", 9, "0.05 0.13 0.24", True)
+        text_at(616, 68, "Signature Confirmation", 8, "0.32 0.40 0.50", True)
+        text_at(616, 55, "Manager: " + ("Signed" if extras.get("manager_signature") else "Not Signed"), 8, "0.05 0.13 0.24", True)
+        text_at(616, 43, "Date: " + (report["generated_at"] if extras.get("manager_signature") else "-"), 7, "0.32 0.40 0.50")
 
         stream = "\n".join(commands).encode("latin-1")
         objects = [
@@ -7393,6 +7408,7 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             "Customer Name",
             "OS Version",
             "Content",
+            "Signature Confirmation",
             "Engineer Inspection Signature",
         }
 
@@ -7552,8 +7568,21 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             *[[item["time"], f"{item['cpu']}%", f"{item['memory']}%", f"{item['disk']}%", f"{item['network']}%"] for item in report["series"][-10:]],
         ]
         signature_rows = [
-            ["Engineer Inspection Signature", "Attached" if extras["engineer_signature"] else "-"],
-            ["Manager Signature", "Attached" if extras["manager_signature"] else "-"],
+            ["Signature Confirmation", "Role", "Status", "Signature Date", "Signature / Seal"],
+            [
+                "Engineer Inspection Signature",
+                "Engineer",
+                "Signed" if extras["engineer_signature"] else "Not Signed",
+                report["generated_at"] if extras["engineer_signature"] else "-",
+                "Attached" if extras["engineer_signature"] else "Pending",
+            ],
+            [
+                "Manager Signature",
+                "Manager",
+                "Signed" if extras["manager_signature"] else "Not Signed",
+                report["generated_at"] if extras["manager_signature"] else "-",
+                "Attached" if extras["manager_signature"] else "Pending",
+            ],
         ]
 
         body = [
@@ -7572,7 +7601,7 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             para("Engineer Opinion", "section"),
             para(extras["engineer_opinion"] or "-"),
             para("Electronic Signature", "section"),
-            table(signature_rows),
+            table(signature_rows, header=True),
             *signature_blocks,
             para("Recent Monitoring Samples", "section"),
             table(time_rows, header=True),

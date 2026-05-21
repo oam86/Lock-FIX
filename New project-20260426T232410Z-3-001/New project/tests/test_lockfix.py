@@ -805,12 +805,20 @@ class LockFixTests(unittest.TestCase):
         webui_source = Path.cwd().joinpath("webui.py").read_text(encoding="utf-8")
         self.assertTrue(pdf_body.startswith(b"%PDF-1.4"))
         self.assertIn(b"LOCK-FIX System Inspection Report", pdf_body)
+        self.assertIn(b"Signature Confirmation", pdf_body)
+        self.assertIn(b"Engineer: Not Signed", pdf_body)
+        self.assertIn(b"Manager: Not Signed", pdf_body)
         self.assertIn("def fit_text", webui_source)
         self.assertIn("value_size = 13 if len(value_text) <= 20 else 10", webui_source)
         self.assertNotIn(b"(LOCK-FIX Hardware Detection Monitoring)", pdf_body)
 
         xlsx_body = handler.build_xlsx([
             ["LOCK-FIX System Inspection Report"],
+            ["Electronic Signature"],
+            ["Signature Confirmation", "Role", "Status", "Signature Date", "Signature / Seal"],
+            ["Engineer Inspection Signature", "Engineer", "Not Signed", "-", "Pending"],
+            ["Manager Signature", "Manager", "Not Signed", "-", "Pending"],
+            [],
             ["Metric", "Current", "Average", "Peak", "Threshold", "Status", "Recommendation"],
             ["Memory", 92.3, 92.2, 92.9, 80, "Warning", "Check resident services"],
         ])
@@ -819,6 +827,9 @@ class LockFixTests(unittest.TestCase):
             self.assertIn("xl/worksheets/sheet1.xml", archive.namelist())
             sheet_xml = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
             self.assertIn("LOCK-FIX System Inspection Report", sheet_xml)
+            self.assertIn("Signature Confirmation", sheet_xml)
+            self.assertIn("Signature / Seal", sheet_xml)
+            self.assertIn("Not Signed", sheet_xml)
             self.assertIn('wrapText="1"', archive.read("xl/styles.xml").decode("utf-8"))
 
         docx_body = handler.build_docx(report)
@@ -827,6 +838,9 @@ class LockFixTests(unittest.TestCase):
             self.assertIn("word/document.xml", archive.namelist())
             document_xml = archive.read("word/document.xml").decode("utf-8")
             self.assertIn("LOCK-FIX System Inspection Report", document_xml)
+            self.assertIn("Signature Confirmation", document_xml)
+            self.assertIn("Signature / Seal", document_xml)
+            self.assertIn("Not Signed", document_xml)
             self.assertIn("<w:tbl>", document_xml)
 
     def test_qr_login_button_has_visible_icon_treatment(self) -> None:
