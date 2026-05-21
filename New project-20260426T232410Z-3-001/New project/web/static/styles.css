@@ -1824,6 +1824,10 @@ button {
   padding-top: 14px;
 }
 
+.ops-events[hidden] {
+  display: none !important;
+}
+
 .ops-events-head {
   display: flex;
   flex-wrap: wrap;
