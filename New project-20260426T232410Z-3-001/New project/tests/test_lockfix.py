@@ -4434,6 +4434,72 @@ class LockFixTests(unittest.TestCase):
         self.assertEqual(logs[0]["backup_size"], "479.0 GB")
         self.assertIn("Last retained Veeam detail log", logs[0]["actions"][-1])
 
+    def test_webui_completed_auto_isolate_keeps_airgap_step_five_visible(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        raw["veeam"] = {"job_name": "Agent_backup"}
+        config_path.write_text(json.dumps(raw), encoding="utf-8")
+
+        class Probe:
+            context = webui.WebContext(config_path)
+
+            def veeam_install_properties(self):
+                return {}
+
+            def tcp_port_open(self, host, port, timeout=0.25):
+                return True
+
+            def save_veeam_last_logs(self, session_logs, checked_at):
+                return None
+
+            def auto_isolate_after_veeam_success(self, payload, status, last_checked):
+                return {
+                    "enabled": True,
+                    "triggered": False,
+                    "processed": True,
+                    "state": "ISOLATED",
+                    "message": "This Backup Done session already completed LOCK-FIX isolation.",
+                }
+
+            def poll_veeam_api(self, server, port, local_payload):
+                return {
+                    "api_synced": True,
+                    "server": "192.168.219.230",
+                    "port": 9419,
+                    "job": "Agent_backup",
+                    "status": "Success",
+                    "result": "Success",
+                    "progress_percent": 100,
+                    "current_step": 1,
+                    "slot_id": "BAY-01",
+                    "started_at": "2026-05-23 07:17:30",
+                    "ended_at": "2026-05-23 07:17:39",
+                    "session_logs": [
+                        {
+                            "name": "Agent_backup",
+                            "status": "Success",
+                            "ended_at": "2026-05-23 07:17:39",
+                            "progress_percent": 100,
+                            "actions": [
+                                "Backup copy for Agent_backup - 192.168.219.102 started at 2026-05-23 07:17:30",
+                                "Agent_backup - 192.168.219.102 processing finished at 2026-05-23 07:17:39",
+                            ],
+                            "duration": "00:09",
+                        }
+                    ],
+                }
+
+        now = datetime(2026, 5, 23, 7, 17, 45).timestamp()
+        result = webui.LockFixWebHandler.veeam_interlock_runtime(Probe(), now)
+
+        self.assertEqual(result["current_step"], 5)
+        self.assertEqual(result["progress_percent"], 100)
+        self.assertEqual(result["step_logs"][0]["state"], "DONE")
+        self.assertEqual(result["step_logs"][1]["state"], "DONE")
+        self.assertEqual(result["step_logs"][4]["state"], "ACTIVE")
+        self.assertTrue(result["step_logs"][1]["transition_allowed"])
+
     def test_webui_auto_isolate_uses_context_controller(self) -> None:
         tmp_path = self.make_workspace()
         config_path = write_config(tmp_path)

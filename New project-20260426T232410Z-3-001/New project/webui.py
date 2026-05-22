@@ -3757,7 +3757,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         force_waiting_for_new_backup = (
             ((not session_completed or pre_session_match_missing) and current_step <= 1)
             or (
-                auto_isolate.get("state") in {"WAITING_FOR_NEW_BACKUP", "ISOLATED"}
+                auto_isolate.get("state") == "WAITING_FOR_NEW_BACKUP"
                 and bool(auto_isolate.get("processed"))
                 and auto_isolate.get("triggered") is not True
             )
@@ -3835,32 +3835,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     item["progress_percent"] = ""
                     item["transition_allowed"] = False
                     item["detail"] = "최신 백업 완료 신호가 새로 확인되기 전까지 이 단계로 전환하지 않습니다."
-        processed_isolated_waiting = (
-            connected
-            and session_completed
-            and auto_isolate.get("state") == "ISOLATED"
-            and bool(auto_isolate.get("processed"))
-            and auto_isolate.get("triggered") is not True
-        )
-        if processed_isolated_waiting and not force_waiting_for_new_backup:
-            current_step = 1
-            progress = 100
-            for item in step_logs:
-                step_number = int(item.get("step") or 0)
-                if step_number == 1:
-                    item["state"] = "ACTIVE"
-                    item["transition_allowed"] = True
-                    item["progress_percent"] = 100
-                    item["detail"] = (
-                        auto_isolate.get("message")
-                        or "This Backup Done session already completed LOCK-FIX isolation. Waiting for a new Backup Done record before Step 2 Flush."
-                    )
-                else:
-                    item["state"] = "PENDING"
-                    item["transition_allowed"] = False
-                    item["progress_percent"] = ""
-                    item["detail"] = "이미 격리 완료된 백업 이력입니다. 새 백업 완료 접수 전까지 이 단계로 전환하지 않습니다."
-        elif auto_isolate.get("state") == "ISOLATED" and not force_waiting_for_new_backup:
+        completed_isolated = auto_isolate.get("state") == "ISOLATED" and not force_waiting_for_new_backup
+        if completed_isolated:
             current_step = 5
             progress = 100
             for item in step_logs:
@@ -4006,9 +3982,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             )
         slot_id = str(auto_isolate.get("slot_id") or payload.get("slot_id") or os.environ.get("LOCKFIX_SLOT_ID") or next(iter(self.context.config.slots), "BAY-01"))
         interlock_actions = []
-        history_step = 5 if processed_isolated_waiting else current_step
+        history_step = 5 if completed_isolated else current_step
         if not processed_backup_waiting:
-            if processed_isolated_waiting:
+            if completed_isolated:
                 if LockFixWebHandler.recent_flush_audit_records(self, slot_id, 1):
                     interlock_actions += LockFixWebHandler.veeam_flush_operation_actions(self, slot_id, history_step)
                 if LockFixWebHandler.recent_io_quiet_audit_records(self, slot_id, 1):
