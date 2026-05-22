@@ -4188,6 +4188,24 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def veeam_payload_matches_configured_job(self, payload: dict, session_logs: list[dict] | None = None) -> bool:
+        veeam_config = get_veeam_config(self.context.app_config) or {}
+        configured_job = str(veeam_config.get("job_name") or "").strip().lower()
+        if not configured_job:
+            return True
+        candidates = {
+            str(payload.get("job") or "").strip().lower(),
+            str(payload.get("name") or "").strip().lower(),
+            str(payload.get("job_name") or "").strip().lower(),
+        }
+        for entry in session_logs if isinstance(session_logs, list) else []:
+            if not isinstance(entry, dict):
+                continue
+            candidates.add(str(entry.get("name") or "").strip().lower())
+            candidates.add(str(entry.get("job") or "").strip().lower())
+            candidates.add(str(entry.get("job_name") or "").strip().lower())
+        return configured_job in {item for item in candidates if item}
+
     def veeam_completion_detected(self, payload: dict, session_logs: list[dict], progress: int = 0, checked_at: str = "") -> bool:
         payload = dict(payload)
         payload.setdefault("progress_percent", progress)
@@ -5229,6 +5247,14 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
 
     def auto_isolate_after_veeam_success(self, payload: dict, status: str, checked_at: str) -> dict:
         session_logs = payload.get("session_logs") if isinstance(payload.get("session_logs"), list) else []
+        if not LockFixWebHandler.veeam_payload_matches_configured_job(self, payload, session_logs):
+            configured_job = str((get_veeam_config(self.context.app_config) or {}).get("job_name") or "").strip()
+            actual_job = str(payload.get("job") or payload.get("name") or "-").strip()
+            return {
+                "enabled": True,
+                "triggered": False,
+                "message": f"Waiting for configured Veeam Backup Copy job {configured_job}; latest session is {actual_job}.",
+            }
         if not LockFixWebHandler.veeam_backup_copy_completed(self, payload, session_logs, checked_at):
             return {
                 "enabled": True,
@@ -5312,15 +5338,25 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     "message": "Veeam backup success detected. LOCK-FIX Air-Gap isolation is already running.",
                 }
         if str(previous.get("session_key") or "") == session_key and previous.get("state") == "FAILED":
-            return {
-                "enabled": True,
-                "triggered": False,
-                "slot_id": slot_id,
-                "session_key": session_key,
-                "state": "FAILED",
-                "error": str(previous.get("error") or ""),
-                "message": "Veeam backup success was detected, but the last automatic Air-Gap isolation attempt failed.",
-            }
+            previous_error = str(previous.get("error") or "")
+            if "unknown slot" in previous_error.lower() or LockFixWebHandler.veeam_auto_isolate_in_progress_stale(self, previous):
+                self.context.controller.audit.write(
+                    "veeam.auto_isolate.failed.recovered",
+                    slot_id=slot_id,
+                    session_key=session_key,
+                    previous_error=previous_error,
+                    message="Automatic Air-Gap isolation failure marker was recovered and rescheduled.",
+                )
+            else:
+                return {
+                    "enabled": True,
+                    "triggered": False,
+                    "slot_id": slot_id,
+                    "session_key": session_key,
+                    "state": "FAILED",
+                    "error": previous_error,
+                    "message": "Veeam backup success was detected, but the last automatic Air-Gap isolation attempt failed.",
+                }
         with AIRGAP_AUTO_ISOLATE_LOCK:
             try:
                 latest = json.loads(marker_path.read_text(encoding="utf-8")) if marker_path.exists() else {}

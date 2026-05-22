@@ -149,6 +149,32 @@ class LockFixTests(unittest.TestCase):
 
         self.assertEqual(config.slot("BAY-01").device, "D:\\")
 
+    def test_config_loader_restores_default_slot_for_veeam_only_installs(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "dry_run": True,
+                    "state_path": str(tmp_path / "state.json"),
+                    "audit_log_path": str(tmp_path / "audit.jsonl"),
+                    "veeam": {
+                        "enabled": True,
+                        "job_name": "Agent_backup",
+                        "target_repository_path": "D:\\Backup",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        config = load_config(config_path)
+        slot = config.slot("BAY-01")
+
+        self.assertEqual(slot.device, "D:\\")
+        self.assertEqual(str(slot.mount_point), "D:\\")
+        self.assertIn("lockfix_power_control.ps1", " ".join(slot.power.off_command))
+
     def test_operation_mode_defaults_and_aliases(self) -> None:
         self.assertEqual(normalize_operation_mode(None, False), "commercial")
         self.assertEqual(normalize_operation_mode("live", False), "commercial")
@@ -4316,6 +4342,41 @@ class LockFixTests(unittest.TestCase):
         self.assertEqual(result["state"], "IN_PROGRESS")
         self.assertEqual(final_marker.get("state"), "ISOLATED")
         self.assertIn('"event": "veeam.auto_isolate.in_progress.recovered"', audit_text)
+
+    def test_webui_auto_isolate_ignores_non_configured_veeam_job(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        raw["veeam"] = {"enabled": True, "job_name": "Agent_backup", "require_backup_copy": True}
+        config_path.write_text(json.dumps(raw), encoding="utf-8")
+
+        class Probe:
+            context = webui.WebContext(config_path)
+
+        payload = {
+            "slot_id": "BAY-01",
+            "session_id": uuid.uuid4().hex,
+            "job": "Backup Configuration Job",
+            "result": "Success",
+            "progress_percent": 100,
+            "started_at": "2026-05-22 10:00:16",
+            "ended_at": "2026-05-22 10:00:44",
+            "session_logs": [
+                {
+                    "name": "Backup Configuration Job",
+                    "status": "Success",
+                    "ended_at": "2026-05-22 10:00:44",
+                    "progress_percent": 100,
+                    "actions": ["Backup Configuration Job finished at 2026-05-22 10:00:44"],
+                }
+            ],
+        }
+
+        result = webui.LockFixWebHandler.auto_isolate_after_veeam_success(Probe(), payload, "Success", "2026-05-22 10:00:45")
+
+        self.assertFalse(result["triggered"])
+        self.assertIn("Agent_backup", result["message"])
+        self.assertIn("Backup Configuration Job", result["message"])
 
     def test_webui_airgap_holds_flush_until_veeam_end_time_is_reached(self) -> None:
         tmp_path = self.make_workspace()

@@ -110,6 +110,10 @@ def read_install_properties(root: Path) -> dict[str, str]:
     return props
 
 
+def re_match_windows_drive_root(value: str) -> bool:
+    return len(value) >= 3 and value[1:3] == ":\\" and value[0].isalpha()
+
+
 def install_veeam_base_url(props: dict[str, str]) -> str:
     base_url = str(props.get("veeam_base_url") or "").strip().rstrip("/")
     if base_url:
@@ -214,8 +218,66 @@ def load_config(path) -> LockFixConfig:
                 resolved.append(text)
         return resolved
 
+    raw_slots = raw.get("slots", [])
+    if not isinstance(raw_slots, list):
+        raw_slots = []
+    if not raw_slots:
+        veeam_seed = raw.get("veeam", {}) if isinstance(raw.get("veeam"), dict) else {}
+        repository_path = str(veeam_seed.get("target_repository_path") or "D:\\Backup").strip()
+        drive_root = repository_path[:3] if re_match_windows_drive_root(repository_path) else "D:\\"
+        raw_slots = [
+            {
+                "slot_id": "BAY-01",
+                "device": drive_root,
+                "mount_point": drive_root,
+                "expected_uid": "",
+                "identity": {},
+                "manifest_path": ".lockfix_manifest.sha256",
+                "power": {
+                    "type": "command",
+                    "off_command": [
+                        "powershell",
+                        "-NoProfile",
+                        "-ExecutionPolicy",
+                        "Bypass",
+                        "-File",
+                        "{app_root}\\tools\\lockfix_power_control.ps1",
+                        "-Action",
+                        "Off",
+                        "-SlotId",
+                        "BAY-01",
+                    ],
+                    "on_command": [
+                        "powershell",
+                        "-NoProfile",
+                        "-ExecutionPolicy",
+                        "Bypass",
+                        "-File",
+                        "{app_root}\\tools\\lockfix_power_control.ps1",
+                        "-Action",
+                        "On",
+                        "-SlotId",
+                        "BAY-01",
+                    ],
+                    "status_command": [
+                        "powershell",
+                        "-NoProfile",
+                        "-ExecutionPolicy",
+                        "Bypass",
+                        "-File",
+                        "{app_root}\\tools\\lockfix_power_control.ps1",
+                        "-Action",
+                        "Status",
+                        "-SlotId",
+                        "BAY-01",
+                    ],
+                    "off_status_values": ["off", "powered_off"],
+                },
+            }
+        ]
+
     slots: dict[str, SlotConfig] = {}
-    for item in raw.get("slots", []):
+    for item in raw_slots:
         power_raw: dict[str, Any] = item["power"]
         slot = SlotConfig(
             slot_id=item["slot_id"],
@@ -281,7 +343,6 @@ def load_config(path) -> LockFixConfig:
         post_success_delay_seconds=max(0, int(veeam_raw.get("post_success_delay_seconds", 10))),
         require_repository_resync_quiet=bool_value(veeam_raw.get("require_repository_resync_quiet", True), True),
     )
-
     dry_run = configured_dry_run(raw, base.parent)
     operation_mode = configured_operation_mode(raw, base.parent, dry_run)
 
