@@ -15964,7 +15964,7 @@ body,
 }
 
 .threat-detail-grid span,
-.threat-admin-note span {
+.threat-admin-note-head > span {
   display: block;
   margin-bottom: 6px;
   color: #64748b;
@@ -15983,6 +15983,20 @@ body,
   margin-top: 14px;
 }
 
+.threat-admin-note-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.threat-admin-note-head div {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .threat-admin-note textarea {
   width: 100%;
   min-height: 70px;
@@ -15992,6 +16006,86 @@ body,
   resize: vertical;
   color: #0f2543;
   font-weight: 800;
+}
+
+.subtle-show-button,
+.primary-mini-button {
+  min-height: 32px;
+  border-radius: 999px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.subtle-show-button {
+  border: 1px solid #d9e7f7;
+  background: rgba(255, 255, 255, 0.64);
+  color: rgba(11, 99, 206, 0.46);
+}
+
+.subtle-show-button:hover {
+  border-color: #8bbdf3;
+  background: #ffffff;
+  color: #0b63ce;
+  box-shadow: 0 6px 18px rgba(11, 99, 206, 0.12);
+}
+
+.primary-mini-button {
+  border: 1px solid #0f3b88;
+  background: #0f3b88;
+  color: #ffffff;
+}
+
+.threat-admin-note-meta {
+  min-height: 16px;
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.threat-admin-note-history {
+  margin-top: 10px;
+  border: 1px solid #e3edf8;
+  border-radius: 10px;
+  background: #f8fbff;
+  padding: 12px;
+}
+
+.threat-admin-note-history strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #0f2543;
+  font-size: 13px;
+}
+
+.threat-admin-note-history ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.threat-admin-note-history li {
+  border: 1px solid #e8f0fa;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 9px 10px;
+}
+
+.threat-admin-note-history li span {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.threat-admin-note-history li p {
+  margin: 4px 0 0;
+  color: #0f2543;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
 }
 
 .dashboard-threat-banner {

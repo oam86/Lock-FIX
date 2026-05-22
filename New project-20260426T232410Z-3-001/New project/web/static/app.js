@@ -560,6 +560,12 @@ const translations = {
     "settings.pending": "Select options, then click Apply.",
     "settings.applied": "Settings have been applied.",
     "settings.notificationSaved": "Security Notification Gateway settings have been saved.",
+    "threat.adminMemo": "Administrator memo",
+    "threat.memoSave": "Save memo",
+    "threat.memoMore": "More",
+    "threat.memoHistory": "Memo history up to 30 days",
+    "threat.memoEmpty": "No saved memo history in the last 30 days.",
+    "threat.memoSaved": "Memo saved.",
     "threatPolicy.title": "Threat Detection Policy",
     "threatPolicy.desc": "Configure backup security validation conditions and risk response policy before Air-Gap transition.",
     "threatPolicy.enabled": "Threat Detection",
@@ -991,6 +997,12 @@ const translations = {
     "settings.pending": "항목을 선택한 뒤 적용 버튼을 누르세요.",
     "settings.applied": "설정이 적용되었습니다.",
     "settings.notificationSaved": "보안 알림 게이트웨이 설정이 저장되었습니다.",
+    "threat.adminMemo": "관리자 메모",
+    "threat.memoSave": "메모 저장",
+    "threat.memoMore": "More",
+    "threat.memoHistory": "최근 30일 메모 이력",
+    "threat.memoEmpty": "최근 30일 저장된 메모 이력이 없습니다.",
+    "threat.memoSaved": "메모가 저장되었습니다.",
     "threatPolicy.title": "위협 탐지 정책",
     "threatPolicy.desc": "백업 완료 후 Air-Gap 전환 전 백업본 보안 검증 조건과 위험 시 조치 정책을 설정합니다.",
     "threatPolicy.enabled": "위협 탐지",
@@ -4623,6 +4635,7 @@ function renderThreatDetail(item) {
   }
   threatDetailPanel.hidden = false;
   const detections = Array.isArray(item.detections) ? item.detections : [];
+  const memoText = item.admin_note || "정책 기준에 따라 감사로그와 승인 워크플로우에 연결됩니다.";
   threatDetailPanel.innerHTML = `
     <div class="threat-detail-head">
       <div>
@@ -4657,8 +4670,70 @@ function renderThreatDetail(item) {
         </tbody>
       </table>
     </div>
-    <label class="threat-admin-note"><span>관리자 메모</span><textarea readonly>${escapeHtml(item.admin_note || "정책 기준에 따라 감사로그와 승인 워크플로우에 연결됩니다.")}</textarea></label>
+    <section class="threat-admin-note" data-threat-memo-target="${escapeHtml(item.id || "")}">
+      <div class="threat-admin-note-head">
+        <span>${escapeHtml(t("threat.adminMemo"))}</span>
+        <div>
+          <button type="button" class="subtle-show-button" data-threat-memo-more="${escapeHtml(item.id || "")}">${escapeHtml(t("threat.memoMore"))}</button>
+          <button type="button" class="primary-mini-button" data-threat-memo-save="${escapeHtml(item.id || "")}">${escapeHtml(t("threat.memoSave"))}</button>
+        </div>
+      </div>
+      <textarea data-threat-memo-input="${escapeHtml(item.id || "")}">${escapeHtml(memoText)}</textarea>
+      <p class="threat-admin-note-meta">${escapeHtml(item.admin_note_updated_at ? `${item.admin_note_updated_at} · ${item.admin_note_actor || "-"}` : "")}</p>
+      <div class="threat-admin-note-history" data-threat-memo-history="${escapeHtml(item.id || "")}" hidden></div>
+    </section>
   `;
+}
+
+async function saveThreatAdminMemo(targetId) {
+  const input = threatDetailPanel?.querySelector(`[data-threat-memo-input="${CSS.escape(targetId)}"]`);
+  if (!input) return;
+  const button = threatDetailPanel?.querySelector(`[data-threat-memo-save="${CSS.escape(targetId)}"]`);
+  if (button) button.disabled = true;
+  try {
+    const result = await requestJson("/api/threat-detection/admin-note", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targetId, note: input.value }),
+    });
+    renderThreatMemoHistory(targetId, result.items || []);
+    const meta = threatDetailPanel?.querySelector(".threat-admin-note-meta");
+    if (meta && result.item) meta.textContent = `${result.item.created_at} · ${result.item.actor || "-"}`;
+  } catch (error) {
+    alert(error.message || "memo save failed");
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function renderThreatMemoHistory(targetId, items = []) {
+  const history = threatDetailPanel?.querySelector(`[data-threat-memo-history="${CSS.escape(targetId)}"]`);
+  if (!history) return;
+  history.hidden = false;
+  history.innerHTML = `
+    <strong>${escapeHtml(t("threat.memoHistory"))}</strong>
+    ${items.length ? `
+      <ul>
+        ${items.map((item) => `
+          <li>
+            <span>${escapeHtml(item.created_at || "-")} · ${escapeHtml(item.actor || "-")}</span>
+            <p>${escapeHtml(item.note || "")}</p>
+          </li>
+        `).join("")}
+      </ul>
+    ` : `<p>${escapeHtml(t("threat.memoEmpty"))}</p>`}
+  `;
+}
+
+async function loadThreatMemoHistory(targetId) {
+  const history = threatDetailPanel?.querySelector(`[data-threat-memo-history="${CSS.escape(targetId)}"]`);
+  if (!history) return;
+  if (!history.hidden) {
+    history.hidden = true;
+    return;
+  }
+  const data = await requestJson(`/api/threat-detection/admin-notes?targetId=${encodeURIComponent(targetId)}`);
+  renderThreatMemoHistory(targetId, Array.isArray(data.items) ? data.items : []);
 }
 
 async function reloadThreatDetection() {
@@ -8647,6 +8722,19 @@ threatResultTable?.addEventListener("click", (event) => {
     .catch((error) => {
       console.warn("Unable to open threat detail", error);
     });
+});
+threatDetailPanel?.addEventListener("click", (event) => {
+  const saveButton = event.target.closest("[data-threat-memo-save]");
+  if (saveButton) {
+    saveThreatAdminMemo(saveButton.dataset.threatMemoSave || "");
+    return;
+  }
+  const moreButton = event.target.closest("[data-threat-memo-more]");
+  if (moreButton) {
+    loadThreatMemoHistory(moreButton.dataset.threatMemoMore || "").catch((error) => {
+      console.warn("Unable to load threat memo history", error);
+    });
+  }
 });
 threatManualScanButton?.addEventListener("click", () => {
   reloadThreatDetection().catch((error) => {

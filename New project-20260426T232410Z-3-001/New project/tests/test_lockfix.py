@@ -739,6 +739,66 @@ class LockFixTests(unittest.TestCase):
         with self.assertRaises(AuthorizationError):
             handler.require_super_admin()
 
+    def test_threat_admin_memo_retains_30_day_history_and_audits(self) -> None:
+        tmp_path = self.make_workspace()
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(write_config(tmp_path))
+        handler.headers = {"Cookie": "lockfix_session=admin-token"}
+        handler.context.sessions["admin-token"] = handler.session_record("admin", Role.SUPER_ADMIN)
+        memo_path = tmp_path / "admin_memos.json"
+
+        with patch.object(handler, "admin_memo_path", return_value=memo_path):
+            saved = handler.save_admin_memo(
+                {
+                    "targetId": "threat-scan-caution",
+                    "note": "격리 유지 후 운영자에게 원인 확인 요청",
+                }
+            )
+            old_record = {
+                "id": "old-note",
+                "target_id": "threat-scan-caution",
+                "note": "만료된 메모",
+                "actor": "admin",
+                "actor_role": "SUPER_ADMIN",
+                "created_at": (datetime.now() - timedelta(days=31)).isoformat(timespec="seconds"),
+            }
+            memo_path.write_text(
+                json.dumps([old_record, saved["item"]], ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
+            history = handler.admin_memo_history("threat-scan-caution", days=30)
+            summary = handler.threat_detection_summary()
+
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["note"], "격리 유지 후 운영자에게 원인 확인 요청")
+        self.assertNotIn("만료된 메모", memo_path.read_text(encoding="utf-8"))
+        caution = next(item for item in summary["results"] if item["id"] == "threat-scan-caution")
+        self.assertEqual(caution["admin_note"], "격리 유지 후 운영자에게 원인 확인 요청")
+        self.assertEqual(caution["admin_note_actor"], "admin")
+        audit_text = (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
+        self.assertIn('"event": "admin.memo.created"', audit_text)
+        self.assertIn('"target_id": "threat-scan-caution"', audit_text)
+
+    def test_threat_admin_memo_ui_has_more_history_controls(self) -> None:
+        root = Path.cwd()
+        html = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        app = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
+        css = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
+        server = (root / "webui.py").read_text(encoding="utf-8")
+
+        self.assertIn("/api/threat-detection/admin-note", server)
+        self.assertIn("/api/threat-detection/admin-notes", server)
+        self.assertIn("admin.memo.created", server)
+        self.assertIn("data-threat-memo-save", app)
+        self.assertIn("data-threat-memo-more", app)
+        self.assertIn("data-threat-memo-history", app)
+        self.assertIn("threat.memoHistory", app)
+        self.assertIn("최근 30일 메모 이력", app)
+        self.assertIn(".threat-admin-note-history", css)
+        self.assertIn(".subtle-show-button", css)
+        self.assertIn("20260522-admin-memo-history", html)
+
     def test_monitoring_chart_uses_compact_height(self) -> None:
         root = Path.cwd()
         html = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -819,7 +879,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("pane ySplit", webui_source)
         self.assertIn("cellXfs", webui_source)
         self.assertNotIn('"LOCK-FIX Report"', webui_source)
-        self.assertIn("20260522-install-preflight", html)
+        self.assertIn("20260522-admin-memo-history", html)
 
     def test_report_exports_are_balanced_documents(self) -> None:
         tmp_path = self.make_workspace()
@@ -945,7 +1005,7 @@ class LockFixTests(unittest.TestCase):
             'id="userManagementForm"',
             'id="userManagementBackButton"',
             'data-i18n="userManagement.actions"',
-            'v=20260522-install-preflight',
+            'v=20260522-admin-memo-history',
             'class="rbac-chip-list user-management-department-list"',
             'data-i18n="department.backupOperation"',
             '<option value="SECURITY_ADMIN">SECURITY_ADMIN</option>',
@@ -2286,7 +2346,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("border: 0;", css_source)
         self.assertNotIn("border: 1px solid rgba(196, 211, 225, 0.72);", css_source)
         self.assertNotIn("border: 1px solid rgba(121, 158, 206, 0.48);", css_source)
-        self.assertIn("20260522-install-preflight", index_source)
+        self.assertIn("20260522-admin-memo-history", index_source)
 
     def test_isolate_reaches_isolated(self) -> None:
         tmp_path = self.make_workspace()
@@ -3072,7 +3132,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("dashboardLogs", app_source)
         self.assertIn("latestLogsData", app_source)
         self.assertIn("opsEventsToggle?.addEventListener", app_source)
-        self.assertIn("v=20260522-install-preflight", html_source)
+        self.assertIn("v=20260522-admin-memo-history", html_source)
 
     def test_logs_timeline_text_uses_regular_weight(self) -> None:
         root = Path.cwd()
@@ -3085,7 +3145,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".severity-info,\n.severity-notice {\n  color: #12935f;\n  font-weight: 400;", css_source)
         self.assertIn(".log-severity-badge {", css_source)
         self.assertIn("font-weight: 400;", css_source)
-        self.assertIn("v=20260522-install-preflight", html_source)
+        self.assertIn("v=20260522-admin-memo-history", html_source)
 
     def test_network_detail_cards_use_subtle_show_toggles(self) -> None:
         root = Path.cwd()
@@ -3116,7 +3176,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("height: 68px !important;", css_source)
         self.assertIn("min-height: 36px !important;", css_source)
         self.assertIn("border-bottom: 0 !important;", css_source)
-        self.assertIn("20260522-install-preflight", html_source)
+        self.assertIn("20260522-admin-memo-history", html_source)
 
     def test_logs_summary_cards_render_above_filter_bar(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -3125,7 +3185,7 @@ class LockFixTests(unittest.TestCase):
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('class="logs-range"'))
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('id="logsStart"'))
         self.assertNotIn('data-i18n="logs.filteredView"', logs_view)
-        self.assertIn("20260522-install-preflight", html_source)
+        self.assertIn("20260522-admin-memo-history", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -3144,7 +3204,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260522-install-preflight", html_source)
+        self.assertIn("20260522-admin-memo-history", html_source)
 
     def test_settings_install_preflight_card_is_rendered_without_service_control(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -3209,7 +3269,7 @@ class LockFixTests(unittest.TestCase):
             "departmentDisplayName(department.id)",
         ]:
             self.assertIn(token, app_source)
-        self.assertIn("20260522-install-preflight", html_source)
+        self.assertIn("20260522-admin-memo-history", html_source)
 
     def test_monitoring_header_copy_is_hidden_while_polling_remains(self) -> None:
         root = Path.cwd()
@@ -3322,7 +3382,7 @@ class LockFixTests(unittest.TestCase):
         self.assertNotIn("WebUI 서버 응답이 지연되어 중단했습니다", app_source)
         self.assertNotIn("await loadAll();\n    showView(initialRouteView());", app_source)
         index_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
-        self.assertIn("20260522-install-preflight", index_source)
+        self.assertIn("20260522-admin-memo-history", index_source)
         self.assertIn('requestJson("/api/sources", { timeoutMs: 8000 })', app_source)
         self.assertNotIn('detect: requestJson("/api/detect")', app_source)
         self.assertIn("fetchOptions.cache = \"no-store\";", app_source)
@@ -3482,7 +3542,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("background: #ffffff;", css_source)
         self.assertIn("opacity: 0.66;", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260522-install-preflight", html_source)
+        self.assertIn("20260522-admin-memo-history", html_source)
         self.assertIn("grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));", css_source)
         self.assertIn(".security-dashboard-grid .backup-panel .panel-body > dl", css_source)
         self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr));", css_source)
@@ -3517,7 +3577,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("word-break: keep-all;", css_source)
         self.assertIn(".emergency-access-copy p", css_source)
         self.assertIn("white-space: nowrap;", css_source)
-        self.assertIn("20260522-install-preflight", html_source)
+        self.assertIn("20260522-admin-memo-history", html_source)
         self.assertIn("justify-content: stretch;", css_source)
         self.assertIn("padding: 0 8px;", css_source)
         self.assertIn(".flow-step-card {", css_source)
@@ -3546,7 +3606,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260522-install-preflight", html_source)
+        self.assertIn("20260522-admin-memo-history", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()

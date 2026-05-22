@@ -835,6 +835,17 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/threat-detection":
                 self.require_auth(Permission.AIRGAP_POLICY_VIEW)
                 self.send_json(self.threat_detection_summary())
+            elif parsed.path == "/api/threat-detection/admin-notes":
+                self.require_auth(Permission.AIRGAP_POLICY_VIEW)
+                params = parse_qs(parsed.query)
+                self.send_json(
+                    {
+                        "items": self.admin_memo_history(
+                            str((params.get("targetId") or [""])[0] or ""),
+                            days=30,
+                        )
+                    }
+                )
             elif parsed.path == "/api/network-status":
                 self.require_auth(Permission.DASHBOARD_VIEW)
                 self.send_json(self.network_status_summary())
@@ -1193,6 +1204,10 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 self.require_auth(Permission.SYSTEM_SETTING_MANAGE)
                 payload = self.read_json_body()
                 self.send_json(self.save_notification_settings(payload))
+            elif parsed.path == "/api/threat-detection/admin-note":
+                self.require_auth(Permission.AIRGAP_POLICY_MANAGE)
+                payload = self.read_json_body()
+                self.send_json(self.save_admin_memo(payload), status=201)
             elif parsed.path == "/api/isolate":
                 self.require_auth(Permission.DISK_OFFLINE_EXECUTE)
                 slot_id = self.query_slot(parsed.query)
@@ -6228,6 +6243,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         last_scan = now.strftime("%Y-%m-%d %H:%M:%S")
         backup_job = str(veeam_config.get("job_name") or veeam_config.get("target_job_name") or "Daily Backup")
         backup_file_path = str(Path(repository_path) / "Backup Copy Job 1.vbk") if repository_path != "-" else "-"
+        default_admin_note = "Mock 기반 1차 개발 화면입니다. Agent/API 탐지 결과 수신 구조로 확장됩니다."
         base_result = {
             "id": "threat-scan-latest",
             "scan_time": last_scan,
@@ -6244,7 +6260,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "detection_count": suspicious_count,
             "action_status": "Air-gap 완료" if status == "정상" else "관리자 확인 필요",
             "lockfix_action": "Disk Offline / Drive Letter 제거 / Air-gap 전환" if status == "정상" else "Air-gap 유지 / 알림 / 관리자 검토",
-            "admin_note": "Mock 기반 1차 개발 화면입니다. Agent/API 탐지 결과 수신 구조로 확장됩니다.",
+            "admin_note": default_admin_note,
+            "admin_note_updated_at": "",
+            "admin_note_actor": "",
             "audit_log_id": "THREAT_SCAN_COMPLETED",
             "detections": [],
         }
@@ -6279,6 +6297,12 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 {"type": "무결성 해시 불일치", "file_path": f"{repository_path}\\manifest.sha256", "evidence": "등록 해시와 현재 해시 불일치", "severity": "ERROR", "status": "격리 유지"},
             ],
         }
+        for result in (base_result, caution_result, danger_result):
+            latest_note = self.latest_admin_memo(str(result.get("id") or ""))
+            if latest_note:
+                result["admin_note"] = latest_note.get("note") or default_admin_note
+                result["admin_note_updated_at"] = latest_note.get("created_at") or ""
+                result["admin_note_actor"] = latest_note.get("actor") or ""
         return {
             "summary": {
                 "status": status,
@@ -6299,7 +6323,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "veeam_malware_api": {
                 "enabled": True,
                 "connected": bool(veeam_config.get("base_url")),
-                "base_url": str(veeam_config.get("base_url") or self.context.veeam_base_url() or "-"),
+                "base_url": str(veeam_config.get("base_url") or "-"),
                 "endpoint": "/api/v1/malwareDetection/events",
                 "last_result": status,
                 "last_checked": last_scan,
@@ -6317,6 +6341,81 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             ],
             "results": [base_result, caution_result, danger_result],
         }
+
+    def admin_memo_path(self) -> Path:
+        return ROOT / "runtime" / "admin_memos.json"
+
+    def read_admin_memos(self) -> list[dict]:
+        path = self.admin_memo_path()
+        if not path.exists():
+            return []
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return []
+        return payload if isinstance(payload, list) else []
+
+    def memo_cutoff(self, days: int = 30) -> datetime:
+        return datetime.now() - timedelta(days=max(1, int(days or 30)))
+
+    def memo_is_recent(self, item: dict, days: int = 30) -> bool:
+        created_at = str(item.get("created_at") or "")
+        try:
+            return datetime.fromisoformat(created_at) >= self.memo_cutoff(days)
+        except ValueError:
+            return False
+
+    def prune_admin_memos(self, items: list[dict], days: int = 30) -> list[dict]:
+        recent = [dict(item) for item in items if isinstance(item, dict) and self.memo_is_recent(item, days)]
+        path = self.admin_memo_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(recent, ensure_ascii=False, indent=2), encoding="utf-8")
+        return recent
+
+    def admin_memo_history(self, target_id: str, days: int = 30) -> list[dict]:
+        target = str(target_id or "").strip()
+        items = self.prune_admin_memos(self.read_admin_memos(), days=days)
+        history = [
+            item
+            for item in items
+            if not target or str(item.get("target_id") or "") == target
+        ]
+        history.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+        return history
+
+    def latest_admin_memo(self, target_id: str) -> dict:
+        history = self.admin_memo_history(target_id, days=30)
+        return history[0] if history else {}
+
+    def save_admin_memo(self, payload: dict) -> dict:
+        target_id = str(payload.get("targetId") or payload.get("target_id") or "").strip()
+        note = str(payload.get("note") or "").strip()
+        if not target_id:
+            raise ValueError("targetId is required")
+        if not note:
+            raise ValueError("admin memo is required")
+        if len(note) > 2000:
+            raise ValueError("admin memo must be 2000 characters or fewer")
+        items = self.prune_admin_memos(self.read_admin_memos(), days=30)
+        record = {
+            "id": uuid.uuid4().hex,
+            "target_id": target_id,
+            "note": note,
+            "actor": self.current_session_user(),
+            "actor_role": self.current_role().value,
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        items.append(record)
+        self.admin_memo_path().write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.context.controller.audit.write(
+            "admin.memo.created",
+            actorUserId=record["actor"],
+            actor_role=record["actor_role"],
+            target_id=target_id,
+            retention_days=30,
+            message="Administrator memo was saved and retained for 30 days.",
+        )
+        return {"ok": True, "item": record, "items": self.admin_memo_history(target_id, days=30)}
 
     def detect_summary(self, live: bool = False) -> dict:
         cache_key = str(self.context.config_path)
