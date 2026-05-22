@@ -3759,6 +3759,74 @@ button {
   background: #10a94f;
 }
 
+.airgap-procedure-steps .veeam-step-live-running {
+  border-color: #0f9f4d;
+  background: linear-gradient(90deg, #f0fff5 0%, #ffffff 48%, #effff6 100%);
+  box-shadow:
+    0 0 0 3px rgba(22, 163, 74, 0.1),
+    0 16px 28px rgba(22, 163, 74, 0.13),
+    inset 0 0 0 1px rgba(22, 163, 74, 0.16);
+  animation: airgapStepLivePulse 0.92s ease-in-out infinite;
+}
+
+.airgap-procedure-steps .veeam-step-live-running b {
+  background: linear-gradient(180deg, #34d36c 0%, #10a94f 100%);
+  box-shadow:
+    0 0 0 4px rgba(32, 177, 95, 0.14),
+    0 8px 14px rgba(16, 169, 79, 0.26),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.58);
+  animation: airgapStepNumberPulse 0.92s ease-in-out infinite;
+}
+
+.airgap-procedure-steps .veeam-step-live-running strong {
+  color: #063b1c;
+}
+
+.airgap-procedure-steps .veeam-step-live-complete {
+  border-color: #25b564;
+  background: #fbfffd;
+}
+
+.airgap-procedure-steps .veeam-step-live-complete b {
+  background: #1fb45d;
+}
+
+.airgap-procedure-steps .veeam-step-live-running:not(:last-child)::before,
+.airgap-procedure-steps .veeam-step-live-running:not(:last-child)::after {
+  background: #12b75a;
+  opacity: 1;
+  animation: airgapProcedureArrowMove 0.72s ease-in-out infinite;
+  filter: drop-shadow(0 0 10px rgba(18, 183, 90, 0.44));
+}
+
+@keyframes airgapStepLivePulse {
+  0%,
+  100% {
+    transform: translateY(0);
+    box-shadow:
+      0 0 0 2px rgba(22, 163, 74, 0.08),
+      0 12px 24px rgba(22, 163, 74, 0.1),
+      inset 0 0 0 1px rgba(22, 163, 74, 0.12);
+  }
+  50% {
+    transform: translateY(-1px);
+    box-shadow:
+      0 0 0 6px rgba(22, 163, 74, 0.16),
+      0 18px 34px rgba(22, 163, 74, 0.18),
+      inset 0 0 0 1px rgba(22, 163, 74, 0.22);
+  }
+}
+
+@keyframes airgapStepNumberPulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 4px 8px rgba(16, 169, 79, 0.18));
+  }
+  50% {
+    filter: drop-shadow(0 8px 14px rgba(16, 169, 79, 0.34));
+  }
+}
+
 .veeam-step-active,
 .veeam-step-running,
 .veeam-step-working {

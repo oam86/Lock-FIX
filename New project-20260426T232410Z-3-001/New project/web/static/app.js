@@ -7351,6 +7351,24 @@ function renderSources(data) {
     if (step === currentStep) return "veeam-step-visual-current";
     return "veeam-step-visual-pending";
   };
+  const autoIsolate = veeam.auto_isolate || airGap.auto_isolate || {};
+  const stepLiveState = (item) => {
+    const step = Number(item.step);
+    const currentStep = Number(veeam.current_step || 1);
+    const state = String(item.state || "").toUpperCase();
+    const autoState = String(autoIsolate.state || "").toUpperCase();
+    if (!apiSynced) return "pending";
+    if (step < currentStep || ["DONE", "COMPLETED", "SUCCESS"].includes(state)) return "complete";
+    if (step > currentStep) return "pending";
+    const isolationRunning = Boolean(autoIsolate.triggered) || ["IN_PROGRESS", "RUNNING", "WORKING"].includes(autoState);
+    const activeRunning = ["ACTIVE", "RUNNING", "WORKING"].includes(state) && (
+      isolationRunning ||
+      (currentStep > 1 && currentStep < 5) ||
+      (currentStep === 5 && autoState !== "ISOLATED")
+    );
+    return activeRunning ? "running" : "current";
+  };
+  const stepLiveClass = (item) => `veeam-step-live-${stepLiveState(item)}`;
   const progressCell = (log) => {
     const value = log.progress_percent;
     return value === "" || value === undefined || value === null ? "-" : `${value}%`;
@@ -7458,7 +7476,7 @@ function renderSources(data) {
   sourceRoot.innerHTML = `
     <div class="veeam-step-grid airgap-procedure-steps">
       ${timelineItems.map((item) => `
-        <article class="veeam-step-card veeam-step-${String(item.state || "PENDING").toLowerCase()} ${stepVisualClass(item)} ${stepIncomingClass(item)} ${stepHasAdvanced(item) ? "veeam-step-arrow-visible" : ""} ${stepTransferClass(item)}">
+        <article class="veeam-step-card veeam-step-${String(item.state || "PENDING").toLowerCase()} ${stepVisualClass(item)} ${stepIncomingClass(item)} ${stepLiveClass(item)} ${stepHasAdvanced(item) ? "veeam-step-arrow-visible" : ""} ${stepTransferClass(item)}" data-step-state="${stepLiveState(item)}" aria-label="${stepLabel(item)} ${stepLiveState(item)}">
           <b>${item.step}</b>
           <div class="veeam-step-copy">
             <strong class="step-label-main">${stepLabel(item)}</strong>
