@@ -797,7 +797,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("최근 30일 메모 이력", app)
         self.assertIn(".threat-admin-note-history", css)
         self.assertIn(".subtle-show-button", css)
-        self.assertIn("20260522-airgap-step-live-flow", html)
+        self.assertIn("20260522-airgap-live-actions", html)
 
     def test_monitoring_chart_uses_compact_height(self) -> None:
         root = Path.cwd()
@@ -879,7 +879,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("pane ySplit", webui_source)
         self.assertIn("cellXfs", webui_source)
         self.assertNotIn('"LOCK-FIX Report"', webui_source)
-        self.assertIn("20260522-airgap-step-live-flow", html)
+        self.assertIn("20260522-airgap-live-actions", html)
 
     def test_report_exports_are_balanced_documents(self) -> None:
         tmp_path = self.make_workspace()
@@ -1005,7 +1005,7 @@ class LockFixTests(unittest.TestCase):
             'id="userManagementForm"',
             'id="userManagementBackButton"',
             'data-i18n="userManagement.actions"',
-            'v=20260522-airgap-step-live-flow',
+            'v=20260522-airgap-live-actions',
             'class="rbac-chip-list user-management-department-list"',
             'data-i18n="department.backupOperation"',
             '<option value="SECURITY_ADMIN">SECURITY_ADMIN</option>',
@@ -2346,7 +2346,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("border: 0;", css_source)
         self.assertNotIn("border: 1px solid rgba(196, 211, 225, 0.72);", css_source)
         self.assertNotIn("border: 1px solid rgba(121, 158, 206, 0.48);", css_source)
-        self.assertIn("20260522-airgap-step-live-flow", index_source)
+        self.assertIn("20260522-airgap-live-actions", index_source)
 
     def test_isolate_reaches_isolated(self) -> None:
         tmp_path = self.make_workspace()
@@ -3132,7 +3132,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("dashboardLogs", app_source)
         self.assertIn("latestLogsData", app_source)
         self.assertIn("opsEventsToggle?.addEventListener", app_source)
-        self.assertIn("v=20260522-airgap-step-live-flow", html_source)
+        self.assertIn("v=20260522-airgap-live-actions", html_source)
 
     def test_logs_timeline_text_uses_regular_weight(self) -> None:
         root = Path.cwd()
@@ -3145,7 +3145,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".severity-info,\n.severity-notice {\n  color: #12935f;\n  font-weight: 400;", css_source)
         self.assertIn(".log-severity-badge {", css_source)
         self.assertIn("font-weight: 400;", css_source)
-        self.assertIn("v=20260522-airgap-step-live-flow", html_source)
+        self.assertIn("v=20260522-airgap-live-actions", html_source)
 
     def test_network_detail_cards_use_subtle_show_toggles(self) -> None:
         root = Path.cwd()
@@ -3176,7 +3176,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("height: 68px !important;", css_source)
         self.assertIn("min-height: 36px !important;", css_source)
         self.assertIn("border-bottom: 0 !important;", css_source)
-        self.assertIn("20260522-airgap-step-live-flow", html_source)
+        self.assertIn("20260522-airgap-live-actions", html_source)
 
     def test_logs_summary_cards_render_above_filter_bar(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -3185,7 +3185,7 @@ class LockFixTests(unittest.TestCase):
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('class="logs-range"'))
         self.assertLess(logs_view.index('id="logsSummaryCards"'), logs_view.index('id="logsStart"'))
         self.assertNotIn('data-i18n="logs.filteredView"', logs_view)
-        self.assertIn("20260522-airgap-step-live-flow", html_source)
+        self.assertIn("20260522-airgap-live-actions", html_source)
 
     def test_settings_view_uses_full_width_balanced_grid(self) -> None:
         root = Path.cwd()
@@ -3204,7 +3204,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".settings-actions", css_source)
         self.assertIn("grid-column: 1 / -1;", css_source)
         self.assertIn("@media (max-width: 1280px)", css_source)
-        self.assertIn("20260522-airgap-step-live-flow", html_source)
+        self.assertIn("20260522-airgap-live-actions", html_source)
 
     def test_settings_install_preflight_card_is_rendered_without_service_control(self) -> None:
         html_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
@@ -3269,7 +3269,7 @@ class LockFixTests(unittest.TestCase):
             "departmentDisplayName(department.id)",
         ]:
             self.assertIn(token, app_source)
-        self.assertIn("20260522-airgap-step-live-flow", html_source)
+        self.assertIn("20260522-airgap-live-actions", html_source)
 
     def test_monitoring_header_copy_is_hidden_while_polling_remains(self) -> None:
         root = Path.cwd()
@@ -3382,7 +3382,7 @@ class LockFixTests(unittest.TestCase):
         self.assertNotIn("WebUI 서버 응답이 지연되어 중단했습니다", app_source)
         self.assertNotIn("await loadAll();\n    showView(initialRouteView());", app_source)
         index_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
-        self.assertIn("20260522-airgap-step-live-flow", index_source)
+        self.assertIn("20260522-airgap-live-actions", index_source)
         self.assertIn('requestJson("/api/sources", { timeoutMs: 8000 })', app_source)
         self.assertNotIn('detect: requestJson("/api/detect")', app_source)
         self.assertIn("fetchOptions.cache = \"no-store\";", app_source)
@@ -3542,7 +3542,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("background: #ffffff;", css_source)
         self.assertIn("opacity: 0.66;", css_source)
         self.assertIn("font-weight: 400", css_source)
-        self.assertIn("20260522-airgap-step-live-flow", html_source)
+        self.assertIn("20260522-airgap-live-actions", html_source)
         self.assertIn("grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));", css_source)
         self.assertIn(".security-dashboard-grid .backup-panel .panel-body > dl", css_source)
         self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr));", css_source)
@@ -3577,7 +3577,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("word-break: keep-all;", css_source)
         self.assertIn(".emergency-access-copy p", css_source)
         self.assertIn("white-space: nowrap;", css_source)
-        self.assertIn("20260522-airgap-step-live-flow", html_source)
+        self.assertIn("20260522-airgap-live-actions", html_source)
         self.assertIn("justify-content: stretch;", css_source)
         self.assertIn("padding: 0 8px;", css_source)
         self.assertIn(".flow-step-card {", css_source)
@@ -3605,7 +3605,22 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("@keyframes airgapStepNumberPulse", css_source)
         self.assertIn(".airgap-procedure-steps .veeam-step-live-running:not(:last-child)::before", css_source)
         self.assertIn("animation: airgapProcedureArrowMove 0.72s ease-in-out infinite;", css_source)
-        self.assertIn("20260522-airgap-step-live-flow", html_source)
+        self.assertIn("20260522-airgap-live-actions", html_source)
+
+    def test_airgap_procedure_table_includes_live_action_row(self) -> None:
+        root = Path.cwd()
+        html_source = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        app_source = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("const airGapLiveLog = {", app_source)
+        self.assertIn('name: "LOCK-FIX Air-Gap"', app_source)
+        self.assertIn("const procedureSessionLogs = [airGapLiveLog, ...veeamSessionLogs];", app_source)
+        self.assertIn("Air-Gap live feed", app_source)
+        self.assertIn("Current Air-Gap step", app_source)
+        self.assertIn("timelineItems.forEach((item) =>", app_source)
+        self.assertIn("`${airGapStateVerb(state)} - Step ${item.step} ${label}: ${detail || state}.`", app_source)
+        self.assertIn("procedureSessionLogs.map((log, index)", app_source)
+        self.assertIn("20260522-airgap-live-actions", html_source)
 
     def test_dashboard_route_does_not_show_legacy_notification_markup(self) -> None:
         root = Path.cwd()
@@ -3623,7 +3638,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("renderDashboardFallback", app_source)
         self.assertIn("대시보드 데이터를 불러올 수 없습니다.", app_source)
         self.assertIn(".dashboard-load-error", css_source)
-        self.assertIn("20260522-airgap-step-live-flow", html_source)
+        self.assertIn("20260522-airgap-live-actions", html_source)
 
     def test_dashboard_audit_summary_is_linked_to_audit_log(self) -> None:
         tmp_path = self.make_workspace()

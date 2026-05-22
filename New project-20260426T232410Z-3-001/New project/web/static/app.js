@@ -7369,6 +7369,48 @@ function renderSources(data) {
     return activeRunning ? "running" : "current";
   };
   const stepLiveClass = (item) => `veeam-step-live-${stepLiveState(item)}`;
+  const airGapLiveStatus = () => {
+    const autoState = String(autoIsolate.state || "").toUpperCase();
+    if (!apiSynced) return "Waiting";
+    if (["IN_PROGRESS", "RUNNING", "WORKING"].includes(autoState) || timelineItems.some((item) => stepLiveState(item) === "running")) {
+      return "Running";
+    }
+    if (autoState === "ISOLATED" || timelineItems.every((item) => stepLiveState(item) === "complete")) return "Success";
+    return "Monitoring";
+  };
+  const airGapStateVerb = (state) => ({
+    running: "RUNNING",
+    complete: "OK",
+    current: "READY",
+    pending: "WAIT",
+  })[state] || "WAIT";
+  const airGapLiveActions = () => {
+    const currentStep = Number(veeam.current_step || 1);
+    const actions = [
+      `${apiSynced ? "OK" : "WAIT"} - Air-Gap live feed ${apiSynced ? "receiving /api/sources?live=1 updates" : "waiting for Veeam REST synchronization"}.`,
+      `${airGapLiveStatus().toUpperCase()} - Current Air-Gap step ${currentStep} / 5, Veeam progress ${apiPercent}%.`,
+    ];
+    timelineItems.forEach((item) => {
+      const state = stepLiveState(item);
+      const log = item.log && typeof item.log === "object" ? item.log : {};
+      const detail = log.detail || item.detail || "";
+      const label = stepLabel(item);
+      actions.push(`${airGapStateVerb(state)} - Step ${item.step} ${label}: ${detail || state}.`);
+    });
+    if (autoIsolate.message) {
+      const autoState = String(autoIsolate.state || airGapLiveStatus()).toUpperCase();
+      actions.push(`${autoState === "ISOLATED" ? "OK" : autoState === "FAILED" ? "ERROR" : "RUNNING"} - ${autoIsolate.message}`);
+    }
+    return actions;
+  };
+  const airGapLiveLog = {
+    name: "LOCK-FIX Air-Gap",
+    status: airGapLiveStatus(),
+    actions: airGapLiveActions(),
+    duration: "LIVE 1s",
+    progress_percent: apiSynced ? Math.max(0, Math.min(100, Number(veeam.current_step || 1) * 20)) : 0,
+  };
+  const procedureSessionLogs = [airGapLiveLog, ...veeamSessionLogs];
   const progressCell = (log) => {
     const value = log.progress_percent;
     return value === "" || value === undefined || value === null ? "-" : `${value}%`;
@@ -7489,7 +7531,7 @@ function renderSources(data) {
   const procedureLogs = document.createElement("section");
   procedureLogs.className = "veeam-panel veeam-monitoring-panel airgap-monitoring-panel";
   const sessionMetaParts = [
-    `${veeamSessionLogs.length} sessions`,
+    `${procedureSessionLogs.length} sessions`,
     veeam.job,
     veeam.last_checked,
   ].map((item) => String(item || "").trim()).filter((item) => item && item !== "-");
@@ -7517,7 +7559,7 @@ function renderSources(data) {
           </tr>
         </thead>
         <tbody>
-          ${veeamSessionLogs.map((log, index) => `
+          ${procedureSessionLogs.map((log, index) => `
             <tr>
               <td class="veeam-session-name">${escapeHtml(log.name || "-")}</td>
               <td><span class="veeam-session-status veeam-session-${statusVisualClass(log)}">${escapeHtml(statusDisplay(log))}</span></td>
