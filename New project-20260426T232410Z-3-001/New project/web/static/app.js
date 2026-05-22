@@ -3697,12 +3697,15 @@ function renderDashboard(data) {
         <div class="panel-body">
           <dl>
             <div><dt>연동 백업 솔루션</dt><dd>${escapeHtml(backup.solution || "Veeam Backup & Replication")}</dd></div>
+            <div><dt>Veeam REST 연동</dt><dd class="backup-result ${backup.issue_detected || backup.api_synced === false ? "backup-result-failed" : "backup-result-success"}">${escapeHtml(backup.api_synced === false ? "연동 확인 필요" : "연동 정상")}</dd></div>
             <div><dt>마지막 작업명</dt><dd>${escapeHtml(backup.job || "-")}</dd></div>
             <div><dt>백업 시작</dt><dd>${escapeHtml(backup.started_at || "-")}</dd></div>
             <div><dt>백업 종료</dt><dd>${escapeHtml(backup.ended_at || "-")}</dd></div>
+            <div><dt>마지막 확인</dt><dd>${escapeHtml(backup.last_checked || "-")}</dd></div>
             <div><dt>LOCK-FIX 상태</dt><dd>${escapeHtml(backup.isolation_state || "-")}</dd></div>
             <div><dt>차단 결과</dt><dd class="backup-result ${String(backup.result || "").includes("Failed") ? "backup-result-failed" : "backup-result-success"}">${escapeHtml(backup.result || "-")}</dd></div>
           </dl>
+          ${backup.health_message ? `<p class="backup-health-note">${escapeHtml(backup.health_message)}</p>` : ""}
         </div>
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-x" data-resize-axis="x" aria-hidden="true" title="Resize width"></span>
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>

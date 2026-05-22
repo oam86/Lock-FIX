@@ -3064,6 +3064,24 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("context.start_veeam_steering_worker()", source)
         self.assertIn("LOCKFIX_DISABLE_VEEAM_STEERING", source)
         self.assertIn("veeam_interlock_runtime(probe, time.time(), poll_api=True)", source)
+        self.assertIn('"veeam.integration.health.failed"', source)
+        self.assertIn('"api_synced": api_synced', source)
+        self.assertIn('"issue_detected": issue_detected', source)
+
+    def test_dashboard_backup_card_exposes_veeam_rest_health(self) -> None:
+        webui_source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")
+        app_source = (Path.cwd() / "web" / "static" / "app.js").read_text(encoding="utf-8")
+        css_source = (Path.cwd() / "web" / "static" / "styles.css").read_text(encoding="utf-8")
+        index_source = (Path.cwd() / "web" / "static" / "index.html").read_text(encoding="utf-8")
+
+        self.assertIn('read_json(runtime_root / "veeam_steering_state.json", {})', webui_source)
+        self.assertIn('"api_synced": veeam_api_synced', webui_source)
+        self.assertIn('"issue_detected": veeam_issue_detected', webui_source)
+        self.assertIn("Veeam REST 연동", app_source)
+        self.assertIn("backup.issue_detected", app_source)
+        self.assertIn("backup-health-note", app_source)
+        self.assertIn(".backup-panel dd.backup-result-failed", css_source)
+        self.assertIn("20260523-veeam-health-live", index_source)
 
     def test_webui_uses_password_reauth_only_for_emergency_reconnect(self) -> None:
         source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")

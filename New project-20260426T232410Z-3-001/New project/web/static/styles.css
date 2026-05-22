@@ -11558,8 +11558,20 @@ td {
   color: #079044;
 }
 
-.backup-panel dd.backup-result-fail {
+.backup-panel dd.backup-result-fail,
+.backup-panel dd.backup-result-failed {
   color: #d92d20;
+}
+
+.backup-health-note {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #f8fbff;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 @media (max-width: 760px) {

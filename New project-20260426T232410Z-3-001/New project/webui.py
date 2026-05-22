@@ -237,19 +237,49 @@ class WebContext:
         probe.context = self
         runtime = LockFixWebHandler.veeam_interlock_runtime(probe, time.time(), poll_api=True)
         auto_isolate = runtime.get("auto_isolate") if isinstance(runtime.get("auto_isolate"), dict) else {}
+        api_synced = bool(runtime.get("api_synced"))
+        status = str(runtime.get("status") or runtime.get("result") or "").strip()
+        auto_state = str(auto_isolate.get("state") or "").strip()
+        issue_detected = (
+            not api_synced
+            or status.upper() in {"FAILED", "FAILURE", "ERROR"}
+            or auto_state.upper() == "FAILED"
+        )
         state = {
             "ok": True,
             "last_run_at": datetime.now().isoformat(timespec="seconds"),
             "worker": "LOCKFIXVeeamSteeringWorker",
+            "api_synced": api_synced,
+            "server": runtime.get("server"),
+            "port": runtime.get("port"),
             "job": runtime.get("job"),
-            "status": runtime.get("status"),
+            "status": status,
             "progress_percent": runtime.get("progress_percent"),
             "current_step": runtime.get("current_step"),
+            "state_source": runtime.get("state_source"),
+            "message": runtime.get("message") or "",
+            "last_checked": runtime.get("last_checked") or "",
+            "issue_detected": issue_detected,
             "auto_isolate_state": auto_isolate.get("state") or "",
             "auto_isolate_triggered": bool(auto_isolate.get("triggered")),
             "auto_isolate_message": auto_isolate.get("message") or "",
         }
         self.write_veeam_steering_state(state)
+        if issue_detected:
+            try:
+                self.controller.audit.write(
+                    "veeam.integration.health.failed",
+                    api_synced=api_synced,
+                    server=state.get("server") or "",
+                    port=state.get("port") or "",
+                    job=state.get("job") or "",
+                    status=status or "-",
+                    current_step=state.get("current_step") or "",
+                    state_source=state.get("state_source") or "",
+                    message=state.get("message") or state.get("auto_isolate_message") or "Veeam REST integration health check failed.",
+                )
+            except Exception:
+                pass
         return state
 
     def write_veeam_steering_state(self, state: dict) -> None:
@@ -5922,6 +5952,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         state = read_json(runtime_root / "state.json", {})
         auto_isolate = read_json(runtime_root / "veeam_auto_isolate.json", {})
         session_payload = read_json(runtime_root / "veeam_last_session_logs.json", {})
+        steering_state = read_json(runtime_root / "veeam_steering_state.json", {})
         storage_state = read_json(runtime_root / "storage-BAY-01.json", {})
         sessions = session_payload.get("session_logs") if isinstance(session_payload, dict) else []
         latest_session = sessions[0] if isinstance(sessions, list) and sessions else {}
@@ -5935,6 +5966,10 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         backup_started = str(latest_session.get("started_at") or "-")
         backup_ended = str(latest_session.get("ended_at") or "-")
         backup_duration = str(latest_session.get("duration") or "-")
+        veeam_api_synced = bool(steering_state.get("api_synced")) if isinstance(steering_state, dict) else False
+        veeam_issue_detected = bool(steering_state.get("issue_detected")) if isinstance(steering_state, dict) else False
+        veeam_last_checked = str(steering_state.get("last_checked") or steering_state.get("last_run_at") or "-") if isinstance(steering_state, dict) else "-"
+        veeam_health_message = str(steering_state.get("message") or steering_state.get("auto_isolate_message") or "") if isinstance(steering_state, dict) else ""
         disk_number = str(storage_state.get("diskNumber") or "").strip() if isinstance(storage_state, dict) else ""
         configured_drive = str(storage_state.get("drive") or "").strip() if isinstance(storage_state, dict) else ""
         configured_path = str(storage_state.get("accessPath") or self.context.config.slot(slot_id).mount_point or "-") if isinstance(storage_state, dict) else "-"
@@ -6046,6 +6081,10 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "duration": backup_duration,
                 "isolation_state": airgap_state,
                 "result": result_label,
+                "api_synced": veeam_api_synced,
+                "issue_detected": veeam_issue_detected,
+                "last_checked": veeam_last_checked,
+                "health_message": veeam_health_message,
             },
             "alerts": [
                 {"label": "Disk Offline", "value": "Normal" if disk_is_offline else "Failed"},
