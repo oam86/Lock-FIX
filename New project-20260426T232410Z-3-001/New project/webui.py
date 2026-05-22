@@ -6981,11 +6981,14 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         for item in self.audit_items()[:50]:
             event = str(item.get("event", "audit_event"))
             severity = LockFixWebHandler.log_audit_severity(self, item)
-            raw_date = str(item.get("ts", "-"))[:19]
+            timestamp_text = str(item.get("ts", "-"))
             try:
-                stamp = datetime.fromisoformat(raw_date)
+                stamp = datetime.fromisoformat(timestamp_text.replace("Z", "+00:00"))
             except ValueError:
                 continue
+            if stamp.tzinfo is not None:
+                stamp = stamp.astimezone().replace(tzinfo=None)
+            raw_date = stamp.strftime("%Y-%m-%d %H:%M:%S")
             if stamp < range_start or stamp > range_end or stamp < retention_start:
                 continue
             items.append(

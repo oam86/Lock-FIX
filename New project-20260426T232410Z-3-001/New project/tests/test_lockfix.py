@@ -6,7 +6,7 @@ import time
 import unittest
 import uuid
 import zipfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -347,10 +347,11 @@ class LockFixTests(unittest.TestCase):
         tmp_path = self.make_workspace()
         config_path = write_config(tmp_path)
         audit_path = load_config(config_path).audit_log_path
-        now = datetime.now()
+        now = datetime.now().replace(microsecond=0)
+        audit_ts = now.astimezone().astimezone(timezone.utc).isoformat()
         records = [
             {
-                "ts": now.isoformat(timespec="seconds"),
+                "ts": audit_ts,
                 "event": "security.permission_denied",
                 "user": "auditor",
                 "role": "AUDITOR",
@@ -383,6 +384,7 @@ class LockFixTests(unittest.TestCase):
         self.assertEqual(summary["items"][0]["type"], "관리자 접근 감사 로그")
         self.assertEqual(summary["items"][0]["source"], "admin-access")
         self.assertEqual(summary["items"][0]["severity"], "ERROR")
+        self.assertEqual(summary["items"][0]["date"], now.strftime("%Y-%m-%d %H:%M:%S"))
         self.assertIn("관리자 접근 감사", summary["items"][0]["message"])
         self.assertIn("auditor", summary["items"][0]["message"])
 
