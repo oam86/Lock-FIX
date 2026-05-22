@@ -343,6 +343,49 @@ class LockFixTests(unittest.TestCase):
         self.assertIn('"forwarded_for": "127.0.0.1"', audit_text)
         self.assertIn('"result": "BLOCKED"', audit_text)
 
+    def test_logs_summary_exposes_admin_access_audit_filter(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        audit_path = load_config(config_path).audit_log_path
+        now = datetime.now()
+        records = [
+            {
+                "ts": now.isoformat(timespec="seconds"),
+                "event": "security.permission_denied",
+                "user": "auditor",
+                "role": "AUDITOR",
+                "permission": "DISK_OFFLINE_EXECUTE",
+                "resourceType": "API",
+                "resourceId": "/api/isolate?slot=BAY-01",
+                "ipAddress": "127.0.0.1",
+                "result": "FAILED",
+                "message": "403 Forbidden response",
+            },
+            {
+                "ts": (now - timedelta(minutes=1)).isoformat(timespec="seconds"),
+                "event": "veeam.integration.ok",
+                "message": "Veeam REST API synced",
+            },
+        ]
+        audit_path.write_text("\n".join(json.dumps(item) for item in records) + "\n", encoding="utf-8")
+
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(config_path)
+        summary = handler.logs_summary(
+            start_date=now.strftime("%Y-%m-%d"),
+            end_date=now.strftime("%Y-%m-%d"),
+            retention_value="30",
+            type_filter="관리자 접근 감사 로그",
+        )
+
+        self.assertIn("관리자 접근 감사 로그", summary["type_options"])
+        self.assertEqual(summary["total_logs"], 1)
+        self.assertEqual(summary["items"][0]["type"], "관리자 접근 감사 로그")
+        self.assertEqual(summary["items"][0]["source"], "admin-access")
+        self.assertEqual(summary["items"][0]["severity"], "ERROR")
+        self.assertIn("관리자 접근 감사", summary["items"][0]["message"])
+        self.assertIn("auditor", summary["items"][0]["message"])
+
     def test_webui_local_console_policy_uses_socket_peer_not_forwarded_header(self) -> None:
         self.assertTrue(webui.LockFixWebHandler.is_loopback_ip("127.0.0.1"))
         self.assertTrue(webui.LockFixWebHandler.is_loopback_ip("::1"))

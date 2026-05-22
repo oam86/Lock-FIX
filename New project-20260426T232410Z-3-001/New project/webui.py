@@ -6990,7 +6990,7 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                 continue
             items.append(
                 {
-                    "type": "SYSLOG",
+                    "type": LockFixWebHandler.log_audit_type(self, item),
                     "date": raw_date,
                     "source": LockFixWebHandler.log_audit_source(self, item),
                     "severity": severity,
@@ -7000,8 +7000,46 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         items.sort(key=lambda item: item["date"], reverse=True)
         return items, range_start, range_end
 
+    def is_admin_access_audit_record(self, record: dict) -> bool:
+        event = str(record.get("event") or "").lower()
+        text = json.dumps(record, ensure_ascii=False).lower()
+        access_events = (
+            "auth.",
+            "login.",
+            "logout.",
+            "session.",
+            "security.permission_denied",
+            "security.remote_console_access",
+            "security.unauthorized",
+        )
+        access_tokens = (
+            "login",
+            "logout",
+            "session",
+            "permission_denied",
+            "unauthorized",
+            "forbidden",
+            "access.denied",
+            "access_denied",
+            "remote_console_access",
+            "403",
+        )
+        text_tokens = ("403 forbidden", "unauthorized access", "access denied", "액세스 거부", "권한")
+        return (
+            event.startswith(access_events)
+            or any(token in event for token in access_tokens)
+            or any(token in text for token in text_tokens)
+        )
+
+    def log_audit_type(self, record: dict) -> str:
+        if LockFixWebHandler.is_admin_access_audit_record(self, record):
+            return "관리자 접근 감사 로그"
+        return "SYSLOG"
+
     def log_audit_source(self, record: dict) -> str:
         event = str(record.get("event") or "")
+        if LockFixWebHandler.is_admin_access_audit_record(self, record):
+            return "admin-access"
         if event.startswith("license"):
             return "license"
         if event.startswith("disk.offline") or event.startswith("disk.online") or event.startswith("disk.storage_api"):
@@ -7038,6 +7076,25 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
     def format_log_audit_record(self, record: dict) -> str:
         event = str(record.get("event") or "audit_event")
         slot_id = str(record.get("slot_id") or "-")
+        if LockFixWebHandler.is_admin_access_audit_record(self, record):
+            user = LockFixWebHandler.compact_log_value(
+                self,
+                record.get("user")
+                or record.get("userId")
+                or record.get("user_id")
+                or record.get("actor")
+                or record.get("actorUserId")
+                or "-",
+            )
+            ip_address = LockFixWebHandler.compact_log_value(
+                self,
+                record.get("ipAddress") or record.get("ip_address") or record.get("client_ip") or "-",
+            )
+            result = LockFixWebHandler.compact_log_value(self, record.get("result") or record.get("status") or "-")
+            message = LockFixWebHandler.compact_log_value(
+                self, record.get("message") or record.get("error") or record.get("reason") or event
+            )
+            return f"관리자 접근 감사 - user {user}, ip {ip_address}, result {result}: {message}"
         if event.startswith("emergency.reconnect") or event in {
             "disk.online.approved",
             "disk.online.start",
