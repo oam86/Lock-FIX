@@ -1480,6 +1480,14 @@ button {
   gap: 10px;
 }
 
+.settings-service-actions-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .settings-preflight-status {
   display: inline-flex;
   align-items: center;
@@ -1564,6 +1572,13 @@ button {
   color: #40566f;
   font-size: 11px;
   font-weight: 900;
+}
+
+.settings-preflight-checks li span {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-preflight-checks li.is-ok strong {

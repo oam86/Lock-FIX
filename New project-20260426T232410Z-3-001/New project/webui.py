@@ -2544,6 +2544,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "mode_label": {"poc": "개발/POC", "commercial": "상용 제품", "delivery": "고객사 납품"}.get(mode, mode),
                 "status": "서비스 미실행",
                 "ok": False,
+                "deployment_ready": False,
                 "service_status": service_status,
                 "service": {
                     "running": False,
@@ -2558,6 +2559,13 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "execution_policy": {"ok": False, "detail": "Agent/Service 미응답"},
                 "firewall": {"ok": False, "detail": "Agent/Service 미응답"},
                 "winrm": {"ok": False, "detail": "Agent/Service 미응답"},
+                "preflight_checks": [
+                    {"key": "veeam_rest_connection", "label": "Veeam REST 연결", "ok": False, "detail": str(exc)},
+                    {"key": "veeam_job_detection", "label": "Veeam Job 감지", "ok": False, "detail": str(exc)},
+                    {"key": "repository_path", "label": "Repository 경로", "ok": False, "detail": str(exc)},
+                    {"key": "target_volume", "label": "대상 볼륨 매핑", "ok": False, "detail": str(exc)},
+                    {"key": "disk_offline_permission", "label": "디스크 Offline 권한", "ok": False, "detail": str(exc)},
+                ],
                 "restricted_features": restricted,
                 "resolution": [
                     "LOCK-FIX Agent/Service 설치 및 실행 상태를 확인하세요.",

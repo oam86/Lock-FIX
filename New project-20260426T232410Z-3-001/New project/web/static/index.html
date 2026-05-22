@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LOCK-FIX PoC</title>
     <!-- cache history: v=20260520-sidebar-account-actions, v=20260520-alert-link-routing, v=20260520-qr-icon-restore, v=20260520-muted-qr-logo, v=20260520-blue-qr-logo, v=20260520-centered-qr-logo, v=20260520-uploaded-qr-logo, v=20260520-qr2-image-logo, v=20260521-hide-ops-events-panel, v=20260521-compact-monitoring-chart, v=20260521-regular-log-text -->
-    <link rel="stylesheet" href="/static/styles.css?v=20260521-regular-log-text" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260522-install-preflight" />
   </head>
   <body>
     <section class="login-screen" id="loginScreen">
@@ -1018,6 +1018,26 @@
               <label><span data-i18n="threatPolicy.reportPath">Report Save Path</span><input id="threatPolicyReportPath" type="text" value="C:\ProgramData\LOCK-FIX\reports\threat" /></label>
             </div>
           </article>
+          <article class="settings-card settings-service-card">
+            <div class="settings-service-status-row">
+              <div>
+                <h2 data-i18n="settings.installPreflightTitle">Install Preflight</h2>
+                <p data-i18n="settings.installPreflightDesc">Verify Veeam REST, job detection, repository path, target volume, and Disk Offline permission before setup.</p>
+              </div>
+              <div class="settings-service-actions-inline">
+                <strong id="servicePreflightStatus" class="settings-preflight-status" data-i18n="settings.statusChecking">Checking</strong>
+                <button type="button" id="servicePreflightButton" data-i18n="settings.preflightRefresh">Recheck</button>
+              </div>
+            </div>
+            <div class="settings-service-preflight">
+              <div class="settings-preflight-grid">
+                <div><em>Mode</em><b id="servicePreflightMode">-</b></div>
+                <div><em>Service Account</em><b id="servicePreflightAccount">-</b></div>
+                <div><em>Restricted</em><b id="servicePreflightRestricted">-</b></div>
+              </div>
+              <ul class="settings-preflight-checks" id="servicePreflightChecks" aria-live="polite"></ul>
+            </div>
+          </article>
           <div class="settings-actions">
             <button type="button" id="settingsApplyButton" data-i18n="settings.apply">Apply</button>
             <span id="settingsApplyStatus" data-i18n="settings.pending">Select options, then click Apply.</span>
@@ -1152,7 +1172,7 @@
       </div>
     </template>
 
-    <script src="/static/app.js?v=20260521-regular-log-text"></script>
+    <script src="/static/app.js?v=20260522-install-preflight"></script>
   </body>
 </html>
 

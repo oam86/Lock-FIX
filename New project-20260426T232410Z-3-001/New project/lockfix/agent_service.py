@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .config import load_config
-from .controller import LockFixController
+from .controller import LockFixController, repository_volume_root
 from .veeam_diagnostics import run_veeam_diagnostics
 
 
@@ -348,6 +348,136 @@ class AgentServiceWorker:
             "recommended_accounts": ["LocalSystem", "lockfix-svc"],
         }
 
+    def diagnostic_contains_text(self, payload: Any, needle: str) -> bool:
+        target = str(needle or "").strip().lower()
+        if not target:
+            return True
+        if isinstance(payload, dict):
+            return any(self.diagnostic_contains_text(value, target) for value in payload.values())
+        if isinstance(payload, list):
+            return any(self.diagnostic_contains_text(value, target) for value in payload)
+        return target in str(payload or "").lower()
+
+    def slot_for_repository_root(self, controller: LockFixController, volume_root: str) -> str:
+        normalized = str(volume_root or "").strip().replace("/", "\\").rstrip("\\").lower()
+        for slot_id, slot in controller.config.slots.items():
+            candidates = [slot.mount_point, slot.device]
+            for candidate in candidates:
+                candidate_root = str(candidate or "").strip().replace("/", "\\").rstrip("\\").lower()
+                if candidate_root == normalized:
+                    return slot_id
+        return ""
+
+    def preflight_check(self, key: str, label: str, ok: bool, detail: str = "", resolution: str = "") -> dict[str, Any]:
+        return {
+            "key": key,
+            "label": label,
+            "ok": bool(ok),
+            "detail": detail,
+            "resolution": resolution,
+        }
+
+    def build_install_preflight_checks(
+        self,
+        controller: LockFixController,
+        identity: dict[str, Any],
+        disk_command_results: list[dict[str, Any]],
+        veeam: dict[str, Any],
+        veeam_ok: bool,
+    ) -> list[dict[str, Any]]:
+        config = controller.config
+        veeam_config = config.veeam
+        repo_path = str(veeam_config.target_repository_path or "").strip()
+        job_name = str(veeam_config.job_name or "").strip()
+        repository_name = str(veeam_config.target_repository_name or "").strip()
+        repository_id = str(veeam_config.target_repository_id or "").strip()
+        veeam_required = bool(veeam_config.enabled)
+
+        checks: list[dict[str, Any]] = [
+            self.preflight_check(
+                "veeam_rest_connection",
+                "Veeam REST 연결",
+                (not veeam_required) or veeam_ok,
+                str((veeam.get("config") or {}).get("base_url") or veeam_config.base_url or "Veeam disabled"),
+                "Veeam REST 9419 주소, 계정, 토큰 권한을 확인하세요.",
+            )
+        ]
+
+        latest_session = veeam.get("latest_configured_session") if isinstance(veeam.get("latest_configured_session"), dict) else {}
+        matching = veeam.get("matching") if isinstance(veeam.get("matching"), dict) else {}
+        job_detected = (not veeam_required) or (
+            bool(job_name)
+            and bool(veeam_ok)
+            and (
+                bool(matching.get("matched_session"))
+                or self.diagnostic_contains_text(latest_session, job_name)
+                or self.diagnostic_contains_text(veeam, job_name)
+            )
+        )
+        checks.append(
+            self.preflight_check(
+                "veeam_job_detection",
+                "Veeam Job 감지",
+                job_detected,
+                job_name or "미설정",
+                "설치 설정의 Veeam Job 이름이 실제 Backup Copy Job과 일치해야 합니다.",
+            )
+        )
+
+        protected_os_volume = False
+        repository_volume = ""
+        repository_path_ok = False
+        repository_detected = False
+        try:
+            repository_volume = repository_volume_root(repo_path) if repo_path else ""
+            protected_os_volume = repository_volume.strip().replace("/", "\\").rstrip("\\").lower() == "c:"
+            repository_detected = any(
+                self.diagnostic_contains_text(veeam, token)
+                for token in (repo_path, repository_name, repository_id)
+                if token
+            )
+            repository_path_ok = bool(repo_path) and not protected_os_volume
+        except ValueError as exc:
+            repository_volume = ""
+            repo_path = repo_path or str(exc)
+        checks.append(
+            self.preflight_check(
+                "repository_path",
+                "Repository 경로",
+                (not veeam_required) or repository_path_ok,
+                f"{repo_path or '미설정'}" + (" · REST 감지" if repository_detected else ""),
+                "Repository 경로는 D:\\Backup처럼 보호 대상 Windows OS 볼륨이 아닌 로컬 볼륨이어야 합니다.",
+            )
+        )
+
+        slot_id = self.slot_for_repository_root(controller, repository_volume) if repository_volume else ""
+        target_volume_ok = bool(repository_volume) and bool(slot_id)
+        checks.append(
+            self.preflight_check(
+                "target_volume",
+                "대상 볼륨 매핑",
+                (not veeam_required) or target_volume_ok,
+                f"{repository_volume or '-'} -> {slot_id or '등록 슬롯 없음'}",
+                "Repository 경로의 루트 볼륨이 LOCK-FIX 슬롯(BAY-01 등)에 매핑되어야 합니다.",
+            )
+        )
+
+        disk_result_by_name = {str(item.get("name") or ""): bool(item.get("ok")) for item in disk_command_results}
+        disk_offline_permission_ok = bool(identity.get("is_local_admin")) and all(
+            disk_result_by_name.get(name)
+            for name in ("Get-Disk", "Get-Partition", "Get-Volume", "Set-Disk")
+        )
+        checks.append(
+            self.preflight_check(
+                "disk_offline_permission",
+                "디스크 Offline 권한",
+                disk_offline_permission_ok,
+                str(identity.get("account") or "unknown"),
+                "Agent/Service 계정은 로컬 관리자 또는 LocalSystem이어야 하며 Set-Disk 권한이 필요합니다.",
+            )
+        )
+        return checks
+
     def service_preflight(self, payload: dict[str, Any], controller: LockFixController) -> dict[str, Any]:
         config = controller.config
         requested_mode = str(payload.get("operation_mode") or config.operation_mode or "commercial")
@@ -356,6 +486,7 @@ class AgentServiceWorker:
             ("Get-Disk", "Get-Disk | Select-Object -First 1 | Out-Null"),
             ("Get-Partition", "Get-Partition | Select-Object -First 1 | Out-Null"),
             ("Get-Volume", "Get-Volume | Select-Object -First 1 | Out-Null"),
+            ("Set-Disk", "Get-Command Set-Disk -ErrorAction Stop | Out-Null"),
             ("Write-VolumeCache", "Get-Command Write-VolumeCache -ErrorAction Stop | Out-Null"),
             ("mountvol", "mountvol | Out-Null"),
         ]
@@ -397,6 +528,18 @@ class AgentServiceWorker:
         if not winrm.get("ok"):
             restricted_features.append("WinRM 정책 확인 필요")
 
+        install_preflight_checks = self.build_install_preflight_checks(
+            controller,
+            identity,
+            disk_command_results,
+            veeam,
+            veeam_ok,
+        )
+        deployment_ready = all(item.get("ok") for item in install_preflight_checks)
+        for item in install_preflight_checks:
+            if not item.get("ok"):
+                restricted_features.append(str(item.get("label") or item.get("key") or "설치 사전점검 실패"))
+
         service_ok = identity["is_local_admin"] and all(item.get("ok") for item in disk_command_results)
         if requested_mode in {"commercial", "delivery"} and not service_ok:
             controller.audit.write(
@@ -413,13 +556,26 @@ class AgentServiceWorker:
             local_admin=identity["is_local_admin"],
             restricted_count=len(restricted_features),
         )
-        status = "OK" if service_ok and (veeam_ok or not config.veeam.enabled) else "권한 부족" if restricted_features else "고객사 정책 확인 필요"
+        controller.audit.write(
+            "service.install_preflight.completed",
+            operation_mode=requested_mode,
+            account=identity["account"],
+            deployment_ready=deployment_ready,
+            failed_checks=[
+                str(item.get("key") or item.get("label") or "")
+                for item in install_preflight_checks
+                if not item.get("ok")
+            ],
+        )
+        status = "OK" if service_ok and deployment_ready else "권한 부족" if restricted_features else "고객사 정책 확인 필요"
         return {
             "checked_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             "operation_mode": requested_mode,
             "platform": platform.platform(),
             "status": status,
             "ok": status == "OK",
+            "deployment_ready": deployment_ready,
+            "preflight_checks": install_preflight_checks,
             "service": {
                 "running": True,
                 "account": identity["account"],

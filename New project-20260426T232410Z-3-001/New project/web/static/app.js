@@ -549,6 +549,8 @@ const translations = {
     "settings.serviceDesc": "Start or stop the installed LOCK-FIX Windows service.",
     "settings.servicePolicyTitle": "Operation Permission Policy",
     "settings.servicePolicyDesc": "Check operation mode, service account, disk-control permissions, and Veeam REST permissions through the Agent/Service.",
+    "settings.installPreflightTitle": "Install Preflight",
+    "settings.installPreflightDesc": "Verify Veeam REST, job detection, repository path, target volume, and Disk Offline permission before setup.",
     "settings.preflightRefresh": "Recheck",
     "settings.serviceStart": "Start",
     "settings.serviceStop": "Stop",
@@ -978,6 +980,8 @@ const translations = {
     "settings.serviceDesc": "설치된 LOCK-FIX Windows 서비스를 시작하거나 중지합니다.",
     "settings.servicePolicyTitle": "권한 운영 정책",
     "settings.servicePolicyDesc": "운영 모드, 서비스 실행 계정, 디스크 제어 권한, Veeam REST 권한을 Agent/Service 기준으로 진단합니다.",
+    "settings.installPreflightTitle": "설치 사전점검",
+    "settings.installPreflightDesc": "설치 전 Veeam REST 연결, Job 감지, Repository 경로, 대상 볼륨, 디스크 Offline 권한을 한 번에 확인합니다.",
     "settings.preflightRefresh": "재진단",
     "settings.serviceStart": "시작",
     "settings.serviceStop": "중지",
@@ -6499,6 +6503,19 @@ function preflightStatusLabel(status) {
   return uiSettings.language === "ko" ? "고객사 정책 확인 필요" : "Customer policy review";
 }
 
+function preflightDisplayLabel(row = {}) {
+  const key = row.key || "";
+  const labels = {
+    veeam_rest_connection: ["Veeam REST connection", "Veeam REST 연결"],
+    veeam_job_detection: ["Veeam Job detection", "Veeam Job 감지"],
+    repository_path: ["Repository path", "Repository 경로"],
+    target_volume: ["Target volume", "대상 볼륨"],
+    disk_offline_permission: ["Disk Offline permission", "디스크 Offline 권한"],
+  };
+  if (labels[key]) return uiSettings.language === "ko" ? labels[key][1] : labels[key][0];
+  return row.label || key || "Preflight";
+}
+
 function renderServicePreflight(data = {}) {
   if (!servicePreflightStatus) return;
   const restricted = Array.isArray(data.restricted_features) ? data.restricted_features : [];
@@ -6514,19 +6531,22 @@ function renderServicePreflight(data = {}) {
   if (servicePreflightRestricted) servicePreflightRestricted.textContent = restricted.length ? `${restricted.length}` : "0";
   if (servicePreflightChecks) {
     const diskChecks = Array.isArray(data.disk_commands) ? data.disk_commands : [];
-    const rows = [
-      { label: "Service", ok: Boolean(service.running), detail: data.service_status?.state || "" },
-      { label: "Local Admin", ok: Boolean(service.local_admin), detail: service.account || "" },
-      ...diskChecks.map((item) => ({ label: item.name || item.command || "PowerShell", ok: Boolean(item.ok), detail: item.error || item.output || "" })),
-      { label: "Veeam REST", ok: Boolean(data.veeam_api?.ok), detail: data.veeam_api?.diagnostics?.error || "" },
-      { label: "UAC", ok: Boolean(data.uac?.ok), detail: data.uac?.detail || "" },
-      { label: "ExecutionPolicy", ok: Boolean(data.execution_policy?.ok), detail: data.execution_policy?.detail || "" },
-      { label: "Firewall", ok: Boolean(data.firewall?.ok), detail: data.firewall?.detail || "" },
-      { label: "WinRM", ok: Boolean(data.winrm?.ok), detail: data.winrm?.detail || "" },
-    ];
+    const installChecks = Array.isArray(data.preflight_checks) ? data.preflight_checks : [];
+    const rows = installChecks.length
+      ? installChecks
+      : [
+        { label: "Service", ok: Boolean(service.running), detail: data.service_status?.state || "" },
+        { label: "Local Admin", ok: Boolean(service.local_admin), detail: service.account || "" },
+        ...diskChecks.map((item) => ({ label: item.name || item.command || "PowerShell", ok: Boolean(item.ok), detail: item.error || item.output || "" })),
+        { label: "Veeam REST", ok: Boolean(data.veeam_api?.ok), detail: data.veeam_api?.diagnostics?.error || "" },
+        { label: "UAC", ok: Boolean(data.uac?.ok), detail: data.uac?.detail || "" },
+        { label: "ExecutionPolicy", ok: Boolean(data.execution_policy?.ok), detail: data.execution_policy?.detail || "" },
+        { label: "Firewall", ok: Boolean(data.firewall?.ok), detail: data.firewall?.detail || "" },
+        { label: "WinRM", ok: Boolean(data.winrm?.ok), detail: data.winrm?.detail || "" },
+      ];
     servicePreflightChecks.innerHTML = rows.map((row) => `
-      <li class="${row.ok ? "is-ok" : "is-warning"}">
-        <span>${escapeHtml(row.label)}</span>
+      <li class="${row.ok ? "is-ok" : "is-warning"}" title="${escapeHtml(row.detail || row.resolution || "")}">
+        <span>${escapeHtml(preflightDisplayLabel(row))}</span>
         <strong>${row.ok ? "OK" : "CHECK"}</strong>
       </li>
     `).join("");
@@ -6547,6 +6567,13 @@ async function reloadServicePreflight() {
       restricted_features: [error.message],
       disk_commands: [],
       veeam_api: { ok: false, diagnostics: { error: error.message } },
+      preflight_checks: [
+        { key: "veeam_rest_connection", ok: false, detail: error.message },
+        { key: "veeam_job_detection", ok: false, detail: error.message },
+        { key: "repository_path", ok: false, detail: error.message },
+        { key: "target_volume", ok: false, detail: error.message },
+        { key: "disk_offline_permission", ok: false, detail: error.message },
+      ],
     });
   }
 }
