@@ -1383,14 +1383,14 @@ const airgapKo = {
   "Flush running": "Flush 실행",
   "I/O checking": "I/O 종료 확인",
   "Power off": "오프라인",
-  "Veeam API Polling": "Veeam API 실시간 확인",
-  "Veeam backup status API is checked every 1 second while the Air-Gap screen is open.": "실제 Veeam API 세션이 확인되기 전까지 API 대기 상태로 유지합니다.",
-  "Veeam API is connected. Step colors change only when the current_step value advances.": "Veeam API가 연결되어 있습니다. current_step 값이 실제로 증가할 때만 단계 색상이 넘어갑니다.",
-  "Veeam API is not connected yet. Current step is held and colors will not advance automatically.": "Veeam API가 아직 연결되지 않았습니다. 현재 단계를 유지하며 색상은 자동으로 넘어가지 않습니다.",
+  "Veeam REST API Polling": "Veeam REST API 실시간 확인",
+  "Veeam backup status API is checked every 1 second while the Air-Gap screen is open.": "실제 Veeam REST API 세션이 확인되기 전까지 API 대기 상태로 유지합니다.",
+  "Veeam API is connected. Step colors change only when the current_step value advances.": "Veeam REST API가 연결되어 있습니다. current_step 값이 실제로 증가할 때만 단계 색상이 넘어갑니다.",
+  "Veeam API is not connected yet. Current step is held and colors will not advance automatically.": "Veeam REST API가 아직 연결되지 않았습니다. 현재 단계를 유지하며 색상은 자동으로 넘어가지 않습니다.",
   "Step Detail Logs": "단계별 상세 로그",
   "Real-time transition evidence": "실시간 전환 근거",
-  "Veeam API": "Veeam API",
-  "Veeam API waiting": "Veeam API 대기",
+  "Veeam API": "Veeam REST API",
+  "Veeam API waiting": "Veeam REST API 대기",
   "Drive hard power-off executed": "디스크 오프라인 처리 실행",
   "Solenoid lock engaged": "솔레노이드 잠금 체결 완료",
   "Air-Gap isolation active": "에어갭 격리 활성화",
@@ -7175,14 +7175,14 @@ function fallbackAirGapSummary(loading = false) {
       port_open: false,
       progress_percent: 0,
       api_verification_percent: 0,
-      message: "Veeam API is not connected yet. Current step is held and colors will not advance automatically.",
+      message: "Veeam REST API is not connected yet. Current step is held and colors will not advance automatically.",
     },
     step_logs: [
-      { step: 1, label: "백업 완료", code: "BACKUP_COMPLETED", state: "PENDING", time: "-", source: "Veeam API 대기", detail: "실제 Veeam API 세션이 확인될 때까지 단계 색상을 회색으로 유지합니다.", transition_allowed: false },
-      { step: 2, label: "Flush 실행", code: "FLUSHING", state: "PENDING", time: "-", source: "Veeam API 대기", detail: "아직 이전 단계 완료 신호가 확인되지 않았습니다.", transition_allowed: false },
-      { step: 3, label: "I/O 종료 확인", code: "IO_CHECKING", state: "PENDING", time: "-", source: "Veeam API 대기", detail: "아직 이전 단계 완료 신호가 확인되지 않았습니다.", transition_allowed: false },
-      { step: 4, label: "Unmount", code: "UNMOUNTING", state: "PENDING", time: "-", source: "Veeam API 대기", detail: "아직 이전 단계 완료 신호가 확인되지 않았습니다.", transition_allowed: false },
-      { step: 5, label: "오프라인", code: "DISK_OFFLINING", state: "PENDING", time: "-", source: "Veeam API 대기", detail: "아직 이전 단계 완료 신호가 확인되지 않았습니다.", transition_allowed: false },
+      { step: 1, label: "백업 완료", code: "BACKUP_COMPLETED", state: "PENDING", time: "-", source: "Veeam REST API 대기", detail: "실제 Veeam REST API 세션이 확인될 때까지 단계 색상을 회색으로 유지합니다.", transition_allowed: false },
+      { step: 2, label: "Flush 실행", code: "FLUSHING", state: "PENDING", time: "-", source: "Veeam REST API 대기", detail: "아직 이전 단계 완료 신호가 확인되지 않았습니다.", transition_allowed: false },
+      { step: 3, label: "I/O 종료 확인", code: "IO_CHECKING", state: "PENDING", time: "-", source: "Veeam REST API 대기", detail: "아직 이전 단계 완료 신호가 확인되지 않았습니다.", transition_allowed: false },
+      { step: 4, label: "Unmount", code: "UNMOUNTING", state: "PENDING", time: "-", source: "Veeam REST API 대기", detail: "아직 이전 단계 완료 신호가 확인되지 않았습니다.", transition_allowed: false },
+      { step: 5, label: "오프라인", code: "DISK_OFFLINING", state: "PENDING", time: "-", source: "Veeam REST API 대기", detail: "아직 이전 단계 완료 신호가 확인되지 않았습니다.", transition_allowed: false },
     ],
     policy_events: [],
     bays: [
@@ -7248,11 +7248,11 @@ function renderSources(data) {
   const veeamSessionLogs = Array.isArray(airGap.session_logs) && airGap.session_logs.length
     ? airGap.session_logs
     : [{
-        name: "Veeam API",
+        name: "Veeam REST API",
         status: "Waiting",
         actions: [
           `Veeam REST API is not synced. Check ${veeam.server || "127.0.0.1"}:${veeam.port || 9419} host, port, credentials, or token.`,
-          "Step colors and arrows stay fixed until a real Veeam session is received.",
+          "Step colors and arrows stay fixed until a real Veeam REST API session is received.",
         ],
         duration: "-",
         progress_percent: 0,
@@ -7384,24 +7384,26 @@ function renderSources(data) {
     current: "READY",
     pending: "WAIT",
   })[state] || "WAIT";
+  const airGapLogTime = (item) => {
+    const raw = item?.time || item?.timestamp || item?.at || item?.created_at || veeam.last_checked || "";
+    return String(raw || "").trim() || "-";
+  };
   const airGapLiveActions = () => {
     const currentStep = Number(veeam.current_step || 1);
-    const actions = [
-      `${apiSynced ? "OK" : "WAIT"} - Air-Gap live feed ${apiSynced ? "receiving /api/sources?live=1 updates" : "waiting for Veeam REST synchronization"}.`,
-      `${airGapLiveStatus().toUpperCase()} - Current Air-Gap step ${currentStep} / 5, Veeam progress ${apiPercent}%.`,
-    ];
-    timelineItems.forEach((item) => {
-      const state = stepLiveState(item);
-      const log = item.log && typeof item.log === "object" ? item.log : {};
-      const detail = log.detail || item.detail || "";
-      const label = stepLabel(item);
-      actions.push(`${airGapStateVerb(state)} - Step ${item.step} ${label}: ${detail || state}.`);
+    const actions = stepLogs.map((log, index) => {
+      const step = Number(log.step || index + 1);
+      const state = String(log.state || "").toLowerCase();
+      const verb = airGapStateVerb(state === "done" ? "complete" : state === "active" ? "running" : state || "pending");
+      const detail = log.detail || log.message || log.result || "Air-Gap 상태를 실시간 확인 중입니다.";
+      return `${verb} - ${airGapLogTime(log)} · Step ${step} ${stepLabel({ step, label: log.label })}: ${detail}`;
     });
+    actions.unshift(`${apiSynced ? "OK" : "WAIT"} - ${airGapLogTime(veeam)} · Air-Gap live feed ${apiSynced ? "receiving /api/sources?live=1 updates" : "waiting for Veeam REST API synchronization"}.`);
+    actions.push(`${airGapLiveStatus().toUpperCase()} - ${airGapLogTime(veeam)} · Current Air-Gap step ${currentStep} / 5, Veeam progress ${apiPercent}%.`);
     if (autoIsolate.message) {
       const autoState = String(autoIsolate.state || airGapLiveStatus()).toUpperCase();
-      actions.push(`${autoState === "ISOLATED" ? "OK" : autoState === "FAILED" ? "ERROR" : "RUNNING"} - ${autoIsolate.message}`);
+      actions.push(`${autoState === "ISOLATED" ? "OK" : autoState === "FAILED" ? "ERROR" : "RUNNING"} - ${airGapLogTime(autoIsolate)} · ${autoIsolate.message}`);
     }
-    return actions;
+    return actions.filter(Boolean).slice(-80);
   };
   const airGapLiveLog = {
     name: "LOCK-FIX Air-Gap",
@@ -7546,14 +7548,12 @@ function renderSources(data) {
       <table class="veeam-log-table">
         <colgroup>
           <col class="veeam-log-col-name" />
-          <col class="veeam-log-col-status" />
           <col class="veeam-log-col-action" />
           <col class="veeam-log-col-duration" />
         </colgroup>
         <thead>
           <tr>
             <th>Name</th>
-            <th>Status</th>
             <th>Action</th>
             <th>Duration</th>
           </tr>
@@ -7562,7 +7562,6 @@ function renderSources(data) {
           ${procedureSessionLogs.map((log, index) => `
             <tr>
               <td class="veeam-session-name">${escapeHtml(log.name || "-")}</td>
-              <td><span class="veeam-session-status veeam-session-${statusVisualClass(log)}">${escapeHtml(statusDisplay(log))}</span></td>
               <td colspan="2">
                 <div class="veeam-session-scroll-row" data-scroll-key="${escapeHtml(`${index}:${log.name || "-"}`)}">
                   <div class="veeam-session-actions">${actionLines(log)}${transferMetaHtml(log)}</div>
@@ -7760,7 +7759,7 @@ function renderSources(data) {
   timeline.innerHTML = `
     <div class="airgap-panel-head">
       <h2>${airgapText("Real-time Interlock Process")}</h2>
-      <span>${airgapText("Veeam API Polling")} · ${veeam.api_poll_interval_seconds || 1}s</span>
+      <span>${airgapText("Veeam REST API Polling")} · ${veeam.api_poll_interval_seconds || 1}s</span>
     </div>
     <div class="veeam-live-status">
       <strong>${veeam.connected ? "CONNECTED" : "CHECKING"}</strong>
