@@ -364,6 +364,12 @@ class LockFixTests(unittest.TestCase):
             },
             {
                 "ts": (now - timedelta(minutes=1)).isoformat(timespec="seconds"),
+                "event": "disk.online.unauthorized.reblock",
+                "slot_id": "BAY-01",
+                "reason": "webui_isolated_state_guard",
+            },
+            {
+                "ts": (now - timedelta(minutes=2)).isoformat(timespec="seconds"),
                 "event": "veeam.integration.ok",
                 "message": "Veeam REST API synced",
             },
@@ -387,6 +393,19 @@ class LockFixTests(unittest.TestCase):
         self.assertEqual(summary["items"][0]["date"], now.strftime("%Y-%m-%d %H:%M:%S"))
         self.assertIn("관리자 접근 감사", summary["items"][0]["message"])
         self.assertIn("auditor", summary["items"][0]["message"])
+
+        all_summary = handler.logs_summary(
+            start_date=now.strftime("%Y-%m-%d"),
+            end_date=now.strftime("%Y-%m-%d"),
+            retention_value="30",
+        )
+        storage_items = [
+            item
+            for item in all_summary["items"]
+            if str(item.get("message") or "") == "disk.online.unauthorized.reblock"
+        ]
+        self.assertEqual(storage_items[0]["type"], "SYSLOG")
+        self.assertEqual(storage_items[0]["source"], "storage")
 
     def test_webui_local_console_policy_uses_socket_peer_not_forwarded_header(self) -> None:
         self.assertTrue(webui.LockFixWebHandler.is_loopback_ip("127.0.0.1"))

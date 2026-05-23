@@ -7020,7 +7020,6 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             "logout",
             "session",
             "permission_denied",
-            "unauthorized",
             "forbidden",
             "access.denied",
             "access_denied",
