@@ -3706,7 +3706,6 @@ function renderDashboard(data) {
             <div><dt>LOCK-FIX 상태</dt><dd>${escapeHtml(backup.isolation_state || "-")}</dd></div>
             <div><dt>차단 결과</dt><dd class="backup-result ${String(backup.result || "").includes("Failed") ? "backup-result-failed" : "backup-result-success"}">${escapeHtml(backup.result || "-")}</dd></div>
           </dl>
-          ${backup.health_message ? `<p class="backup-health-note">${escapeHtml(backup.health_message)}</p>` : ""}
         </div>
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-x" data-resize-axis="x" aria-hidden="true" title="Resize width"></span>
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>

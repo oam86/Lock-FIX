@@ -3206,9 +3206,9 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("Backup Copy 최종 완료 로그가 아직 확인되지 않아", webui_source)
         self.assertIn("Veeam REST 연동", app_source)
         self.assertIn("backup.issue_detected", app_source)
-        self.assertIn("backup-health-note", app_source)
+        self.assertNotIn("backup.health_message ? `<p", app_source)
         self.assertIn(".backup-panel dd.backup-result-failed", css_source)
-        self.assertIn("20260523-veeam-health-live", index_source)
+        self.assertIn("20260523-hide-backup-health-note", index_source)
 
     def test_dashboard_backup_health_message_prioritizes_operation_status(self) -> None:
         message = webui.LockFixWebHandler.dashboard_backup_health_message(
