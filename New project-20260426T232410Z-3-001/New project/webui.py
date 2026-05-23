@@ -7670,6 +7670,8 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             [],
             ["Time", "CPU", "Memory", "Disk", "Network"],
             *[[item["time"], item["cpu"], item["memory"], item["disk"], item["network"]] for item in report["series"]],
+            [],
+            *[[line] for line in self.report_company_footer_lines()],
         ]
         body = self.build_xlsx(rows)
         self.send_download(
@@ -7691,6 +7693,22 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         report = self.report_summary()
         body = self.build_pdf_report(report)
         self.send_download(body, "application/pdf", "lockfix_report.pdf")
+
+    def report_company_footer_lines(self, ascii_only: bool = False) -> list[str]:
+        if ascii_only:
+            return [
+                "OAM Electronics Co., Ltd.",
+                "Head Office: 8071F, 66, Chungmin-ro, Songpa-gu, Seoul, Republic of Korea",
+                "Tel: 1666-3736    Tech Support: 070-7537-3438    Zip code: 05838",
+            ]
+        return [
+            "OAM Electronics Co., Ltd.",
+            "본사 : 서울특별시 송파구 충민로 66, 8층 8071호",
+            "8071F, 66, Chungmin-ro, Songpa-gu, Seoul, Republic of Korea",
+            "Tel : 1666-3736",
+            "Tech Support : 070-7537-3438",
+            "Zip code : 05838",
+        ]
 
     def build_pdf_report(self, report: dict) -> bytes:
         def pdf_text(value: object) -> str:
@@ -7810,6 +7828,9 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         text_at(318, 96, "Manager Signature", 8, "0.32 0.40 0.50", True)
         text_at(318, 82, "Manager: " + ("Signed" if extras.get("manager_signature") else "Not Signed"), 8, "0.05 0.13 0.24", True)
         text_at(318, 70, "Date: " + (report["generated_at"] if extras.get("manager_signature") else "-"), 7, "0.32 0.40 0.50")
+        line(42, 54, 550, 54, color="0.84 0.89 0.95", width=0.5)
+        for index, footer_line in enumerate(self.report_company_footer_lines(ascii_only=True)):
+            text_at(42, 43 - (index * 10), footer_line, 7, "0.34 0.42 0.52", index == 0)
         finish_page()
 
         page_count = len(pages)
@@ -8116,6 +8137,8 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             *signature_blocks,
             para("Recent Monitoring Samples", "section"),
             table(time_rows, header=True),
+            para("OAM Electronics Co., Ltd.", "section"),
+            *[para(line) for line in self.report_company_footer_lines()[1:]],
         ]
         document = (
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'

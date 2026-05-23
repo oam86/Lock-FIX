@@ -1019,6 +1019,8 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(b"Signature Confirmation", pdf_body)
         self.assertIn(b"Engineer: Not Signed", pdf_body)
         self.assertIn(b"Manager: Not Signed", pdf_body)
+        self.assertIn(b"OAM Electronics Co., Ltd.", pdf_body)
+        self.assertIn(b"Tech Support: 070-7537-3438", pdf_body)
         self.assertIn("def fit_text", webui_source)
         self.assertIn("value_size = 13 if len(value_text) <= 20 else 10", webui_source)
         self.assertNotIn(b"(LOCK-FIX Hardware Detection Monitoring)", pdf_body)
@@ -1032,6 +1034,8 @@ class LockFixTests(unittest.TestCase):
             [],
             ["Metric", "Current", "Average", "Peak", "Threshold", "Status", "Recommendation"],
             ["Memory", 92.3, 92.2, 92.9, 80, "Warning", "Check resident services"],
+            [],
+            *[[line] for line in handler.report_company_footer_lines()],
         ])
         self.assertTrue(zipfile.is_zipfile(webui.io.BytesIO(xlsx_body)))
         with zipfile.ZipFile(webui.io.BytesIO(xlsx_body)) as archive:
@@ -1041,6 +1045,8 @@ class LockFixTests(unittest.TestCase):
             self.assertIn("Signature Confirmation", sheet_xml)
             self.assertIn("Signature / Seal", sheet_xml)
             self.assertIn("Not Signed", sheet_xml)
+            self.assertIn("OAM Electronics Co., Ltd.", sheet_xml)
+            self.assertIn("Zip code : 05838", sheet_xml)
             self.assertIn('wrapText="1"', archive.read("xl/styles.xml").decode("utf-8"))
 
         docx_body = handler.build_docx(report)
@@ -1052,7 +1058,13 @@ class LockFixTests(unittest.TestCase):
             self.assertIn("Signature Confirmation", document_xml)
             self.assertIn("Signature / Seal", document_xml)
             self.assertIn("Not Signed", document_xml)
+            self.assertIn("OAM Electronics Co., Ltd.", document_xml)
+            self.assertIn("070-7537-3438", document_xml)
             self.assertIn("<w:tbl>", document_xml)
+
+        index_html = Path.cwd().joinpath("web", "static", "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("OAM Electronics Co., Ltd.", index_html)
+        self.assertNotIn("070-7537-3438", index_html)
 
     def test_qr_login_button_has_visible_icon_treatment(self) -> None:
         root = Path.cwd()
