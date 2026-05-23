@@ -3029,7 +3029,7 @@ function enableDashboardKpiDrag(board) {
 
   const applyCardSize = (card, size) => {
     if (!card || !size) return;
-    const bounds = dashboardResizeBounds(board, { minWidth: 180, maxWidth: 560, minHeight: 96, maxHeight: 220 });
+    const bounds = dashboardResizeBounds(board, { minWidth: 180, maxWidth: 560, minHeight: 128, maxHeight: 240 });
     const cols = Math.max(1, Math.min(3, Number(size.cols || card.dataset.cols || 1)));
     const rows = Math.max(1, Math.min(2, Number(size.rows || card.dataset.rows || 1)));
     card.dataset.cols = String(cols);
