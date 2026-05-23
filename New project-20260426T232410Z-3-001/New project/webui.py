@@ -7613,6 +7613,9 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
     def send_report_xlsx(self) -> None:
         report = self.report_summary()
         extras = report["extras"]
+        inspection_items = report["inspection_items"]
+        warning_items = [item for item in inspection_items if str(item.get("result", "")).lower() == "warning"]
+        normal_count = len(inspection_items) - len(warning_items)
         rows = [
             ["LOCK-FIX System Inspection Report"],
             [f"Generated: {report['generated_at']}", "Overall Status", report["summary"]["overall_status"]],
@@ -7628,6 +7631,50 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             ["Service", report["server"]["service"], "Memory", report["server"]["memory"]],
             ["Model", report["server"]["model"], "Disk", report["server"]["disk"]],
             ["S/N", report["server"]["serial"], "Hostname", report["server"]["hostname"]],
+            [],
+            ["Server Detail Values"],
+            ["OS Version", report["server"]["os_version"]],
+            ["Service", report["server"]["service"]],
+            ["Model", report["server"]["model"]],
+            ["Disk", report["server"]["disk"]],
+            ["Serial Number", report["server"]["serial"]],
+            ["Hostname", report["server"]["hostname"]],
+            [],
+            ["Resource Usage Analysis"],
+            ["Metric", "Current", "Average", "Peak", "Threshold", "Result", "Recommendation"],
+            *[
+                [
+                    card["label"],
+                    card["current"],
+                    card["average"],
+                    card["peak"],
+                    card["threshold"],
+                    card["status"],
+                    card["recommendation"],
+                ]
+                for card in report["cards"]
+            ],
+            [],
+            ["Resource Recommendations"],
+            *[[card["label"], card["recommendation"]] for card in report["cards"]],
+            [],
+            ["Inspection Summary"],
+            ["Total Checks", "Normal", "Warning", "Overall"],
+            [len(inspection_items), normal_count, len(warning_items), "Review Required" if warning_items else "Operational"],
+            [],
+            ["Attention Items"],
+            ["Inspection Item", "Metric", "Criteria", "Result"],
+            *(
+                [[item["item"], item["metric"], item["criteria"], item["result"]] for item in warning_items]
+                or [["No attention items", "-", "-", "Normal"]]
+            ),
+            [],
+            ["Server Inspection Checklist"],
+            ["Category", "Inspection Item", "Details", "Criteria", "Metric", "Result"],
+            *[
+                [item["category"], item["item"], item["detail"], item["criteria"], item["metric"], item["result"]]
+                for item in inspection_items
+            ],
             [],
             ["Engineer Opinion"],
             ["Content", extras["engineer_opinion"] or "-"],
@@ -7648,30 +7695,17 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                 "Attached" if extras["manager_signature"] else "Pending",
             ],
             [],
-            ["Metric", "Current", "Average", "Peak", "Threshold", "Status", "Recommendation"],
-            *[
-                [
-                    card["label"],
-                    card["current"],
-                    card["average"],
-                    card["peak"],
-                    card["threshold"],
-                    card["status"],
-                    card["recommendation"],
-                ]
-                for card in report["cards"]
-            ],
-            [],
-            ["Category", "Inspection Item", "Details", "Criteria", "Metric", "Result"],
-            *[
-                [item["category"], item["item"], item["detail"], item["criteria"], item["metric"], item["result"]]
-                for item in report["inspection_items"]
-            ],
-            [],
+            ["Recent Monitoring Samples"],
             ["Time", "CPU", "Memory", "Disk", "Network"],
             *[[item["time"], item["cpu"], item["memory"], item["disk"], item["network"]] for item in report["series"]],
             [],
-            *[[line] for line in self.report_company_footer_lines()],
+            [
+                "OAM Electronics Co., Ltd.",
+                "8071F, 66, Chungmin-ro, Songpa-gu, Seoul, Republic of Korea",
+                "Zip code : 05838",
+                "Tel : 1666-3736",
+                "Tech Support : 070-7537-3438",
+            ],
         ]
         body = self.build_xlsx(rows)
         self.send_download(
@@ -8011,8 +8045,16 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             "LOCK-FIX System Inspection Report",
             "Customer / Inspection Information",
             "Server Basic Information",
+            "Server Detail Values",
+            "Resource Usage Analysis",
+            "Resource Recommendations",
+            "Inspection Summary",
+            "Attention Items",
+            "Server Inspection Checklist",
             "Engineer Opinion",
             "Electronic Signature",
+            "Recent Monitoring Samples",
+            "OAM Electronics Co., Ltd.",
         }
         table_headers = {
             "Metric",
@@ -8020,6 +8062,8 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             "Time",
             "Customer Name",
             "OS Version",
+            "Total Checks",
+            "Inspection Item",
             "Content",
             "Signature Confirmation",
             "Engineer Inspection Signature",

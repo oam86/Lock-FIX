@@ -1063,6 +1063,29 @@ class LockFixTests(unittest.TestCase):
             self.assertIn("Zip code : 05838", sheet_xml)
             self.assertIn('wrapText="1"', archive.read("xl/styles.xml").decode("utf-8"))
 
+        captured_xlsx = {}
+        handler.send_download = lambda body, content_type, filename: captured_xlsx.update(
+            {"body": body, "content_type": content_type, "filename": filename}
+        )
+        handler.send_report_xlsx()
+        self.assertEqual(captured_xlsx["filename"], "lockfix_report.xlsx")
+        with zipfile.ZipFile(webui.io.BytesIO(captured_xlsx["body"])) as archive:
+            sheet_xml = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
+            self.assertIn("Customer / Inspection Information", sheet_xml)
+            self.assertIn("Server Basic Information", sheet_xml)
+            self.assertIn("Server Detail Values", sheet_xml)
+            self.assertIn("Resource Usage Analysis", sheet_xml)
+            self.assertIn("Resource Recommendations", sheet_xml)
+            self.assertIn("Inspection Summary", sheet_xml)
+            self.assertIn("Attention Items", sheet_xml)
+            self.assertIn("Server Inspection Checklist", sheet_xml)
+            self.assertIn("Recent Monitoring Samples", sheet_xml)
+            self.assertIn("LOCK-FIX Hardware Detection Monitoring", sheet_xml)
+            self.assertIn("8071F, 66, Chungmin-ro, Songpa-gu, Seoul, Republic of Korea", sheet_xml)
+            self.assertIn("Zip code : 05838", sheet_xml)
+            self.assertIn("Tel : 1666-3736", sheet_xml)
+            self.assertIn("Tech Support : 070-7537-3438", sheet_xml)
+
         docx_body = handler.build_docx(report)
         self.assertTrue(zipfile.is_zipfile(webui.io.BytesIO(docx_body)))
         with zipfile.ZipFile(webui.io.BytesIO(docx_body)) as archive:
