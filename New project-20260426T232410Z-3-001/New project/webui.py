@@ -7724,8 +7724,8 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             rect(x, y, w, h, stroke="0.76 0.83 0.91", fill="0.98 0.99 1")
             value_text = str(value)
             value_size = 13 if len(value_text) <= 20 else 10
-            text_at(x + 12, y + h - 14, fit_text(label.upper(), w - 24, 7), 7, "0.32 0.40 0.50", True)
-            text_at(x + 12, y + 12, fit_text(value_text, w - 24, value_size), value_size, color, True)
+            text_at(x + 10, y + h - 16, fit_text(label.upper(), w - 20, 7), 7, "0.32 0.40 0.50", True)
+            text_at(x + 10, y + 13, fit_text(value_text, w - 20, value_size), value_size, color, True)
 
         def table(x: float, y: float, widths: list[float], rows: list[list[object]], header: bool = True, row_h: float = 21) -> float:
             current_y = y
@@ -7743,54 +7743,95 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                 current_y -= row_h
             return current_y
 
-        page_w, page_h = 842, 595
+        def begin_page(continued: bool = False) -> None:
+            nonlocal commands
+            commands = []
+            rect(24, 24, page_w - 48, page_h - 48, stroke="0.84 0.89 0.95", fill="1 1 1")
+            text_at(42, 800, "LOCK-FIX System Inspection Report", 22 if not continued else 16, "0.04 0.12 0.24", True)
+            if continued:
+                text_at(42, 780, "Continued inspection details", 9, "0.34 0.42 0.52")
+
+        def finish_page() -> None:
+            pages.append("\n".join(commands).encode("latin-1"))
+
+        page_w, page_h = 595, 842
+        pages: list[bytes] = []
         commands: list[str] = []
-        rect(24, 24, page_w - 48, page_h - 48, stroke="0.84 0.89 0.95", fill="1 1 1")
-        text_at(42, 548, "LOCK-FIX System Inspection Report", 22, "0.04 0.12 0.24", True)
-        text_at(42, 528, f"Generated: {report['generated_at']}   Overall: {report['summary']['overall_status']}", 9, status_color(report["summary"]["overall_status"]), True)
-        text_at(42, 512, "Enterprise backup isolation / Air-Gap verification summary", 9, "0.34 0.42 0.52")
+        begin_page()
+        text_at(42, 775, f"Generated: {report['generated_at']}   Overall: {report['summary']['overall_status']}", 9, status_color(report["summary"]["overall_status"]), True)
+        text_at(42, 758, "Enterprise backup isolation / Air-Gap verification summary", 9, "0.34 0.42 0.52")
 
         customer = report["customer"]
         server = report["server"]
-        card(42, 456, 175, 44, "Customer", customer["customer_name"])
-        card(229, 456, 175, 44, "Engineer", customer["engineer"])
-        card(416, 456, 175, 44, "Inspection Date", customer["inspection_date"])
-        card(603, 456, 175, 44, "Service", server["service"])
+        card(42, 700, 118, 44, "Customer", customer["customer_name"])
+        card(174, 700, 118, 44, "Engineer", customer["engineer"])
+        card(306, 700, 118, 44, "Inspection Date", customer["inspection_date"])
+        card(438, 700, 112, 44, "Service", server["service"])
 
-        text_at(42, 436, "Resource Summary", 12, "0.04 0.12 0.24", True)
+        text_at(42, 674, "Resource Summary", 12, "0.04 0.12 0.24", True)
         summary_rows = [["Metric", "Current", "Average", "Peak", "Threshold", "Result"]]
         for item in report["cards"]:
             summary_rows.append([item["label"], item["current"], item["average"], item["peak"], item["threshold"], item["status"]])
-        next_y = table(42, 422, [120, 80, 80, 80, 80, 120], summary_rows)
+        next_y = table(42, 656, [88, 68, 68, 68, 78, 96], summary_rows, row_h=22)
 
         text_at(42, next_y - 20, "Server Inspection Checklist", 12, "0.04 0.12 0.24", True)
         inspection_rows = [["Category", "Inspection Item", "Details", "Criteria", "Metric", "Result"]]
-        for item in report["inspection_items"][:13]:
+        first_page_items = report["inspection_items"][:15]
+        for item in first_page_items:
             inspection_rows.append([item["category"], item["item"], item["detail"], item["criteria"], item["metric"], item["result"]])
-        table(42, next_y - 34, [62, 120, 175, 120, 90, 90], inspection_rows)
+        table(42, next_y - 34, [48, 96, 132, 104, 84, 70], inspection_rows, row_h=20)
+
+        finish_page()
+
+        remaining_items = report["inspection_items"][len(first_page_items):]
+        if remaining_items:
+            begin_page(True)
+            inspection_rows = [["Category", "Inspection Item", "Details", "Criteria", "Metric", "Result"]]
+            for item in remaining_items:
+                inspection_rows.append([item["category"], item["item"], item["detail"], item["criteria"], item["metric"], item["result"]])
+            next_y = table(42, 742, [48, 96, 132, 104, 84, 70], inspection_rows, row_h=20)
+        else:
+            begin_page(True)
+            next_y = 742
+
+        text_at(42, next_y - 24, "Engineer Opinion", 12, "0.04 0.12 0.24", True)
 
         extras = report["extras"]
-        rect(42, 38, 356, 46, stroke="0.82 0.87 0.92", fill="0.99 1 1")
-        text_at(54, 66, "Engineer Opinion", 9, "0.32 0.40 0.50", True)
-        text_at(54, 50, textwrap.shorten(extras.get("engineer_opinion") or "-", width=76, placeholder="..."), 8, "0.05 0.13 0.24")
-        rect(412, 38, 174, 46, stroke="0.82 0.87 0.92", fill="0.99 1 1")
-        text_at(424, 68, "Signature Confirmation", 8, "0.32 0.40 0.50", True)
-        text_at(424, 55, "Engineer: " + ("Signed" if extras.get("engineer_signature") else "Not Signed"), 8, "0.05 0.13 0.24", True)
-        text_at(424, 43, "Date: " + (report["generated_at"] if extras.get("engineer_signature") else "-"), 7, "0.32 0.40 0.50")
-        rect(604, 38, 174, 46, stroke="0.82 0.87 0.92", fill="0.99 1 1")
-        text_at(616, 68, "Signature Confirmation", 8, "0.32 0.40 0.50", True)
-        text_at(616, 55, "Manager: " + ("Signed" if extras.get("manager_signature") else "Not Signed"), 8, "0.05 0.13 0.24", True)
-        text_at(616, 43, "Date: " + (report["generated_at"] if extras.get("manager_signature") else "-"), 7, "0.32 0.40 0.50")
+        opinion_y = max(168, next_y - 70)
+        rect(42, opinion_y, 508, 46, stroke="0.82 0.87 0.92", fill="0.99 1 1")
+        text_at(54, opinion_y + 29, "Engineer Opinion", 9, "0.32 0.40 0.50", True)
+        text_at(54, opinion_y + 13, textwrap.shorten(extras.get("engineer_opinion") or "-", width=96, placeholder="..."), 8, "0.05 0.13 0.24")
+        text_at(42, 136, "Signature Confirmation", 12, "0.04 0.12 0.24", True)
+        rect(42, 66, 244, 52, stroke="0.82 0.87 0.92", fill="0.99 1 1")
+        text_at(54, 96, "Engineer Inspection Signature", 8, "0.32 0.40 0.50", True)
+        text_at(54, 82, "Engineer: " + ("Signed" if extras.get("engineer_signature") else "Not Signed"), 8, "0.05 0.13 0.24", True)
+        text_at(54, 70, "Date: " + (report["generated_at"] if extras.get("engineer_signature") else "-"), 7, "0.32 0.40 0.50")
+        rect(306, 66, 244, 52, stroke="0.82 0.87 0.92", fill="0.99 1 1")
+        text_at(318, 96, "Manager Signature", 8, "0.32 0.40 0.50", True)
+        text_at(318, 82, "Manager: " + ("Signed" if extras.get("manager_signature") else "Not Signed"), 8, "0.05 0.13 0.24", True)
+        text_at(318, 70, "Date: " + (report["generated_at"] if extras.get("manager_signature") else "-"), 7, "0.32 0.40 0.50")
+        finish_page()
 
-        stream = "\n".join(commands).encode("latin-1")
+        page_count = len(pages)
+        font1_ref = 3 + page_count
+        font2_ref = font1_ref + 1
+        content_start = font2_ref + 1
+        page_refs = list(range(3, 3 + page_count))
         objects = [
             b"<< /Type /Catalog /Pages 2 0 R >>",
-            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>",
+            f"<< /Type /Pages /Kids [{' '.join(f'{ref} 0 R' for ref in page_refs)}] /Count {page_count} >>".encode("ascii"),
+        ]
+        for index, page_ref in enumerate(page_refs):
+            content_ref = content_start + index
+            objects.append(
+                f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_w} {page_h}] /Resources << /Font << /F1 {font1_ref} 0 R /F2 {font2_ref} 0 R >> >> /Contents {content_ref} 0 R >>".encode("ascii")
+            )
+        objects.extend([
             b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
             b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>",
-            b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream",
-        ]
+        ])
+        for stream in pages:
+            objects.append(b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream")
         output = io.BytesIO()
         output.write(b"%PDF-1.4\n")
         offsets = [0]
