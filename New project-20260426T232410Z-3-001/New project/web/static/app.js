@@ -128,6 +128,7 @@ const threatResultTable = document.querySelector("#threatResultTable");
 const threatDetailPanel = document.querySelector("#threatDetailPanel");
 const threatPolicyBadge = document.querySelector("#threatPolicyBadge");
 const threatManualScanButton = document.querySelector("#threatManualScanButton");
+const threatManualProofPanel = document.querySelector("#threatManualProofPanel");
 const logsStart = document.querySelector("#logsStart");
 const logsEnd = document.querySelector("#logsEnd");
 const logsRangeApply = document.querySelector("#logsRangeApply");
@@ -4583,6 +4584,7 @@ function renderThreatDetection(data = {}) {
   const results = Array.isArray(data.results) ? data.results : [];
   const policy = data.policy || {};
   const veeamMalwareApi = data.veeam_malware_api || {};
+  renderThreatManualProof(data.manual_scan || {});
   const cards = [
     { label: "최근 검사 상태", value: summary.status || "-", meta: summary.status_detail || "정상 / 주의 / 위험", tone: threatTone(summary.status) },
     { label: "위험 점수", value: String(summary.score ?? "-"), meta: "0~30 정상 · 31~70 주의 · 71~100 위험", tone: threatTone(summary.status) },
@@ -4628,6 +4630,54 @@ function renderThreatDetection(data = {}) {
     </tr>
   `).join("") || `<tr><td colspan="8">위협 탐지 이력이 없습니다.</td></tr>`;
   renderThreatDetail(results[0] || null);
+}
+
+function renderThreatManualProof(scan = {}) {
+  if (!threatManualProofPanel) return;
+  if (!scan || !scan.scan_id) {
+    threatManualProofPanel.hidden = true;
+    threatManualProofPanel.innerHTML = "";
+    return;
+  }
+  const evidence = Array.isArray(scan.evidence) ? scan.evidence : [];
+  const sampleHashes = Array.isArray(scan.sample_hashes) ? scan.sample_hashes : [];
+  const statusTone = threatTone(scan.result || "");
+  threatManualProofPanel.hidden = false;
+  threatManualProofPanel.innerHTML = `
+    <div class="threat-manual-proof-head">
+      <div>
+        <span>MANUAL SCAN PROOF</span>
+        <h2>수동 검사 실행 증적</h2>
+        <p>검사 ID, 대상 저장소, 실행 시간, 샘플 해시와 점검 결과를 확인합니다.</p>
+      </div>
+      <strong class="threat-result-pill threat-${statusTone}">${escapeHtml(scan.result || "-")}</strong>
+    </div>
+    <div class="threat-manual-proof-grid">
+      <article><span>검사 ID</span><strong>${escapeHtml(scan.scan_id || "-")}</strong></article>
+      <article><span>실행 사용자</span><strong>${escapeHtml(scan.actor || "-")}</strong></article>
+      <article><span>검사 시작</span><strong>${escapeHtml(scan.started_at || "-")}</strong></article>
+      <article><span>검사 종료</span><strong>${escapeHtml(scan.completed_at || "-")}</strong></article>
+      <article><span>대상 Repository</span><strong>${escapeHtml(scan.repository_path || "-")}</strong></article>
+      <article><span>검사 파일</span><strong>${escapeHtml(String(scan.scanned_files ?? 0))}개</strong></article>
+    </div>
+    <div class="threat-manual-proof-evidence">
+      ${evidence.map((item) => `
+        <article class="threat-proof-${String(item.status || "").toLowerCase()}">
+          <span>${escapeHtml(item.status || "-")}</span>
+          <strong>${escapeHtml(item.name || "-")}</strong>
+          <p>${escapeHtml(item.detail || "-")}</p>
+        </article>
+      `).join("")}
+    </div>
+    ${sampleHashes.length ? `
+      <div class="threat-manual-hash-list">
+        <strong>샘플 SHA-256 증적</strong>
+        ${sampleHashes.slice(0, 5).map((item) => `
+          <p><span>${escapeHtml(item.path || "-")}</span><code>${escapeHtml(item.sha256_64k || "-")}</code></p>
+        `).join("")}
+      </div>
+    ` : ""}
+  `;
 }
 
 function renderThreatDetail(item) {
@@ -4743,6 +4793,54 @@ async function reloadThreatDetection() {
   const data = await requestJson("/api/threat-detection");
   renderThreatDetection(data);
   return data;
+}
+
+async function runThreatManualScan() {
+  if (!threatManualScanButton) return;
+  const originalText = threatManualScanButton.textContent;
+  threatManualScanButton.disabled = true;
+  threatManualScanButton.textContent = "검사 중...";
+  if (threatManualProofPanel) {
+    threatManualProofPanel.hidden = false;
+    threatManualProofPanel.innerHTML = `
+      <div class="threat-manual-proof-head">
+        <div>
+          <span>MANUAL SCAN PROOF</span>
+          <h2>수동 검사가 실행 중입니다.</h2>
+          <p>저장소 경로, 샘플 해시, 의심 확장자, Air-Gap 정책을 확인하고 있습니다.</p>
+        </div>
+        <strong class="threat-result-pill threat-warn">RUNNING</strong>
+      </div>
+    `;
+  }
+  try {
+    const result = await requestJson("/api/threat-detection/manual-scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestedAt: new Date().toISOString() }),
+      timeoutMs: 30000,
+    });
+    renderThreatDetection(result.summary || {});
+    renderThreatManualProof(result.manual_scan || {});
+  } catch (error) {
+    if (threatManualProofPanel) {
+      threatManualProofPanel.hidden = false;
+      threatManualProofPanel.innerHTML = `
+        <div class="threat-manual-proof-head">
+          <div>
+            <span>MANUAL SCAN PROOF</span>
+            <h2>수동 검사 실행 실패</h2>
+            <p>${escapeHtml(error.message || "manual scan failed")}</p>
+          </div>
+          <strong class="threat-result-pill threat-danger">FAILED</strong>
+        </div>
+      `;
+    }
+    console.warn("Unable to run manual threat scan", error);
+  } finally {
+    threatManualScanButton.disabled = false;
+    threatManualScanButton.textContent = originalText || t("threat.manualScan");
+  }
 }
 
 function formatCompactRate(values) {
@@ -8799,9 +8897,7 @@ threatDetailPanel?.addEventListener("click", (event) => {
   }
 });
 threatManualScanButton?.addEventListener("click", () => {
-  reloadThreatDetection().catch((error) => {
-    console.warn("Unable to run manual threat refresh", error);
-  });
+  runThreatManualScan();
 });
 chartMenuButton.addEventListener("click", () => downloadMenu.classList.toggle("open"));
 chartZoomInButton.addEventListener("click", () => {

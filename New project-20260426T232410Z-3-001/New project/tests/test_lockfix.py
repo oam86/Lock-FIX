@@ -863,6 +863,67 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".subtle-show-button", css)
         self.assertIn("20260522-airgap-rest-live-stream", html)
 
+    def test_threat_manual_scan_runs_and_persists_proof(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        raw["veeam"] = {
+            "job_name": "Agent_backup",
+            "target_repository_name": "D REPO",
+            "target_repository_path": "D:\\Backup",
+            "base_url": "https://127.0.0.1:9419",
+        }
+        config_path.write_text(json.dumps(raw), encoding="utf-8")
+        handler = webui.LockFixWebHandler.__new__(webui.LockFixWebHandler)
+        handler.context = webui.WebContext(config_path)
+        handler.headers = {"Cookie": "lockfix_session=admin-token"}
+        handler.context.sessions["admin-token"] = handler.session_record("admin", Role.SUPER_ADMIN)
+        proof_path = tmp_path / "threat_manual_scan.json"
+        sample = {
+            "reachable": True,
+            "file_count": 2,
+            "total_bytes": 7,
+            "sample_hashes": [{"path": "D:\\Backup\\Agent_backup.vbk", "sha256_64k": "a" * 64, "size": 7}],
+            "suspicious": [],
+            "message": "Sampled 2 files from repository path.",
+        }
+
+        with patch.object(handler, "manual_threat_scan_path", return_value=proof_path), patch.object(
+            handler,
+            "repository_scan_sample",
+            return_value=sample,
+        ):
+            result = handler.run_manual_threat_scan()
+
+        self.assertTrue(result["ok"])
+        proof = result["manual_scan"]
+        self.assertEqual(proof["result"], "정상")
+        self.assertEqual(proof["repository_path"], "D:\\Backup")
+        self.assertEqual(proof["backup_job"], "Agent_backup")
+        self.assertEqual(proof["scanned_files"], 2)
+        self.assertEqual(proof["audit_log_id"], "THREAT_MANUAL_SCAN_COMPLETED")
+        self.assertTrue(proof_path.exists())
+        audit_text = (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
+        self.assertIn('"event": "threat.manual_scan.started"', audit_text)
+        self.assertIn('"event": "threat.manual_scan.completed"', audit_text)
+
+    def test_threat_manual_scan_ui_posts_and_shows_proof(self) -> None:
+        root = Path.cwd()
+        html = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
+        app = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
+        css = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
+        server = (root / "webui.py").read_text(encoding="utf-8")
+
+        self.assertIn('id="threatManualProofPanel"', html)
+        self.assertIn("20260523-threat-manual-proof", html)
+        self.assertIn("/api/threat-detection/manual-scan", server)
+        self.assertIn("def run_manual_threat_scan", server)
+        self.assertIn("function runThreatManualScan", app)
+        self.assertIn('requestJson("/api/threat-detection/manual-scan"', app)
+        self.assertIn("renderThreatManualProof", app)
+        self.assertIn(".threat-manual-proof-panel", css)
+        self.assertIn(".threat-manual-hash-list", css)
+
     def test_monitoring_chart_uses_compact_height(self) -> None:
         root = Path.cwd()
         html = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")

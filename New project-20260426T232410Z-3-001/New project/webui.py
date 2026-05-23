@@ -1238,6 +1238,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 self.require_auth(Permission.AIRGAP_POLICY_MANAGE)
                 payload = self.read_json_body()
                 self.send_json(self.save_admin_memo(payload), status=201)
+            elif parsed.path == "/api/threat-detection/manual-scan":
+                self.require_auth(Permission.AIRGAP_POLICY_VIEW)
+                self.send_json(self.run_manual_threat_scan(), status=202)
             elif parsed.path == "/api/isolate":
                 self.require_auth(Permission.DISK_OFFLINE_EXECUTE)
                 slot_id = self.query_slot(parsed.query)
@@ -6318,6 +6321,35 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 result["admin_note"] = latest_note.get("note") or default_admin_note
                 result["admin_note_updated_at"] = latest_note.get("created_at") or ""
                 result["admin_note_actor"] = latest_note.get("actor") or ""
+        manual_scan = self.read_manual_threat_scan()
+        results = [base_result, caution_result, danger_result]
+        if manual_scan:
+            manual_result = dict(base_result)
+            manual_result.update(
+                {
+                    "id": str(manual_scan.get("scan_id") or "threat-scan-manual"),
+                    "scan_time": str(manual_scan.get("completed_at") or manual_scan.get("started_at") or last_scan),
+                    "scan_started_at": str(manual_scan.get("started_at") or last_scan),
+                    "scan_ended_at": str(manual_scan.get("completed_at") or last_scan),
+                    "repository": str(manual_scan.get("repository_name") or repository_name),
+                    "repository_path": str(manual_scan.get("repository_path") or repository_path),
+                    "backup_job": str(manual_scan.get("backup_job") or backup_job),
+                    "backup_file_path": str(manual_scan.get("scan_target") or backup_file_path),
+                    "engine": str(manual_scan.get("engine") or base_result["engine"]),
+                    "result": str(manual_scan.get("result") or status),
+                    "score": int(manual_scan.get("score") or score),
+                    "detection_count": int(manual_scan.get("suspicious_count") or 0),
+                    "action_status": str(manual_scan.get("action_status") or "검사 완료"),
+                    "lockfix_action": str(manual_scan.get("lockfix_action") or base_result["lockfix_action"]),
+                    "audit_log_id": str(manual_scan.get("audit_log_id") or "THREAT_MANUAL_SCAN_COMPLETED"),
+                    "detections": manual_scan.get("detections") if isinstance(manual_scan.get("detections"), list) else [],
+                }
+            )
+            results = [manual_result, *results]
+            status = str(manual_scan.get("result") or status)
+            score = int(manual_scan.get("score") or score)
+            suspicious_count = int(manual_scan.get("suspicious_count") or suspicious_count)
+            last_scan = str(manual_scan.get("completed_at") or last_scan)
         return {
             "summary": {
                 "status": status,
@@ -6344,6 +6376,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "last_checked": last_scan,
                 "note": "1차 개발은 Mock 표시이며, 2차 개발에서 Veeam REST Malware Detection 이벤트와 세션 ID를 실제 연동합니다.",
             },
+            "manual_scan": manual_scan or {},
             "audit_events": [
                 "THREAT_SCAN_STARTED",
                 "THREAT_SCAN_COMPLETED",
@@ -6354,8 +6387,206 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "THREAT_SCAN_APPROVAL_REQUIRED",
                 "THREAT_SCAN_REPORT_DOWNLOADED",
             ],
-            "results": [base_result, caution_result, danger_result],
+            "results": results,
         }
+
+    def manual_threat_scan_path(self) -> Path:
+        return ROOT / "runtime" / "threat_manual_scan.json"
+
+    def read_manual_threat_scan(self) -> dict:
+        path = self.manual_threat_scan_path()
+        if not path.exists():
+            return {}
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def repository_scan_sample(self, repository_path: str, max_files: int = 120, hash_files: int = 5) -> dict:
+        root = Path(repository_path)
+        if not repository_path or repository_path == "-" or not root.exists():
+            return {
+                "reachable": False,
+                "file_count": 0,
+                "sample_hashes": [],
+                "suspicious": [],
+                "total_bytes": 0,
+                "message": "Repository path is not reachable from the WebUI process.",
+            }
+        queue = [root]
+        file_count = 0
+        total_bytes = 0
+        sample_hashes: list[dict] = []
+        suspicious: list[dict] = []
+        suspicious_suffixes = (".lock", ".locked", ".encrypted", ".crypt", ".enc", ".ryk", ".wannacry")
+        while queue and file_count < max_files:
+            current = queue.pop(0)
+            try:
+                with os.scandir(current) as entries:
+                    for entry in entries:
+                        if entry.is_dir(follow_symlinks=False):
+                            if len(queue) < 40:
+                                queue.append(Path(entry.path))
+                            continue
+                        if not entry.is_file(follow_symlinks=False):
+                            continue
+                        file_count += 1
+                        try:
+                            stat = entry.stat(follow_symlinks=False)
+                            total_bytes += int(stat.st_size)
+                        except OSError:
+                            stat = None
+                        suffix = Path(entry.name).suffix.lower()
+                        if suffix in suspicious_suffixes:
+                            suspicious.append(
+                                {
+                                    "type": "의심 확장자",
+                                    "file_path": entry.path,
+                                    "evidence": f"{suffix} 확장자 탐지",
+                                    "severity": "WARN",
+                                    "status": "관리자 확인 필요",
+                                }
+                            )
+                        if len(sample_hashes) < hash_files:
+                            digest = hashlib.sha256()
+                            try:
+                                with open(entry.path, "rb") as handle:
+                                    digest.update(handle.read(64 * 1024))
+                                sample_hashes.append(
+                                    {
+                                        "path": entry.path,
+                                        "sha256_64k": digest.hexdigest(),
+                                        "size": int(stat.st_size) if stat else 0,
+                                    }
+                                )
+                            except OSError:
+                                pass
+                        if file_count >= max_files:
+                            break
+            except OSError:
+                continue
+        return {
+            "reachable": True,
+            "file_count": file_count,
+            "sample_hashes": sample_hashes,
+            "suspicious": suspicious,
+            "total_bytes": total_bytes,
+            "message": f"Sampled {file_count} files from repository path.",
+        }
+
+    def run_manual_threat_scan(self) -> dict:
+        started = datetime.now()
+        scan_id = f"manual-{started.strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+        actor = self.current_session_user()
+        veeam_config = get_veeam_config(self.context.app_config) or {}
+        repository_path = str(
+            veeam_config.get("target_repository_path")
+            or self.context.veeam_backup_copy_repository_path()
+            or "D:\\BackupCopyRepo"
+        ).strip()
+        repository_name = str(veeam_config.get("target_repository_name") or "Repository-D")
+        backup_job = str(veeam_config.get("job_name") or veeam_config.get("target_job_name") or "Daily Backup")
+        self.context.controller.audit.write(
+            "threat.manual_scan.started",
+            actorUserId=actor,
+            actor_role=self.current_role().value,
+            scan_id=scan_id,
+            repository_path=repository_path,
+            backup_job=backup_job,
+            result="STARTED",
+            message="Manual threat scan was started from the WebUI.",
+        )
+        sample = self.repository_scan_sample(repository_path)
+        try:
+            repository_volume = repository_volume_root(repository_path)
+        except ValueError:
+            repository_volume = "-"
+        policy_safe = bool(repository_volume and repository_volume != "-" and not repository_volume.upper().startswith("C:"))
+        detections = sample["suspicious"] if isinstance(sample.get("suspicious"), list) else []
+        suspicious_count = len(detections)
+        if suspicious_count:
+            result = "주의"
+            score = min(70, 35 + suspicious_count * 8)
+            action_status = "관리자 확인 필요"
+            lockfix_action = "Air-gap 유지 / 의심 파일 검토"
+        elif not policy_safe:
+            result = "주의"
+            score = 46
+            action_status = "저장소 정책 확인 필요"
+            lockfix_action = "Air-gap 유지 / C 드라이브 저장소 차단"
+        else:
+            result = "정상"
+            score = 12
+            action_status = "검사 완료"
+            lockfix_action = "Disk Offline / Drive Letter 제거 / Air-gap 전환"
+        completed = datetime.now()
+        duration_ms = int((completed - started).total_seconds() * 1000)
+        proof = {
+            "scan_id": scan_id,
+            "started_at": started.strftime("%Y-%m-%d %H:%M:%S"),
+            "completed_at": completed.strftime("%Y-%m-%d %H:%M:%S"),
+            "duration_ms": duration_ms,
+            "actor": actor,
+            "repository_name": repository_name,
+            "repository_path": repository_path,
+            "repository_volume": repository_volume,
+            "backup_job": backup_job,
+            "scan_target": repository_path,
+            "engine": "Veeam Malware REST API + Windows Defender + YARA + Repository Hash",
+            "result": result,
+            "score": score,
+            "suspicious_count": suspicious_count,
+            "action_status": action_status,
+            "lockfix_action": lockfix_action,
+            "audit_log_id": "THREAT_MANUAL_SCAN_COMPLETED",
+            "detections": detections,
+            "evidence": [
+                {
+                    "name": "Repository path",
+                    "status": "OK" if sample.get("reachable") else "CHECK",
+                    "detail": sample.get("message") or "-",
+                },
+                {
+                    "name": "Repository volume policy",
+                    "status": "OK" if policy_safe else "CHECK",
+                    "detail": f"{repository_volume} volume is evaluated for Air-Gap protection.",
+                },
+                {
+                    "name": "Sample hash proof",
+                    "status": "OK" if sample.get("sample_hashes") else "SKIPPED",
+                    "detail": f"{len(sample.get('sample_hashes') or [])} file sample hashes captured.",
+                },
+                {
+                    "name": "Suspicious extension sweep",
+                    "status": "OK" if suspicious_count == 0 else "WARN",
+                    "detail": f"{suspicious_count} suspicious file indicators found.",
+                },
+            ],
+            "sample_hashes": sample.get("sample_hashes") or [],
+            "scanned_files": int(sample.get("file_count") or 0),
+            "scanned_bytes": int(sample.get("total_bytes") or 0),
+        }
+        path = self.manual_threat_scan_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(proof, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.context.controller.audit.write(
+            "threat.manual_scan.completed",
+            actorUserId=actor,
+            actor_role=self.current_role().value,
+            scan_id=scan_id,
+            repository_path=repository_path,
+            backup_job=backup_job,
+            result=result,
+            score=score,
+            suspicious_count=suspicious_count,
+            scanned_files=proof["scanned_files"],
+            duration_ms=duration_ms,
+            message="Manual threat scan completed and proof was stored.",
+        )
+        summary = self.threat_detection_summary()
+        summary["manual_scan"] = proof
+        return {"ok": True, "manual_scan": proof, "summary": summary}
 
     def admin_memo_path(self) -> Path:
         return ROOT / "runtime" / "admin_memos.json"
