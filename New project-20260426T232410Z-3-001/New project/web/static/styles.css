@@ -11002,16 +11002,16 @@ td {
 }
 
 .security-flow {
-  --flow-gap: clamp(28px, 4vw, 72px);
+  --flow-gap: clamp(16px, 2.8vw, 54px);
   display: grid;
-  grid-template-columns: repeat(5, minmax(154px, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   width: 100%;
   max-width: none;
   justify-content: stretch;
   gap: var(--flow-gap);
   align-items: center;
   margin: 0 auto;
-  padding: 0 8px;
+  padding: 0 clamp(18px, 2vw, 30px);
   box-sizing: border-box;
 }
 
@@ -11035,8 +11035,8 @@ td {
   content: "";
   position: absolute;
   top: 50%;
-  right: calc((var(--flow-gap) * -1) + 8px);
-  width: clamp(22px, 2.4vw, 42px);
+  right: calc((var(--flow-gap) * -1) + 7px);
+  width: clamp(18px, 2vw, 34px);
   height: 12px;
   transform: translateY(-50%);
   background: #dce5ee;
