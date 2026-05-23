@@ -3202,11 +3202,27 @@ class LockFixTests(unittest.TestCase):
         self.assertIn('read_json(runtime_root / "veeam_steering_state.json", {})', webui_source)
         self.assertIn('"api_synced": veeam_api_synced', webui_source)
         self.assertIn('"issue_detected": veeam_issue_detected', webui_source)
+        self.assertIn("dashboard_backup_health_message(steering_state)", webui_source)
+        self.assertIn("Backup Copy 최종 완료 로그가 아직 확인되지 않아", webui_source)
         self.assertIn("Veeam REST 연동", app_source)
         self.assertIn("backup.issue_detected", app_source)
         self.assertIn("backup-health-note", app_source)
         self.assertIn(".backup-panel dd.backup-result-failed", css_source)
         self.assertIn("20260523-veeam-health-live", index_source)
+
+    def test_dashboard_backup_health_message_prioritizes_operation_status(self) -> None:
+        message = webui.LockFixWebHandler.dashboard_backup_health_message(
+            {
+                "api_synced": True,
+                "progress_percent": 100,
+                "message": "Veeam API is connected. Step colors change only when the current_step value advances.",
+                "auto_isolate_message": "Veeam Backup Copy completion is not confirmed yet. Waiting for the final processing finished/end time before Step 2 Flush.",
+                "last_checked": "2026-05-23 09:50:46",
+            }
+        )
+        self.assertIn("Veeam REST 연동 정상", message)
+        self.assertIn("Backup Copy 최종 완료 로그", message)
+        self.assertNotIn("Step colors", message)
 
     def test_webui_uses_password_reauth_only_for_emergency_reconnect(self) -> None:
         source = (Path.cwd() / "webui.py").read_text(encoding="utf-8")

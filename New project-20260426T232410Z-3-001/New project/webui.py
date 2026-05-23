@@ -5972,7 +5972,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         veeam_api_synced = bool(steering_state.get("api_synced")) if isinstance(steering_state, dict) else False
         veeam_issue_detected = bool(steering_state.get("issue_detected")) if isinstance(steering_state, dict) else False
         veeam_last_checked = str(steering_state.get("last_checked") or steering_state.get("last_run_at") or "-") if isinstance(steering_state, dict) else "-"
-        veeam_health_message = str(steering_state.get("message") or steering_state.get("auto_isolate_message") or "") if isinstance(steering_state, dict) else ""
+        veeam_health_message = LockFixWebHandler.dashboard_backup_health_message(steering_state)
         disk_number = str(storage_state.get("diskNumber") or "").strip() if isinstance(storage_state, dict) else ""
         configured_drive = str(storage_state.get("drive") or "").strip() if isinstance(storage_state, dict) else ""
         configured_path = str(storage_state.get("accessPath") or self.context.config.slot(slot_id).mount_point or "-") if isinstance(storage_state, dict) else "-"
@@ -6104,6 +6104,28 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         with LockFixWebHandler.dashboard_cache_lock:
             LockFixWebHandler.dashboard_cache_by_key[cache_key] = (time.monotonic(), payload)
         return payload
+
+    @staticmethod
+    def dashboard_backup_health_message(steering_state: dict | None) -> str:
+        if not isinstance(steering_state, dict) or not steering_state:
+            return "Veeam REST 연동 상태를 확인 중입니다."
+        last_checked = str(steering_state.get("last_checked") or steering_state.get("last_run_at") or "-")
+        api_synced = bool(steering_state.get("api_synced"))
+        issue_detected = bool(steering_state.get("issue_detected"))
+        progress = int(steering_state.get("progress_percent") or 0)
+        auto_message = str(steering_state.get("auto_isolate_message") or "").strip()
+        message = str(steering_state.get("message") or "").strip()
+        if issue_detected:
+            return auto_message or message or f"Veeam REST 연동 문제를 확인했습니다. 마지막 확인: {last_checked}"
+        if api_synced and "completion is not confirmed" in auto_message.lower():
+            if progress >= 100:
+                return "Veeam REST 연동 정상. 백업 진행률은 100%이나 Backup Copy 최종 완료 로그가 아직 확인되지 않아 격리 전환을 대기합니다."
+            return "Veeam REST 연동 정상. Backup Copy 최종 완료 로그를 대기 중입니다."
+        if api_synced and auto_message:
+            return auto_message
+        if api_synced:
+            return f"Veeam REST 연동 정상. 마지막 확인: {last_checked}"
+        return message or "Veeam REST 연동 확인이 필요합니다."
 
     def notification_summary(self) -> dict:
         audit_alert = LockFixWebHandler.audit_anomaly_alert_summary(self)
