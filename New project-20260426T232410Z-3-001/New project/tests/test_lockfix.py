@@ -991,6 +991,11 @@ class LockFixTests(unittest.TestCase):
         self.assertNotIn('href="/api/report.csv"', report_header)
         self.assertIn('data-i18n="report.exportExcel"', report_header)
         self.assertIn('"report.exportPdf": "PDF"', app)
+        self.assertIn("function updateReportExportLinks", app)
+        self.assertIn('[".report-export-csv", "/api/report.xlsx"]', app)
+        self.assertIn('[".report-export-pdf", "/api/report.pdf"]', app)
+        self.assertIn('[".report-export-word", "/api/report.docx"]', app)
+        self.assertIn("?lang=${encodeURIComponent(lang)}", app)
         self.assertIn('background-image: url("/static/excel-export-logo.png");', css)
         self.assertIn('background-image: url("/static/pdf-export-logo.png");', css)
         self.assertIn('background-image: url("/static/word-export-logo.png");', css)
@@ -1101,6 +1106,35 @@ class LockFixTests(unittest.TestCase):
             self.assertIn("OAM Electronics Co., Ltd.", document_xml)
             self.assertIn("070-7537-3438", document_xml)
             self.assertIn("<w:tbl>", document_xml)
+
+        korean_title_hex = "LOCK-FIX 시스템 점검 보고서".encode("utf-16-be").hex().upper().encode("ascii")
+        korean_pdf_body = handler.build_pdf_report(report, lang="ko")
+        self.assertIn(b"/Identity-H", korean_pdf_body)
+        self.assertIn(korean_title_hex, korean_pdf_body)
+        self.assertNotIn(b"Recent Monitoring Samples", korean_pdf_body)
+
+        handler.path = "/api/report.xlsx?lang=ko"
+        captured_korean_xlsx = {}
+        handler.send_download = lambda body, content_type, filename: captured_korean_xlsx.update(
+            {"body": body, "content_type": content_type, "filename": filename}
+        )
+        handler.send_report_xlsx()
+        with zipfile.ZipFile(webui.io.BytesIO(captured_korean_xlsx["body"])) as archive:
+            sheet_xml = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
+            self.assertIn("LOCK-FIX 시스템 점검 보고서", sheet_xml)
+            self.assertIn("고객 / 점검 정보", sheet_xml)
+            self.assertIn("서버 점검 체크리스트", sheet_xml)
+            self.assertIn("전자 서명", sheet_xml)
+            self.assertNotIn("Recent Monitoring Samples", sheet_xml)
+
+        korean_docx_body = handler.build_docx(report, lang="ko")
+        with zipfile.ZipFile(webui.io.BytesIO(korean_docx_body)) as archive:
+            document_xml = archive.read("word/document.xml").decode("utf-8")
+            self.assertIn("LOCK-FIX 시스템 점검 보고서", document_xml)
+            self.assertIn("고객 / 점검 정보", document_xml)
+            self.assertIn("서버 점검 체크리스트", document_xml)
+            self.assertIn("전자 서명", document_xml)
+            self.assertNotIn("Recent Monitoring Samples", document_xml)
 
         index_html = Path.cwd().joinpath("web", "static", "index.html").read_text(encoding="utf-8")
         self.assertNotIn("OAM Electronics Co., Ltd.", index_html)

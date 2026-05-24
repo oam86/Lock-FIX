@@ -2004,6 +2004,19 @@ function setupReportSignatures() {
   setupSignaturePad(document.querySelector("#managerSignaturePad"));
 }
 
+function updateReportExportLinks() {
+  const lang = uiSettings.language === "ko" ? "ko" : "en";
+  [
+    [".report-export-csv", "/api/report.xlsx"],
+    [".report-export-pdf", "/api/report.pdf"],
+    [".report-export-word", "/api/report.docx"],
+  ].forEach(([selector, basePath]) => {
+    const link = document.querySelector(selector);
+    if (!link) return;
+    link.href = `${basePath}?lang=${encodeURIComponent(lang)}`;
+  });
+}
+
 function applyUiSettings() {
   document.documentElement.dataset.theme = uiSettings.theme;
   document.documentElement.lang = uiSettings.language === "ko" ? "ko" : "en";
@@ -2026,6 +2039,7 @@ function applyUiSettings() {
   });
   applySidebarTooltips();
   renderSidebarUserMenu();
+  updateReportExportLinks();
 }
 
 function renderNotificationSettings(settings = {}) {

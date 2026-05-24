@@ -7610,38 +7610,203 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             rows.append(f"{item['time']},{item['cpu']},{item['memory']},{item['disk']},{item['network']}")
         self.send_download(("\n".join(rows) + "\n").encode("utf-8-sig"), "text/csv; charset=utf-8", "lockfix_report.csv")
 
+    def report_export_language(self) -> str:
+        language = (parse_qs(urlparse(getattr(self, "path", "")).query).get("lang") or ["en"])[0]
+        return "ko" if str(language).lower().startswith("ko") else "en"
+
+    def report_export_labels(self, lang: str = "en") -> dict[str, str]:
+        if lang == "ko":
+            return {
+                "title": "LOCK-FIX 시스템 점검 보고서",
+                "report_no": "보고서 번호",
+                "generated": "생성일",
+                "overall_status": "종합 상태",
+                "analysis": "기업 백업 격리 / Air-Gap 검증 요약",
+                "customer_info": "고객 / 점검 정보",
+                "server_basic": "서버 기본 정보",
+                "server_details": "서버 상세 정보",
+                "resource_usage": "리소스 사용량 분석",
+                "resource_recommendations": "리소스 권고 사항",
+                "inspection_summary": "점검 요약",
+                "attention_items": "주의 항목",
+                "checklist": "서버 점검 체크리스트",
+                "engineer_opinion": "엔지니어 의견",
+                "opinion_content": "의견 내용",
+                "electronic_signature": "전자 서명",
+                "signature_confirmation": "서명 확인",
+                "signature_seal": "서명 / 날인",
+                "engineer_signature": "엔지니어 점검 담당자 서명",
+                "manager_signature": "담당자 서명",
+                "field": "항목",
+                "value": "값",
+                "customer_name": "고객명",
+                "inspection_date": "점검일",
+                "customer_contact": "고객 연락처",
+                "customer_email": "고객 이메일",
+                "engineer": "엔지니어",
+                "engineer_contact": "엔지니어 연락처",
+                "os_version": "OS 버전",
+                "service": "서비스",
+                "model": "모델",
+                "disk": "디스크",
+                "serial": "시리얼 번호",
+                "hostname": "호스트명",
+                "cpu": "CPU",
+                "memory": "메모리",
+                "metric": "지표",
+                "current": "현재",
+                "average": "평균",
+                "peak": "최대",
+                "threshold": "임계값",
+                "result": "결과",
+                "recommendation": "권고 사항",
+                "total_checks": "전체 점검",
+                "normal": "정상",
+                "warning": "주의",
+                "overall": "종합",
+                "review_required": "확인 필요",
+                "operational": "정상 운영",
+                "inspection_item": "점검사항",
+                "details": "점검내역",
+                "criteria": "점검기준",
+                "category": "구분",
+                "content": "내용",
+                "role": "역할",
+                "status": "상태",
+                "signature_date": "서명일",
+                "signed": "서명 완료",
+                "not_signed": "미서명",
+                "attached": "첨부됨",
+                "pending": "대기",
+                "manager": "담당자",
+                "no_attention": "주의 항목 없음",
+                "continued": "점검 상세 계속",
+            }
+        return {
+            "title": "LOCK-FIX System Inspection Report",
+            "report_no": "Report No.",
+            "generated": "Generated",
+            "overall_status": "Overall Status",
+            "analysis": "Enterprise backup isolation / Air-Gap verification summary",
+            "customer_info": "Customer / Inspection Information",
+            "server_basic": "Server Basic Information",
+            "server_details": "Server Detail Values",
+            "resource_usage": "Resource Usage Analysis",
+            "resource_recommendations": "Resource Recommendations",
+            "inspection_summary": "Inspection Summary",
+            "attention_items": "Attention Items",
+            "checklist": "Server Inspection Checklist",
+            "engineer_opinion": "Engineer Opinion",
+            "opinion_content": "Opinion Content",
+            "electronic_signature": "Electronic Signature",
+            "signature_confirmation": "Signature Confirmation",
+            "signature_seal": "Signature / Seal",
+            "engineer_signature": "Engineer Inspection Signature",
+            "manager_signature": "Manager Signature",
+            "field": "Field",
+            "value": "Value",
+            "customer_name": "Customer Name",
+            "inspection_date": "Inspection Date",
+            "customer_contact": "Customer Contact",
+            "customer_email": "Customer Email",
+            "engineer": "Engineer",
+            "engineer_contact": "Engineer Contact",
+            "os_version": "OS Version",
+            "service": "Service",
+            "model": "Model",
+            "disk": "Disk",
+            "serial": "Serial Number",
+            "hostname": "Hostname",
+            "cpu": "CPU",
+            "memory": "Memory",
+            "metric": "Metric",
+            "current": "Current",
+            "average": "Average",
+            "peak": "Peak",
+            "threshold": "Threshold",
+            "result": "Result",
+            "recommendation": "Recommendation",
+            "total_checks": "Total Checks",
+            "normal": "Normal",
+            "warning": "Warning",
+            "overall": "Overall",
+            "review_required": "Review Required",
+            "operational": "Operational",
+            "inspection_item": "Inspection Item",
+            "details": "Details",
+            "criteria": "Criteria",
+            "category": "Category",
+            "content": "Content",
+            "role": "Role",
+            "status": "Status",
+            "signature_date": "Signature Date",
+            "signed": "Signed",
+            "not_signed": "Not Signed",
+            "attached": "Attached",
+            "pending": "Pending",
+            "manager": "Manager",
+            "no_attention": "No attention items",
+            "continued": "Continued inspection details",
+        }
+
+    def localize_report_export_value(self, value: object, lang: str = "en") -> str:
+        text = str(value)
+        if lang != "ko":
+            return text
+        mapping = {
+            "Attention Required": "확인 필요",
+            "Review Required": "확인 필요",
+            "Operational": "정상 운영",
+            "Normal": "정상",
+            "Warning": "주의",
+            "Signed": "서명 완료",
+            "Not Signed": "미서명",
+            "Attached": "첨부됨",
+            "Pending": "대기",
+            "No attention items": "주의 항목 없음",
+            "No immediate action required.": "즉시 조치가 필요하지 않습니다.",
+            "Check resident services and consider memory expansion.": "상주 서비스를 확인하고 메모리 증설을 검토하세요.",
+            "Review high-load processes and scheduled jobs.": "고부하 프로세스와 예약 작업을 점검하세요.",
+            "Clean up old logs/backups or extend storage capacity.": "오래된 로그/백업을 정리하거나 저장소 용량 확장을 검토하세요.",
+            "Review traffic bursts and backup transfer windows.": "트래픽 급증 구간과 백업 전송 시간을 점검하세요.",
+        }
+        return mapping.get(text, text)
+
     def send_report_xlsx(self) -> None:
+        lang = self.report_export_language()
+        labels = self.report_export_labels(lang)
+        local = lambda value: self.localize_report_export_value(value, lang)
         report = self.report_summary()
         extras = report["extras"]
         inspection_items = report["inspection_items"]
         warning_items = [item for item in inspection_items if str(item.get("result", "")).lower() == "warning"]
         normal_count = len(inspection_items) - len(warning_items)
         rows = [
-            ["LOCK-FIX System Inspection Report"],
-            [f"Generated: {report['generated_at']}", "Overall Status", report["summary"]["overall_status"]],
-            [report["summary"]["analysis"]],
+            [labels["title"]],
+            [f"{labels['generated']}: {report['generated_at']}", labels["overall_status"], local(report["summary"]["overall_status"])],
+            [labels["analysis"] if lang == "ko" else report["summary"]["analysis"]],
             [],
-            ["Customer / Inspection Information"],
-            ["Customer Name", report["customer"]["customer_name"], "Inspection Date", report["customer"]["inspection_date"]],
-            ["Customer Contact", report["customer"]["customer_contact"], "Engineer", report["customer"]["engineer"]],
-            ["Customer Email", report["customer"]["customer_email"], "Engineer Contact", report["customer"]["engineer_contact"]],
+            [labels["customer_info"]],
+            [labels["customer_name"], report["customer"]["customer_name"], labels["inspection_date"], report["customer"]["inspection_date"]],
+            [labels["customer_contact"], report["customer"]["customer_contact"], labels["engineer"], report["customer"]["engineer"]],
+            [labels["customer_email"], report["customer"]["customer_email"], labels["engineer_contact"], report["customer"]["engineer_contact"]],
             [],
-            ["Server Basic Information"],
-            ["OS Version", report["server"]["os_version"], "CPU", report["server"]["cpu"]],
-            ["Service", report["server"]["service"], "Memory", report["server"]["memory"]],
-            ["Model", report["server"]["model"], "Disk", report["server"]["disk"]],
-            ["S/N", report["server"]["serial"], "Hostname", report["server"]["hostname"]],
+            [labels["server_basic"]],
+            [labels["os_version"], report["server"]["os_version"], labels["cpu"], report["server"]["cpu"]],
+            [labels["service"], report["server"]["service"], labels["memory"], report["server"]["memory"]],
+            [labels["model"], report["server"]["model"], labels["disk"], report["server"]["disk"]],
+            ["S/N", report["server"]["serial"], labels["hostname"], report["server"]["hostname"]],
             [],
-            ["Server Detail Values"],
-            ["OS Version", report["server"]["os_version"]],
-            ["Service", report["server"]["service"]],
-            ["Model", report["server"]["model"]],
-            ["Disk", report["server"]["disk"]],
-            ["Serial Number", report["server"]["serial"]],
-            ["Hostname", report["server"]["hostname"]],
+            [labels["server_details"]],
+            [labels["os_version"], report["server"]["os_version"]],
+            [labels["service"], report["server"]["service"]],
+            [labels["model"], report["server"]["model"]],
+            [labels["disk"], report["server"]["disk"]],
+            [labels["serial"], report["server"]["serial"]],
+            [labels["hostname"], report["server"]["hostname"]],
             [],
-            ["Resource Usage Analysis"],
-            ["Metric", "Current", "Average", "Peak", "Threshold", "Result", "Recommendation"],
+            [labels["resource_usage"]],
+            [labels["metric"], labels["current"], labels["average"], labels["peak"], labels["threshold"], labels["result"], labels["recommendation"]],
             *[
                 [
                     card["label"],
@@ -7649,50 +7814,50 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                     card["average"],
                     card["peak"],
                     card["threshold"],
-                    card["status"],
-                    card["recommendation"],
+                    local(card["status"]),
+                    local(card["recommendation"]),
                 ]
                 for card in report["cards"]
             ],
             [],
-            ["Resource Recommendations"],
-            *[[card["label"], card["recommendation"]] for card in report["cards"]],
+            [labels["resource_recommendations"]],
+            *[[card["label"], local(card["recommendation"])] for card in report["cards"]],
             [],
-            ["Inspection Summary"],
-            ["Total Checks", "Normal", "Warning", "Overall"],
-            [len(inspection_items), normal_count, len(warning_items), "Review Required" if warning_items else "Operational"],
+            [labels["inspection_summary"]],
+            [labels["total_checks"], labels["normal"], labels["warning"], labels["overall"]],
+            [len(inspection_items), normal_count, len(warning_items), labels["review_required"] if warning_items else labels["operational"]],
             [],
-            ["Attention Items"],
-            ["Inspection Item", "Metric", "Criteria", "Result"],
+            [labels["attention_items"]],
+            [labels["inspection_item"], labels["metric"], labels["criteria"], labels["result"]],
             *(
-                [[item["item"], item["metric"], item["criteria"], item["result"]] for item in warning_items]
-                or [["No attention items", "-", "-", "Normal"]]
+                [[item["item"], item["metric"], item["criteria"], local(item["result"])] for item in warning_items]
+                or [[labels["no_attention"], "-", "-", labels["normal"]]]
             ),
             [],
-            ["Server Inspection Checklist"],
-            ["Category", "Inspection Item", "Details", "Criteria", "Metric", "Result"],
+            [labels["checklist"]],
+            [labels["category"], labels["inspection_item"], labels["details"], labels["criteria"], labels["metric"], labels["result"]],
             *[
-                [item["category"], item["item"], item["detail"], item["criteria"], item["metric"], item["result"]]
+                [item["category"], item["item"], item["detail"], item["criteria"], item["metric"], local(item["result"])]
                 for item in inspection_items
             ],
             [],
-            ["Engineer Opinion"],
-            ["Content", extras["engineer_opinion"] or "-"],
-            ["Electronic Signature"],
-            ["Signature Confirmation", "Role", "Status", "Signature Date", "Signature / Seal"],
+            [labels["engineer_opinion"]],
+            [labels["content"], extras["engineer_opinion"] or "-"],
+            [labels["electronic_signature"]],
+            [labels["signature_confirmation"], labels["role"], labels["status"], labels["signature_date"], labels["signature_seal"]],
             [
-                "Engineer Inspection Signature",
-                "Engineer",
-                "Signed" if extras["engineer_signature"] else "Not Signed",
+                labels["engineer_signature"],
+                labels["engineer"],
+                labels["signed"] if extras["engineer_signature"] else labels["not_signed"],
                 report["generated_at"] if extras["engineer_signature"] else "-",
-                "Attached" if extras["engineer_signature"] else "Pending",
+                labels["attached"] if extras["engineer_signature"] else labels["pending"],
             ],
             [
-                "Manager Signature",
-                "Manager",
-                "Signed" if extras["manager_signature"] else "Not Signed",
+                labels["manager_signature"],
+                labels["manager"],
+                labels["signed"] if extras["manager_signature"] else labels["not_signed"],
                 report["generated_at"] if extras["manager_signature"] else "-",
-                "Attached" if extras["manager_signature"] else "Pending",
+                labels["attached"] if extras["manager_signature"] else labels["pending"],
             ],
             [],
             [
@@ -7711,8 +7876,9 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         )
 
     def send_report_docx(self) -> None:
+        lang = self.report_export_language()
         report = self.report_summary()
-        body = self.build_docx(report)
+        body = self.build_docx(report, lang=lang)
         self.send_download(
             body,
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -7720,8 +7886,9 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         )
 
     def send_report_pdf(self) -> None:
+        lang = self.report_export_language()
         report = self.report_summary()
-        body = self.build_pdf_report(report)
+        body = self.build_pdf_report(report, lang=lang)
         self.send_download(body, "application/pdf", "lockfix_report.pdf")
 
     def report_company_footer_lines(self, ascii_only: bool = False) -> list[str]:
@@ -7740,14 +7907,23 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             "Zip code : 05838",
         ]
 
-    def build_pdf_report(self, report: dict) -> bytes:
+    def build_pdf_report(self, report: dict, lang: str = "en") -> bytes:
+        labels = self.report_export_labels(lang)
+        local = lambda value: self.localize_report_export_value(value, lang)
+        use_cjk_font = lang == "ko"
+
         def pdf_text(value: object) -> str:
             text = str(value).encode("latin-1", "replace").decode("latin-1")
             return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
+        def pdf_literal(value: object) -> str:
+            if use_cjk_font:
+                return f"<{str(value).encode('utf-16-be').hex().upper()}>"
+            return f"({pdf_text(value)})"
+
         def text_at(x: float, y: float, value: object, size: int = 9, color: str = "0 0 0", bold: bool = False) -> None:
             font = "/F2" if bold else "/F1"
-            commands.append(f"BT {color} rg {font} {size} Tf {x:.1f} {y:.1f} Td ({pdf_text(value)}) Tj ET")
+            commands.append(f"BT {color} rg {font} {size} Tf {x:.1f} {y:.1f} Td {pdf_literal(value)} Tj ET")
 
         def line(x1: float, y1: float, x2: float, y2: float, color: str = "0.82 0.87 0.92", width: float = 0.8) -> None:
             commands.append(f"q {color} RG {width:.1f} w {x1:.1f} {y1:.1f} m {x2:.1f} {y2:.1f} l S Q")
@@ -7800,9 +7976,9 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             nonlocal commands
             commands = []
             rect(24, 24, page_w - 48, page_h - 48, stroke="0.84 0.89 0.95", fill="1 1 1")
-            text_at(42, 800, "LOCK-FIX System Inspection Report", 22 if not continued else 16, "0.04 0.12 0.24", True)
+            text_at(42, 800, labels["title"], 22 if not continued else 16, "0.04 0.12 0.24", True)
             if continued:
-                text_at(42, 780, "Continued inspection details", 9, "0.34 0.42 0.52")
+                text_at(42, 780, labels["continued"], 9, "0.34 0.42 0.52")
 
         def finish_page() -> None:
             pages.append("\n".join(commands).encode("latin-1"))
@@ -7847,7 +8023,7 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                 available_rows = max(1, int((y - bottom_y) // row_h) - 1)
                 if available_rows < 2:
                     new_page(True)
-                    text_at(42, y, f"{title} (continued)", 11, "0.04 0.12 0.24", True)
+                    text_at(42, y, f"{title} ({labels['continued']})", 11, "0.04 0.12 0.24", True)
                     y -= 17
                     available_rows = max(1, int((y - bottom_y) // row_h) - 1)
                 chunk = body_rows[:available_rows]
@@ -7855,89 +8031,89 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                 body_rows = body_rows[available_rows:]
                 if body_rows:
                     new_page(True)
-                    text_at(42, y, f"{title} (continued)", 11, "0.04 0.12 0.24", True)
+                    text_at(42, y, f"{title} ({labels['continued']})", 11, "0.04 0.12 0.24", True)
                     y -= 17
             if not body_rows and len(rows) == 1:
                 y = table(content_x, y, widths, rows, row_h=row_h) - 12
 
         begin_page()
-        text_at(42, 775, f"Generated: {report['generated_at']}   Overall: {report['summary']['overall_status']}", 9, status_color(report["summary"]["overall_status"]), True)
-        text_at(42, 758, "Enterprise backup isolation / Air-Gap verification summary", 9, "0.34 0.42 0.52")
+        text_at(42, 775, f"{labels['generated']}: {report['generated_at']}   {labels['overall']}: {local(report['summary']['overall_status'])}", 9, status_color(report["summary"]["overall_status"]), True)
+        text_at(42, 758, labels["analysis"] if lang == "ko" else report["summary"]["analysis"], 9, "0.34 0.42 0.52")
 
         customer = report["customer"]
         server = report["server"]
-        card(42, 700, 118, 44, "Customer", customer["customer_name"])
-        card(174, 700, 118, 44, "Engineer", customer["engineer"])
-        card(306, 700, 118, 44, "Inspection Date", customer["inspection_date"])
-        card(438, 700, 112, 44, "Service", server["service"])
+        card(42, 700, 118, 44, labels["customer_name"], customer["customer_name"])
+        card(174, 700, 118, 44, labels["engineer"], customer["engineer"])
+        card(306, 700, 118, 44, labels["inspection_date"], customer["inspection_date"])
+        card(438, 700, 112, 44, labels["service"], server["service"])
         y = 674
 
-        draw_table("Customer / Inspection Information", [116, 150, 116, 152], [
-            ["Field", "Value", "Field", "Value"],
-            ["Customer Name", customer["customer_name"], "Inspection Date", customer["inspection_date"]],
-            ["Customer Contact", customer["customer_contact"], "Engineer", customer["engineer"]],
-            ["Customer Email", customer["customer_email"], "Engineer Contact", customer["engineer_contact"]],
+        draw_table(labels["customer_info"], [116, 150, 116, 152], [
+            [labels["field"], labels["value"], labels["field"], labels["value"]],
+            [labels["customer_name"], customer["customer_name"], labels["inspection_date"], customer["inspection_date"]],
+            [labels["customer_contact"], customer["customer_contact"], labels["engineer"], customer["engineer"]],
+            [labels["customer_email"], customer["customer_email"], labels["engineer_contact"], customer["engineer_contact"]],
         ], row_h=20)
-        draw_table("Server Basic Information", [116, 150, 116, 152], [
-            ["Field", "Value", "Field", "Value"],
-            ["OS Version", server["os_version"], "CPU", server["cpu"]],
-            ["Service", server["service"], "Memory", server["memory"]],
-            ["Model", server["model"], "Disk", server["disk"]],
-            ["S/N", server["serial"], "Hostname", server["hostname"]],
+        draw_table(labels["server_basic"], [116, 150, 116, 152], [
+            [labels["field"], labels["value"], labels["field"], labels["value"]],
+            [labels["os_version"], server["os_version"], labels["cpu"], server["cpu"]],
+            [labels["service"], server["service"], labels["memory"], server["memory"]],
+            [labels["model"], server["model"], labels["disk"], server["disk"]],
+            ["S/N", server["serial"], labels["hostname"], server["hostname"]],
         ], row_h=20)
-        section("Server Detail Values", 58)
+        section(labels["server_details"], 58)
         for label, value in [
-            ("OS Version", server["os_version"]),
-            ("Service", server["service"]),
-            ("Model", server["model"]),
-            ("Disk", server["disk"]),
-            ("Serial Number", server["serial"]),
-            ("Hostname", server["hostname"]),
+            (labels["os_version"], server["os_version"]),
+            (labels["service"], server["service"]),
+            (labels["model"], server["model"]),
+            (labels["disk"], server["disk"]),
+            (labels["serial"], server["serial"]),
+            (labels["hostname"], server["hostname"]),
         ]:
             draw_wrapped_text(48, 498, f"{label}: {value}", 8, 10)
         y -= 4
-        draw_table("Resource Usage Analysis", [58, 48, 48, 48, 56, 62, 214], [
-            ["Metric", "Current", "Average", "Peak", "Threshold", "Result", "Recommendation"],
+        draw_table(labels["resource_usage"], [58, 48, 48, 48, 56, 62, 214], [
+            [labels["metric"], labels["current"], labels["average"], labels["peak"], labels["threshold"], labels["result"], labels["recommendation"]],
             *[
-                [item["label"], f"{item['current']}%", f"{item['average']}%", f"{item['peak']}%", f"{item['threshold']}%", item["status"], item["recommendation"]]
+                [item["label"], f"{item['current']}%", f"{item['average']}%", f"{item['peak']}%", f"{item['threshold']}%", local(item["status"]), local(item["recommendation"])]
                 for item in report["cards"]
             ],
         ], row_h=20)
-        section("Resource Recommendations", 58)
+        section(labels["resource_recommendations"], 58)
         for item in report["cards"]:
-            draw_wrapped_text(48, 498, f"{item['label']}: {item['recommendation']}", 8, 10)
+            draw_wrapped_text(48, 498, f"{item['label']}: {local(item['recommendation'])}", 8, 10)
         y -= 4
 
         inspection_items = report["inspection_items"]
         warning_items = [item for item in inspection_items if str(item.get("result", "")).lower() == "warning"]
         normal_count = len(inspection_items) - len(warning_items)
-        draw_table("Inspection Summary", [132, 134, 134, 134], [
-            ["Total Checks", "Normal", "Warning", "Overall"],
-            [len(inspection_items), normal_count, len(warning_items), "Review Required" if warning_items else "Operational"],
+        draw_table(labels["inspection_summary"], [132, 134, 134, 134], [
+            [labels["total_checks"], labels["normal"], labels["warning"], labels["overall"]],
+            [len(inspection_items), normal_count, len(warning_items), labels["review_required"] if warning_items else labels["operational"]],
         ], row_h=22)
-        attention_rows = [["Inspection Item", "Metric", "Criteria", "Result"]]
+        attention_rows = [[labels["inspection_item"], labels["metric"], labels["criteria"], labels["result"]]]
         attention_rows.extend(
-            [[item["item"], item["metric"], item["criteria"], item["result"]] for item in warning_items]
-            or [["No attention items", "-", "-", "Normal"]]
+            [[item["item"], item["metric"], item["criteria"], local(item["result"])] for item in warning_items]
+            or [[labels["no_attention"], "-", "-", labels["normal"]]]
         )
-        draw_table("Attention Items", [154, 126, 174, 80], attention_rows, row_h=20)
-        draw_table("Server Inspection Checklist", [48, 96, 132, 104, 84, 70], [
-            ["Category", "Inspection Item", "Details", "Criteria", "Metric", "Result"],
-            *[[item["category"], item["item"], item["detail"], item["criteria"], item["metric"], item["result"]] for item in inspection_items],
+        draw_table(labels["attention_items"], [154, 126, 174, 80], attention_rows, row_h=20)
+        draw_table(labels["checklist"], [48, 96, 132, 104, 84, 70], [
+            [labels["category"], labels["inspection_item"], labels["details"], labels["criteria"], labels["metric"], labels["result"]],
+            *[[item["category"], item["item"], item["detail"], item["criteria"], item["metric"], local(item["result"])] for item in inspection_items],
         ], row_h=20)
 
         extras = report["extras"]
-        section("Engineer Opinion", 68)
+        section(labels["engineer_opinion"], 68)
         rect(42, y - 48, 508, 46, stroke="0.82 0.87 0.92", fill="0.99 1 1")
-        text_at(54, y - 18, "Opinion Content", 8, "0.32 0.40 0.50", True)
+        text_at(54, y - 18, labels["opinion_content"], 8, "0.32 0.40 0.50", True)
         y -= 32
         draw_wrapped_text(54, 486, extras.get("engineer_opinion") or "-", 8, 10)
         y -= 12
 
-        draw_table("Signature Confirmation", [150, 76, 84, 112, 112], [
-            ["Signature Confirmation", "Role", "Status", "Signature Date", "Signature / Seal"],
-            ["Engineer Inspection Signature", "Engineer", "Signed" if extras.get("engineer_signature") else "Not Signed", report["generated_at"] if extras.get("engineer_signature") else "-", "Attached" if extras.get("engineer_signature") else "Pending"],
-            ["Manager Signature", "Manager", "Signed" if extras.get("manager_signature") else "Not Signed", report["generated_at"] if extras.get("manager_signature") else "-", "Attached" if extras.get("manager_signature") else "Pending"],
+        draw_table(labels["signature_confirmation"], [150, 76, 84, 112, 112], [
+            [labels["signature_confirmation"], labels["role"], labels["status"], labels["signature_date"], labels["signature_seal"]],
+            [labels["engineer_signature"], labels["engineer"], labels["signed"] if extras.get("engineer_signature") else labels["not_signed"], report["generated_at"] if extras.get("engineer_signature") else "-", labels["attached"] if extras.get("engineer_signature") else labels["pending"]],
+            [labels["manager_signature"], labels["manager"], labels["signed"] if extras.get("manager_signature") else labels["not_signed"], report["generated_at"] if extras.get("manager_signature") else "-", labels["attached"] if extras.get("manager_signature") else labels["pending"]],
         ], row_h=20)
 
         ensure_space(74)
@@ -7960,10 +8136,20 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             objects.append(
                 f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_w} {page_h}] /Resources << /Font << /F1 {font1_ref} 0 R /F2 {font2_ref} 0 R >> >> /Contents {content_ref} 0 R >>".encode("ascii")
             )
-        objects.extend([
-            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>",
-        ])
+        if use_cjk_font:
+            cjk_font = (
+                b"<< /Type /Font /Subtype /Type0 /BaseFont /HYGoThic-Medium "
+                b"/Encoding /Identity-H /DescendantFonts [<< /Type /Font "
+                b"/Subtype /CIDFontType0 /BaseFont /HYGoThic-Medium "
+                b"/CIDSystemInfo << /Registry (Adobe) /Ordering (Korea1) /Supplement 2 >> "
+                b"/DW 1000 >>] >>"
+            )
+            objects.extend([cjk_font, cjk_font])
+        else:
+            objects.extend([
+                b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+                b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>",
+            ])
         for stream in pages:
             objects.append(b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream")
         output = io.BytesIO()
@@ -8041,29 +8227,49 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
 
         section_titles = {
             "LOCK-FIX System Inspection Report",
+            "LOCK-FIX 시스템 점검 보고서",
             "Customer / Inspection Information",
+            "고객 / 점검 정보",
             "Server Basic Information",
+            "서버 기본 정보",
             "Server Detail Values",
+            "서버 상세 정보",
             "Resource Usage Analysis",
+            "리소스 사용량 분석",
             "Resource Recommendations",
+            "리소스 권고 사항",
             "Inspection Summary",
+            "점검 요약",
             "Attention Items",
+            "주의 항목",
             "Server Inspection Checklist",
+            "서버 점검 체크리스트",
             "Engineer Opinion",
+            "엔지니어 의견",
             "Electronic Signature",
+            "전자 서명",
             "OAM Electronics Co., Ltd.",
         }
         table_headers = {
             "Metric",
+            "지표",
             "Category",
+            "구분",
             "Time",
             "Customer Name",
+            "고객명",
             "OS Version",
+            "OS 버전",
             "Total Checks",
+            "전체 점검",
             "Inspection Item",
+            "점검사항",
             "Content",
+            "내용",
             "Signature Confirmation",
+            "서명 확인",
             "Engineer Inspection Signature",
+            "엔지니어 점검 담당자 서명",
         }
 
         sheet_rows = []
@@ -8118,7 +8324,10 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             archive.writestr("xl/worksheets/sheet1.xml", sheet)
         return output.getvalue()
 
-    def build_docx(self, report: dict) -> bytes:
+    def build_docx(self, report: dict, lang: str = "en") -> bytes:
+        labels = self.report_export_labels(lang)
+        local = lambda value: self.localize_report_export_value(value, lang)
+
         def para(text: str, style: str = "") -> str:
             props = ""
             if style == "title":
@@ -8176,8 +8385,8 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         signature_media = []
         signature_blocks = []
         for field, rel_id, filename, label in [
-            ("engineer_signature", "rIdEngineerSignature", "engineer_signature.png", "Engineer Inspection Signature"),
-            ("manager_signature", "rIdManagerSignature", "manager_signature.png", "Manager Signature"),
+            ("engineer_signature", "rIdEngineerSignature", "engineer_signature.png", labels["engineer_signature"]),
+            ("manager_signature", "rIdManagerSignature", "manager_signature.png", labels["manager_signature"]),
         ]:
             image_bytes = self.image_data_url_bytes(extras.get(field, ""))
             if image_bytes:
@@ -8185,18 +8394,18 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                 signature_blocks.extend([para(label, "section"), image_para(rel_id, label)])
 
         customer_rows = [
-            ["Customer Name", report["customer"]["customer_name"], "Inspection Date", report["customer"]["inspection_date"]],
-            ["Customer Contact", report["customer"]["customer_contact"], "Engineer", report["customer"]["engineer"]],
-            ["Customer Email", report["customer"]["customer_email"], "Engineer Contact", report["customer"]["engineer_contact"]],
+            [labels["customer_name"], report["customer"]["customer_name"], labels["inspection_date"], report["customer"]["inspection_date"]],
+            [labels["customer_contact"], report["customer"]["customer_contact"], labels["engineer"], report["customer"]["engineer"]],
+            [labels["customer_email"], report["customer"]["customer_email"], labels["engineer_contact"], report["customer"]["engineer_contact"]],
         ]
         server_rows = [
-            ["OS Version", report["server"]["os_version"], "CPU", report["server"]["cpu"]],
-            ["Service", report["server"]["service"], "Memory", report["server"]["memory"]],
-            ["Model", report["server"]["model"], "Disk", report["server"]["disk"]],
-            ["S/N", report["server"]["serial"], "Hostname", report["server"]["hostname"]],
+            [labels["os_version"], report["server"]["os_version"], labels["cpu"], report["server"]["cpu"]],
+            [labels["service"], report["server"]["service"], labels["memory"], report["server"]["memory"]],
+            [labels["model"], report["server"]["model"], labels["disk"], report["server"]["disk"]],
+            ["S/N", report["server"]["serial"], labels["hostname"], report["server"]["hostname"]],
         ]
         resource_rows = [
-            ["Metric", "Current", "Average", "Peak", "Threshold", "Result", "Recommendation"],
+            [labels["metric"], labels["current"], labels["average"], labels["peak"], labels["threshold"], labels["result"], labels["recommendation"]],
             *[
                 [
                     card["label"],
@@ -8204,53 +8413,53 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                     f"{card['average']}%",
                     f"{card['peak']}%",
                     f"{card['threshold']}%",
-                    card["status"],
-                    card["recommendation"],
+                    local(card["status"]),
+                    local(card["recommendation"]),
                 ]
                 for card in report["cards"]
             ],
         ]
         inspection_rows = [
-            ["Category", "Inspection Item", "Details", "Criteria", "Metric", "Result"],
+            [labels["category"], labels["inspection_item"], labels["details"], labels["criteria"], labels["metric"], labels["result"]],
             *[
-                [item["category"], item["item"], item["detail"], item["criteria"], item["metric"], item["result"]]
+                [item["category"], item["item"], item["detail"], item["criteria"], item["metric"], local(item["result"])]
                 for item in report["inspection_items"]
             ],
         ]
         signature_rows = [
-            ["Signature Confirmation", "Role", "Status", "Signature Date", "Signature / Seal"],
+            [labels["signature_confirmation"], labels["role"], labels["status"], labels["signature_date"], labels["signature_seal"]],
             [
-                "Engineer Inspection Signature",
-                "Engineer",
-                "Signed" if extras["engineer_signature"] else "Not Signed",
+                labels["engineer_signature"],
+                labels["engineer"],
+                labels["signed"] if extras["engineer_signature"] else labels["not_signed"],
                 report["generated_at"] if extras["engineer_signature"] else "-",
-                "Attached" if extras["engineer_signature"] else "Pending",
+                labels["attached"] if extras["engineer_signature"] else labels["pending"],
             ],
             [
-                "Manager Signature",
-                "Manager",
-                "Signed" if extras["manager_signature"] else "Not Signed",
+                labels["manager_signature"],
+                labels["manager"],
+                labels["signed"] if extras["manager_signature"] else labels["not_signed"],
                 report["generated_at"] if extras["manager_signature"] else "-",
-                "Attached" if extras["manager_signature"] else "Pending",
+                labels["attached"] if extras["manager_signature"] else labels["pending"],
             ],
         ]
 
         body = [
-            para("LOCK-FIX System Inspection Report", "title"),
-            para(f"Report No. #1    Generated: {report['generated_at']}"),
-            para(f"Overall Status: {report['summary']['overall_status']}"),
-            para(report["summary"]["analysis"]),
-            para("Customer / Inspection Information", "section"),
+            para(labels["title"], "title"),
+            para(f"{labels['report_no']} #1    {labels['generated']}: {report['generated_at']}"),
+            para(f"{labels['overall_status']}: {local(report['summary']['overall_status'])}"),
+            para(labels["analysis"] if lang == "ko" else report["summary"]["analysis"]),
+            para(labels["customer_info"], "section"),
             table(customer_rows),
-            para("Server Basic Information", "section"),
+            para(labels["server_basic"], "section"),
             table(server_rows),
-            para("Resource Usage Analysis", "section"),
+            para(labels["resource_usage"], "section"),
             table(resource_rows, header=True),
-            para("Server Inspection Checklist", "section"),
+            para(labels["checklist"], "section"),
             table(inspection_rows, header=True),
-            para("Engineer Opinion", "section"),
+            para(labels["engineer_opinion"], "section"),
             para(extras["engineer_opinion"] or "-"),
-            para("Electronic Signature", "section"),
+            para(labels["electronic_signature"], "section"),
             table(signature_rows, header=True),
             *signature_blocks,
             para("OAM Electronics Co., Ltd.", "section"),
