@@ -7776,6 +7776,11 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             text_at(x + 10, y + 13, fit_text(value_text, w - 20, value_size), value_size, color, True)
 
         def table(x: float, y: float, widths: list[float], rows: list[list[object]], header: bool = True, row_h: float = 21) -> float:
+            total_w = sum(widths)
+            if total_w > content_w:
+                scale = content_w / total_w
+                widths = [round(width * scale, 2) for width in widths]
+                widths[-1] += content_w - sum(widths)
             current_y = y
             for row_index, row in enumerate(rows):
                 fill = "0.93 0.96 0.99" if header and row_index == 0 else "1 1 1"
@@ -7803,6 +7808,7 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             pages.append("\n".join(commands).encode("latin-1"))
 
         page_w, page_h = 595, 842
+        content_x, content_w = 42.0, 508.0
         pages: list[bytes] = []
         commands: list[str] = []
         y = 742.0
@@ -7821,7 +7827,7 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         def section(title: str, height: float = 30) -> None:
             nonlocal y
             ensure_space(height)
-            text_at(42, y, title, 12, "0.04 0.12 0.24", True)
+            text_at(content_x, y, title, 12, "0.04 0.12 0.24", True)
             y -= 17
 
         def draw_wrapped_text(x: float, width: float, value: object, size: int = 8, leading: float = 11) -> None:
@@ -7845,14 +7851,14 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                     y -= 17
                     available_rows = max(1, int((y - bottom_y) // row_h) - 1)
                 chunk = body_rows[:available_rows]
-                y = table(42, y, widths, header + chunk, row_h=row_h) - 12
+                y = table(content_x, y, widths, header + chunk, row_h=row_h) - 12
                 body_rows = body_rows[available_rows:]
                 if body_rows:
                     new_page(True)
                     text_at(42, y, f"{title} (continued)", 11, "0.04 0.12 0.24", True)
                     y -= 17
             if not body_rows and len(rows) == 1:
-                y = table(42, y, widths, rows, row_h=row_h) - 12
+                y = table(content_x, y, widths, rows, row_h=row_h) - 12
 
         begin_page()
         text_at(42, 775, f"Generated: {report['generated_at']}   Overall: {report['summary']['overall_status']}", 9, status_color(report["summary"]["overall_status"]), True)

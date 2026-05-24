@@ -1035,6 +1035,8 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(b"Tech Support: 070-7537-3438", pdf_body)
         self.assertIn("def fit_text", webui_source)
         self.assertIn("def draw_table", webui_source)
+        self.assertIn("if total_w > content_w", webui_source)
+        self.assertIn("scale = content_w / total_w", webui_source)
         self.assertIn("Attention Items", webui_source)
         self.assertIn("value_size = 13 if len(value_text) <= 20 else 10", webui_source)
         self.assertIn(b"LOCK-FIX Hardware Detection Monitoring", pdf_body)
