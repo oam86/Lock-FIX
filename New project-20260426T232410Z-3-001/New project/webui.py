@@ -7695,10 +7695,6 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                 "Attached" if extras["manager_signature"] else "Pending",
             ],
             [],
-            ["Recent Monitoring Samples"],
-            ["Time", "CPU", "Memory", "Disk", "Network"],
-            *[[item["time"], item["cpu"], item["memory"], item["disk"], item["network"]] for item in report["series"]],
-            [],
             [
                 "OAM Electronics Co., Ltd.",
                 "8071F, 66, Chungmin-ro, Songpa-gu, Seoul, Republic of Korea",
@@ -7936,10 +7932,6 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             ["Signature Confirmation", "Role", "Status", "Signature Date", "Signature / Seal"],
             ["Engineer Inspection Signature", "Engineer", "Signed" if extras.get("engineer_signature") else "Not Signed", report["generated_at"] if extras.get("engineer_signature") else "-", "Attached" if extras.get("engineer_signature") else "Pending"],
             ["Manager Signature", "Manager", "Signed" if extras.get("manager_signature") else "Not Signed", report["generated_at"] if extras.get("manager_signature") else "-", "Attached" if extras.get("manager_signature") else "Pending"],
-        ], row_h=20)
-        draw_table("Recent Monitoring Samples", [110, 86, 86, 86, 86], [
-            ["Time", "CPU", "Memory", "Disk", "Network"],
-            *[[item["time"], f"{item['cpu']}%", f"{item['memory']}%", f"{item['disk']}%", f"{item['network']}%"] for item in report["series"][-10:]],
         ], row_h=20)
 
         ensure_space(74)
@@ -8260,8 +8252,6 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             para("Electronic Signature", "section"),
             table(signature_rows, header=True),
             *signature_blocks,
-            para("Recent Monitoring Samples", "section"),
-            table(time_rows, header=True),
             para("OAM Electronics Co., Ltd.", "section"),
             *[para(line) for line in self.report_company_footer_lines()[1:]],
         ]
