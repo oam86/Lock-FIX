@@ -8045,7 +8045,6 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             "Server Inspection Checklist",
             "Engineer Opinion",
             "Electronic Signature",
-            "Recent Monitoring Samples",
             "OAM Electronics Co., Ltd.",
         }
         table_headers = {
@@ -8211,10 +8210,6 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                 [item["category"], item["item"], item["detail"], item["criteria"], item["metric"], item["result"]]
                 for item in report["inspection_items"]
             ],
-        ]
-        time_rows = [
-            ["Time", "CPU", "Memory", "Disk", "Network"],
-            *[[item["time"], f"{item['cpu']}%", f"{item['memory']}%", f"{item['disk']}%", f"{item['network']}%"] for item in report["series"][-10:]],
         ]
         signature_rows = [
             ["Signature Confirmation", "Role", "Status", "Signature Date", "Signature / Seal"],
