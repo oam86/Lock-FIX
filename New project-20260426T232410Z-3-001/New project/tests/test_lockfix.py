@@ -1026,7 +1026,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(b"Server Basic Information", pdf_body)
         self.assertNotIn(b"Server Detail Values", pdf_body)
         self.assertIn(b"Resource Usage Analysis", pdf_body)
-        self.assertIn(b"Resource Recommendations", pdf_body)
+        self.assertNotIn(b"Resource Recommendations", pdf_body)
         self.assertIn(b"Inspection Summary", pdf_body)
         self.assertIn(b"Attention Items", pdf_body)
         self.assertIn(b"Server Inspection Checklist", pdf_body)
@@ -1044,8 +1044,6 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("scale = content_w / total_w", webui_source)
         self.assertIn("Attention Items", webui_source)
         self.assertIn("value_size = 13 if len(value_text) <= 20 else 10", webui_source)
-        self.assertIn("Keep the next summary block visually separated", webui_source)
-        self.assertIn("y -= 16", webui_source)
         self.assertIn(b"LOCK-FIX Hardware Detection Monitoring", pdf_body)
 
         xlsx_body = handler.build_xlsx([
@@ -1084,7 +1082,7 @@ class LockFixTests(unittest.TestCase):
             self.assertIn("Server Basic Information", sheet_xml)
             self.assertNotIn("Server Detail Values", sheet_xml)
             self.assertIn("Resource Usage Analysis", sheet_xml)
-            self.assertIn("Resource Recommendations", sheet_xml)
+            self.assertNotIn("Resource Recommendations", sheet_xml)
             self.assertIn("Inspection Summary", sheet_xml)
             self.assertIn("Attention Items", sheet_xml)
             self.assertIn("Server Inspection Checklist", sheet_xml)

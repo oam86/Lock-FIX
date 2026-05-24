@@ -7834,9 +7834,6 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                 for card in report["cards"]
             ],
             [],
-            [labels["resource_recommendations"]],
-            *[[card["label"], local(card["recommendation"])] for card in report["cards"]],
-            [],
             [labels["inspection_summary"]],
             [labels["total_checks"], labels["normal"], labels["warning"], labels["overall"]],
             [len(inspection_items), normal_count, len(warning_items), labels["review_required"] if warning_items else labels["operational"]],
@@ -8199,12 +8196,6 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                 for item in report["cards"]
             ],
         ], row_h=20)
-        section(labels["resource_recommendations"], 58)
-        for item in report["cards"]:
-            draw_wrapped_text(48, 498, f"{item['label']}: {local(item['recommendation'])}", 8, 10)
-        # Keep the next summary block visually separated from the recommendation text.
-        y -= 16
-
         inspection_items = report["inspection_items"]
         warning_items = [item for item in inspection_items if str(item.get("result", "")).lower() == "warning"]
         normal_count = len(inspection_items) - len(warning_items)
@@ -8382,8 +8373,6 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             "서버 기본 정보",
             "Resource Usage Analysis",
             "리소스 사용량 분석",
-            "Resource Recommendations",
-            "리소스 권고 사항",
             "Inspection Summary",
             "점검 요약",
             "Attention Items",
