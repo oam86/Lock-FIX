@@ -7912,18 +7912,133 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         local = lambda value: self.localize_report_export_value(value, lang)
         use_cjk_font = lang == "ko"
 
+        def read_u16(data: bytes, offset: int) -> int:
+            return int.from_bytes(data[offset : offset + 2], "big", signed=False)
+
+        def read_i16(data: bytes, offset: int) -> int:
+            return int.from_bytes(data[offset : offset + 2], "big", signed=True)
+
+        def read_u32(data: bytes, offset: int) -> int:
+            return int.from_bytes(data[offset : offset + 4], "big", signed=False)
+
+        def parse_ttf_font(path: Path) -> dict:
+            data = path.read_bytes()
+            table_count = read_u16(data, 4)
+            tables = {}
+            for index in range(table_count):
+                entry = 12 + (index * 16)
+                tag = data[entry : entry + 4].decode("latin-1")
+                tables[tag] = (read_u32(data, entry + 8), read_u32(data, entry + 12))
+
+            head_offset, _ = tables["head"]
+            units_per_em = read_u16(data, head_offset + 18) or 1000
+            bbox = (
+                read_i16(data, head_offset + 36),
+                read_i16(data, head_offset + 38),
+                read_i16(data, head_offset + 40),
+                read_i16(data, head_offset + 42),
+            )
+            hhea_offset, _ = tables["hhea"]
+            ascent = int(read_i16(data, hhea_offset + 4) * 1000 / units_per_em)
+            descent = int(read_i16(data, hhea_offset + 6) * 1000 / units_per_em)
+            metric_count = read_u16(data, hhea_offset + 34)
+            maxp_offset, _ = tables["maxp"]
+            glyph_count = read_u16(data, maxp_offset + 4)
+            hmtx_offset, _ = tables["hmtx"]
+            advances = []
+            last_advance = 1000
+            for index in range(glyph_count):
+                if index < metric_count:
+                    last_advance = read_u16(data, hmtx_offset + (index * 4))
+                advances.append(int(last_advance * 1000 / units_per_em))
+
+            cmap_offset, _ = tables["cmap"]
+            cmap_count = read_u16(data, cmap_offset + 2)
+            records = []
+            for index in range(cmap_count):
+                record = cmap_offset + 4 + (index * 8)
+                platform = read_u16(data, record)
+                encoding = read_u16(data, record + 2)
+                offset = read_u32(data, record + 4)
+                subtable = cmap_offset + offset
+                records.append((platform, encoding, read_u16(data, subtable), subtable))
+            preferred = sorted(records, key=lambda item: (
+                0 if item[2] == 12 and item[0] in (0, 3) else
+                1 if item[2] == 4 and item[0] in (0, 3) else
+                2
+            ))[0]
+            cmap = {}
+            if preferred[2] == 12:
+                subtable = preferred[3]
+                group_count = read_u32(data, subtable + 12)
+                for index in range(group_count):
+                    group = subtable + 16 + (index * 12)
+                    start = read_u32(data, group)
+                    end = read_u32(data, group + 4)
+                    start_gid = read_u32(data, group + 8)
+                    for codepoint in range(start, end + 1):
+                        cmap[codepoint] = start_gid + (codepoint - start)
+            else:
+                subtable = preferred[3]
+                seg_count = read_u16(data, subtable + 6) // 2
+                end_codes = [read_u16(data, subtable + 14 + (index * 2)) for index in range(seg_count)]
+                start_offset = subtable + 16 + (seg_count * 2)
+                start_codes = [read_u16(data, start_offset + (index * 2)) for index in range(seg_count)]
+                delta_offset = start_offset + (seg_count * 2)
+                deltas = [read_i16(data, delta_offset + (index * 2)) for index in range(seg_count)]
+                range_offset = delta_offset + (seg_count * 2)
+                for index in range(seg_count):
+                    start = start_codes[index]
+                    end = end_codes[index]
+                    if start == 0xFFFF:
+                        continue
+                    range_value = read_u16(data, range_offset + (index * 2))
+                    for codepoint in range(start, end + 1):
+                        if range_value == 0:
+                            glyph = (codepoint + deltas[index]) & 0xFFFF
+                        else:
+                            glyph_pos = range_offset + (index * 2) + range_value + ((codepoint - start) * 2)
+                            glyph = read_u16(data, glyph_pos)
+                            if glyph:
+                                glyph = (glyph + deltas[index]) & 0xFFFF
+                        if glyph:
+                            cmap[codepoint] = glyph
+            return {
+                "data": data,
+                "cmap": cmap,
+                "widths": advances,
+                "bbox": tuple(int(value * 1000 / units_per_em) for value in bbox),
+                "ascent": ascent,
+                "descent": descent,
+            }
+
+        regular_font = None
+        bold_font = None
+        used_gids: set[int] = set()
+        if use_cjk_font:
+            regular_font = parse_ttf_font(Path("C:/Windows/Fonts/malgun.ttf"))
+            # Reuse one embedded Unicode font for regular/bold text to keep PDF size reasonable
+            # while preserving reliable Korean glyph rendering.
+            bold_font = regular_font
+
         def pdf_text(value: object) -> str:
             text = str(value).encode("latin-1", "replace").decode("latin-1")
             return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
-        def pdf_literal(value: object) -> str:
+        def pdf_literal(value: object, bold: bool = False) -> str:
             if use_cjk_font:
-                return f"<{str(value).encode('utf-16-be').hex().upper()}>"
+                font = bold_font if bold else regular_font
+                glyph_bytes = bytearray()
+                for char in str(value):
+                    glyph = int(font["cmap"].get(ord(char), 0))
+                    used_gids.add(glyph)
+                    glyph_bytes.extend(glyph.to_bytes(2, "big", signed=False))
+                return f"<{bytes(glyph_bytes).hex().upper()}>"
             return f"({pdf_text(value)})"
 
         def text_at(x: float, y: float, value: object, size: int = 9, color: str = "0 0 0", bold: bool = False) -> None:
             font = "/F2" if bold else "/F1"
-            commands.append(f"BT {color} rg {font} {size} Tf {x:.1f} {y:.1f} Td {pdf_literal(value)} Tj ET")
+            commands.append(f"BT {color} rg {font} {size} Tf {x:.1f} {y:.1f} Td {pdf_literal(value, bold)} Tj ET")
 
         def line(x1: float, y1: float, x2: float, y2: float, color: str = "0.82 0.87 0.92", width: float = 0.8) -> None:
             commands.append(f"q {color} RG {width:.1f} w {x1:.1f} {y1:.1f} m {x2:.1f} {y2:.1f} l S Q")
@@ -8123,9 +8238,11 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         finish_page()
 
         page_count = len(pages)
-        font1_ref = 3 + page_count
-        font2_ref = font1_ref + 1
-        content_start = font2_ref + 1
+        font_start = 3 + page_count
+        font1_ref = font_start
+        font2_ref = font_start if use_cjk_font else font_start + 1
+        font_object_count = 4 if use_cjk_font else 2
+        content_start = font_start + font_object_count
         page_refs = list(range(3, 3 + page_count))
         objects = [
             b"<< /Type /Catalog /Pages 2 0 R >>",
@@ -8137,14 +8254,35 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                 f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_w} {page_h}] /Resources << /Font << /F1 {font1_ref} 0 R /F2 {font2_ref} 0 R >> >> /Contents {content_ref} 0 R >>".encode("ascii")
             )
         if use_cjk_font:
-            cjk_font = (
-                b"<< /Type /Font /Subtype /Type0 /BaseFont /HYGoThic-Medium "
-                b"/Encoding /Identity-H /DescendantFonts [<< /Type /Font "
-                b"/Subtype /CIDFontType0 /BaseFont /HYGoThic-Medium "
-                b"/CIDSystemInfo << /Registry (Adobe) /Ordering (Korea1) /Supplement 2 >> "
-                b"/DW 1000 >>] >>"
-            )
-            objects.extend([cjk_font, cjk_font])
+            def font_objects(font: dict, base_name: str, type0_ref: int, cid_ref: int, descriptor_ref: int, file_ref: int) -> list[bytes]:
+                widths = []
+                for gid in sorted(gid for gid in used_gids if gid < len(font["widths"])):
+                    widths.append(f"{gid} [{font['widths'][gid]}]")
+                widths_text = f" /W [{' '.join(widths)}]" if widths else ""
+                x_min, y_min, x_max, y_max = font["bbox"]
+                type0 = (
+                    f"<< /Type /Font /Subtype /Type0 /BaseFont /{base_name} "
+                    f"/Encoding /Identity-H /DescendantFonts [{cid_ref} 0 R] >>"
+                ).encode("ascii")
+                cid = (
+                    f"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /{base_name} "
+                    f"/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> "
+                    f"/FontDescriptor {descriptor_ref} 0 R /CIDToGIDMap /Identity /DW 1000{widths_text} >>"
+                ).encode("ascii")
+                descriptor = (
+                    f"<< /Type /FontDescriptor /FontName /{base_name} /Flags 4 "
+                    f"/FontBBox [{x_min} {y_min} {x_max} {y_max}] /ItalicAngle 0 "
+                    f"/Ascent {font['ascent']} /Descent {font['descent']} /CapHeight {font['ascent']} "
+                    f"/StemV 80 /FontFile2 {file_ref} 0 R >>"
+                ).encode("ascii")
+                font_file = (
+                    b"<< /Length " + str(len(font["data"])).encode("ascii") +
+                    b" /Length1 " + str(len(font["data"])).encode("ascii") +
+                    b" >>\nstream\n" + font["data"] + b"\nendstream"
+                )
+                return [type0, cid, descriptor, font_file]
+
+            objects.extend(font_objects(regular_font, "MalgunGothic", font_start, font_start + 1, font_start + 2, font_start + 3))
         else:
             objects.extend([
                 b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",

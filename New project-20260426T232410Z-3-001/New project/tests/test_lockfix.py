@@ -1107,10 +1107,11 @@ class LockFixTests(unittest.TestCase):
             self.assertIn("070-7537-3438", document_xml)
             self.assertIn("<w:tbl>", document_xml)
 
-        korean_title_hex = "LOCK-FIX 시스템 점검 보고서".encode("utf-16-be").hex().upper().encode("ascii")
         korean_pdf_body = handler.build_pdf_report(report, lang="ko")
         self.assertIn(b"/Identity-H", korean_pdf_body)
-        self.assertIn(korean_title_hex, korean_pdf_body)
+        self.assertIn(b"/CIDFontType2", korean_pdf_body)
+        self.assertIn(b"/FontFile2", korean_pdf_body)
+        self.assertIn(b"/MalgunGothic", korean_pdf_body)
         self.assertNotIn(b"Recent Monitoring Samples", korean_pdf_body)
 
         handler.path = "/api/report.xlsx?lang=ko"
