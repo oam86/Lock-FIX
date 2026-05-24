@@ -7819,14 +7819,6 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             [labels["model"], report["server"]["model"], labels["disk"], report["server"]["disk"]],
             ["S/N", report["server"]["serial"], labels["hostname"], report["server"]["hostname"]],
             [],
-            [labels["server_details"]],
-            [labels["os_version"], report["server"]["os_version"]],
-            [labels["service"], report["server"]["service"]],
-            [labels["model"], report["server"]["model"]],
-            [labels["disk"], report["server"]["disk"]],
-            [labels["serial"], report["server"]["serial"]],
-            [labels["hostname"], report["server"]["hostname"]],
-            [],
             [labels["resource_usage"]],
             [labels["metric"], labels["current"], labels["average"], labels["peak"], labels["threshold"], labels["result"], labels["recommendation"]],
             *[
@@ -8191,24 +8183,15 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             [labels["customer_contact"], customer["customer_contact"], labels["engineer"], customer["engineer"]],
             [labels["customer_email"], customer["customer_email"], labels["engineer_contact"], customer["engineer_contact"]],
         ], row_h=20)
-        draw_table(labels["server_basic"], [116, 150, 116, 152], [
-            [labels["field"], labels["value"], labels["field"], labels["value"]],
-            [labels["os_version"], server["os_version"], labels["cpu"], server["cpu"]],
-            [labels["service"], server["service"], labels["memory"], server["memory"]],
-            [labels["model"], server["model"], labels["disk"], server["disk"]],
-            ["S/N", server["serial"], labels["hostname"], server["hostname"]],
+        draw_table(labels["server_basic"], [116, 392], [
+            [labels["field"], labels["value"]],
+            [labels["os_version"], server["os_version"]],
+            [labels["service"], server["service"]],
+            [labels["model"], server["model"]],
+            [labels["disk"], server["disk"]],
+            ["S/N", server["serial"]],
+            [labels["hostname"], server["hostname"]],
         ], row_h=20)
-        section(labels["server_details"], 58)
-        for label, value in [
-            (labels["os_version"], server["os_version"]),
-            (labels["service"], server["service"]),
-            (labels["model"], server["model"]),
-            (labels["disk"], server["disk"]),
-            (labels["serial"], server["serial"]),
-            (labels["hostname"], server["hostname"]),
-        ]:
-            draw_wrapped_text(48, 498, f"{label}: {value}", 8, 10)
-        y -= 4
         draw_table(labels["resource_usage"], [58, 48, 48, 48, 56, 62, 214], [
             [labels["metric"], labels["current"], labels["average"], labels["peak"], labels["threshold"], labels["result"], labels["recommendation"]],
             *[
@@ -8392,8 +8375,6 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             "고객 / 점검 정보",
             "Server Basic Information",
             "서버 기본 정보",
-            "Server Detail Values",
-            "서버 상세 정보",
             "Resource Usage Analysis",
             "리소스 사용량 분석",
             "Resource Recommendations",

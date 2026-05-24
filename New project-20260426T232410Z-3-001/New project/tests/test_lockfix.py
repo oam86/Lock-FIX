@@ -1024,7 +1024,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(b"LOCK-FIX System Inspection Report", pdf_body)
         self.assertIn(b"Customer / Inspection Information", pdf_body)
         self.assertIn(b"Server Basic Information", pdf_body)
-        self.assertIn(b"Server Detail Values", pdf_body)
+        self.assertNotIn(b"Server Detail Values", pdf_body)
         self.assertIn(b"Resource Usage Analysis", pdf_body)
         self.assertIn(b"Resource Recommendations", pdf_body)
         self.assertIn(b"Inspection Summary", pdf_body)
@@ -1080,7 +1080,7 @@ class LockFixTests(unittest.TestCase):
             sheet_xml = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
             self.assertIn("Customer / Inspection Information", sheet_xml)
             self.assertIn("Server Basic Information", sheet_xml)
-            self.assertIn("Server Detail Values", sheet_xml)
+            self.assertNotIn("Server Detail Values", sheet_xml)
             self.assertIn("Resource Usage Analysis", sheet_xml)
             self.assertIn("Resource Recommendations", sheet_xml)
             self.assertIn("Inspection Summary", sheet_xml)
@@ -1149,7 +1149,8 @@ class LockFixTests(unittest.TestCase):
         with zipfile.ZipFile(webui.io.BytesIO(captured_snapshot_xlsx["body"])) as archive:
             sheet_xml = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
             self.assertIn("SNAPSHOT-DISK-IN-USE", sheet_xml)
-            self.assertIn("서버 상세 정보", sheet_xml)
+            self.assertIn("서버 기본 정보", sheet_xml)
+            self.assertNotIn("서버 상세 정보", sheet_xml)
 
         index_html = Path.cwd().joinpath("web", "static", "index.html").read_text(encoding="utf-8")
         self.assertNotIn("OAM Electronics Co., Ltd.", index_html)
