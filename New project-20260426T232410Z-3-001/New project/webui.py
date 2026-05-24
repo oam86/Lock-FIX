@@ -3,6 +3,7 @@
 import json
 import base64
 import binascii
+import copy
 import io
 import ipaddress
 import mimetypes
@@ -94,6 +95,22 @@ class WebContext:
         self.veeam_steering_lock = threading.Lock()
         self.veeam_steering_thread: threading.Thread | None = None
         self.veeam_steering_state_path = ROOT / "runtime" / "veeam_steering_state.json"
+        self.report_snapshot_lock = threading.Lock()
+        self.report_snapshot: dict | None = None
+        self.report_snapshot_at = 0.0
+
+    def store_report_snapshot(self, report: dict) -> None:
+        with self.report_snapshot_lock:
+            self.report_snapshot = copy.deepcopy(report)
+            self.report_snapshot_at = time.time()
+
+    def latest_report_snapshot(self, max_age_seconds: int = 600) -> dict | None:
+        with self.report_snapshot_lock:
+            if not self.report_snapshot:
+                return None
+            if time.time() - self.report_snapshot_at > max_age_seconds:
+                return None
+            return copy.deepcopy(self.report_snapshot)
 
     @property
     def app_config(self):
@@ -830,7 +847,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 self.send_monitoring_csv(params.get("start", [""])[0], params.get("end", [""])[0])
             elif parsed.path == "/api/report":
                 self.require_auth(Permission.REPORT_EXPORT)
-                self.send_json(self.report_summary())
+                report = self.report_summary()
+                self.context.store_report_snapshot(report)
+                self.send_json(report)
             elif parsed.path == "/api/report/extras":
                 self.require_auth(Permission.REPORT_EXPORT)
                 self.send_json(self.report_extras_record())
@@ -7614,6 +7633,9 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         language = (parse_qs(urlparse(getattr(self, "path", "")).query).get("lang") or ["en"])[0]
         return "ko" if str(language).lower().startswith("ko") else "en"
 
+    def report_export_summary(self) -> dict:
+        return self.context.latest_report_snapshot() or self.report_summary()
+
     def report_export_labels(self, lang: str = "en") -> dict[str, str]:
         if lang == "ko":
             return {
@@ -7776,7 +7798,7 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         lang = self.report_export_language()
         labels = self.report_export_labels(lang)
         local = lambda value: self.localize_report_export_value(value, lang)
-        report = self.report_summary()
+        report = self.report_export_summary()
         extras = report["extras"]
         inspection_items = report["inspection_items"]
         warning_items = [item for item in inspection_items if str(item.get("result", "")).lower() == "warning"]
@@ -7877,7 +7899,7 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
 
     def send_report_docx(self) -> None:
         lang = self.report_export_language()
-        report = self.report_summary()
+        report = self.report_export_summary()
         body = self.build_docx(report, lang=lang)
         self.send_download(
             body,
@@ -7887,7 +7909,7 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
 
     def send_report_pdf(self) -> None:
         lang = self.report_export_language()
-        report = self.report_summary()
+        report = self.report_export_summary()
         body = self.build_pdf_report(report, lang=lang)
         self.send_download(body, "application/pdf", "lockfix_report.pdf")
 

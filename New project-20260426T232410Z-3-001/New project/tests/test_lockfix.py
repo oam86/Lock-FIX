@@ -1137,6 +1137,20 @@ class LockFixTests(unittest.TestCase):
             self.assertIn("전자 서명", document_xml)
             self.assertNotIn("Recent Monitoring Samples", document_xml)
 
+        snapshot_report = json.loads(json.dumps(report))
+        snapshot_report["server"]["disk"] = "SNAPSHOT-DISK-IN-USE"
+        handler.context.store_report_snapshot(snapshot_report)
+        captured_snapshot_xlsx = {}
+        handler.path = "/api/report.xlsx?lang=ko"
+        handler.send_download = lambda body, content_type, filename: captured_snapshot_xlsx.update(
+            {"body": body, "content_type": content_type, "filename": filename}
+        )
+        handler.send_report_xlsx()
+        with zipfile.ZipFile(webui.io.BytesIO(captured_snapshot_xlsx["body"])) as archive:
+            sheet_xml = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
+            self.assertIn("SNAPSHOT-DISK-IN-USE", sheet_xml)
+            self.assertIn("서버 상세 정보", sheet_xml)
+
         index_html = Path.cwd().joinpath("web", "static", "index.html").read_text(encoding="utf-8")
         self.assertNotIn("OAM Electronics Co., Ltd.", index_html)
         self.assertNotIn("070-7537-3438", index_html)
