@@ -8168,11 +8168,8 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
 
         customer = report["customer"]
         server = report["server"]
-        card(42, 700, 118, 44, labels["customer_name"], customer["customer_name"])
-        card(174, 700, 118, 44, labels["engineer"], customer["engineer"])
-        card(306, 700, 118, 44, labels["inspection_date"], customer["inspection_date"])
-        card(438, 700, 112, 44, labels["service"], server["service"])
-        y = 674
+        # Match the WebUI report body: summary text flows directly into the customer/server tables.
+        y = 728
 
         draw_table(labels["customer_info"], [116, 150, 116, 152], [
             [labels["field"], labels["value"], labels["field"], labels["value"]],
