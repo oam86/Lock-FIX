@@ -1206,13 +1206,20 @@ class LockFixTests(unittest.TestCase):
         checklist_panel = html.split('data-i18n="report.checklist"', 1)[1].split('id="reportInspectionTable"', 1)[0]
         usage_panel = html.split('data-i18n="report.usageDetails"', 1)[1].split('id="reportTable"', 1)[0]
 
+        self.assertIn("20260524-report-table-sections", html)
+        self.assertIn('class="report-table-panel report-usage-panel"', html)
+        self.assertIn('class="report-table report-usage-table"', usage_panel)
         self.assertLess(html.index('class="report-table-panel report-inspection-panel"'), html.index('data-i18n="report.checklist"'))
         self.assertIn('class="report-table report-inspection-table"', checklist_panel)
         self.assertNotIn("report-inspection-panel", usage_panel)
         self.assertNotIn("report-inspection-table", usage_panel)
+        self.assertIn(".report-usage-panel,", css)
+        self.assertIn(".report-usage-table th:last-child,", css)
+        self.assertIn("table-layout: fixed;", css)
         self.assertIn(".report-table td:last-child {\n  text-align: left;", css)
         self.assertIn(".report-inspection-panel .report-table-wrap {", css)
-        self.assertIn("padding: 0 12px 14px;", css)
+        self.assertIn("padding: 0 16px 16px;", css)
+        self.assertIn(".report-inspection-table {\n  min-width: 1040px;", css)
         self.assertIn(".report-inspection-table th:first-child,", css)
         self.assertIn(".report-inspection-table th:last-child,", css)
         self.assertIn("width: 130px;", css)
