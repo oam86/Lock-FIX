@@ -8202,7 +8202,8 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         section(labels["resource_recommendations"], 58)
         for item in report["cards"]:
             draw_wrapped_text(48, 498, f"{item['label']}: {local(item['recommendation'])}", 8, 10)
-        y -= 4
+        # Keep the next summary block visually separated from the recommendation text.
+        y -= 16
 
         inspection_items = report["inspection_items"]
         warning_items = [item for item in inspection_items if str(item.get("result", "")).lower() == "warning"]

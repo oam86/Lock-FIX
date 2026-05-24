@@ -1044,6 +1044,8 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("scale = content_w / total_w", webui_source)
         self.assertIn("Attention Items", webui_source)
         self.assertIn("value_size = 13 if len(value_text) <= 20 else 10", webui_source)
+        self.assertIn("Keep the next summary block visually separated", webui_source)
+        self.assertIn("y -= 16", webui_source)
         self.assertIn(b"LOCK-FIX Hardware Detection Monitoring", pdf_body)
 
         xlsx_body = handler.build_xlsx([
