@@ -8133,7 +8133,7 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             nonlocal y
             ensure_space(height)
             text_at(content_x, y, title, 12, "0.04 0.12 0.24", True)
-            y -= 17
+            y -= 22
 
         def draw_wrapped_text(x: float, width: float, value: object, size: int = 8, leading: float = 11) -> None:
             nonlocal y
@@ -8153,17 +8153,17 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                 if available_rows < 2:
                     new_page(True)
                     text_at(42, y, f"{title} ({labels['continued']})", 11, "0.04 0.12 0.24", True)
-                    y -= 17
+                    y -= 22
                     available_rows = max(1, int((y - bottom_y) // row_h) - 1)
                 chunk = body_rows[:available_rows]
-                y = table(content_x, y, widths, header + chunk, row_h=row_h) - 12
+                y = table(content_x, y, widths, header + chunk, row_h=row_h) - 20
                 body_rows = body_rows[available_rows:]
                 if body_rows:
                     new_page(True)
                     text_at(42, y, f"{title} ({labels['continued']})", 11, "0.04 0.12 0.24", True)
-                    y -= 17
+                    y -= 22
             if not body_rows and len(rows) == 1:
-                y = table(content_x, y, widths, rows, row_h=row_h) - 12
+                y = table(content_x, y, widths, rows, row_h=row_h) - 20
 
         begin_page()
         text_at(42, 775, f"{labels['generated']}: {report['generated_at']}   {labels['overall']}: {local(report['summary']['overall_status'])}", 9, status_color(report["summary"]["overall_status"]), True)
@@ -8223,12 +8223,16 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         ], row_h=20)
 
         extras = report["extras"]
-        section(labels["engineer_opinion"], 68)
-        rect(42, y - 48, 508, 46, stroke="0.82 0.87 0.92", fill="0.99 1 1")
-        text_at(54, y - 18, labels["opinion_content"], 8, "0.32 0.40 0.50", True)
-        y -= 32
-        draw_wrapped_text(54, 486, extras.get("engineer_opinion") or "-", 8, 10)
-        y -= 12
+        section(labels["engineer_opinion"], 82)
+        opinion_top = y - 2
+        opinion_height = 54
+        opinion_bottom = opinion_top - opinion_height
+        rect(42, opinion_bottom, 508, opinion_height, stroke="0.82 0.87 0.92", fill="0.99 1 1")
+        text_at(54, opinion_top - 16, labels["opinion_content"], 8, "0.32 0.40 0.50", True)
+        opinion_lines = textwrap.wrap(str(extras.get("engineer_opinion") or "-"), width=110) or ["-"]
+        for index, opinion_line in enumerate(opinion_lines[:2]):
+            text_at(54, opinion_top - 31 - (index * 11), opinion_line, 8, "0.05 0.13 0.24")
+        y = opinion_bottom - 24
 
         draw_table(labels["signature_confirmation"], [150, 76, 84, 112, 112], [
             [labels["signature_confirmation"], labels["role"], labels["status"], labels["signature_date"], labels["signature_seal"]],
