@@ -1044,6 +1044,8 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("scale = content_w / total_w", webui_source)
         self.assertIn("Attention Items", webui_source)
         self.assertIn("value_size = 13 if len(value_text) <= 20 else 10", webui_source)
+        self.assertIn('text_at(42, 790, labels["title"]', webui_source)
+        self.assertIn('text_at(42, 758, f"{labels[\'generated\']}', webui_source)
         self.assertIn("summary text flows directly into the customer/server tables", webui_source)
         self.assertNotIn('card(438, 700, 112, 44, labels["service"]', webui_source)
         self.assertIn(b"LOCK-FIX Hardware Detection Monitoring", pdf_body)

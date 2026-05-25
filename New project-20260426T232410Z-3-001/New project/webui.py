@@ -8102,9 +8102,10 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             nonlocal commands
             commands = []
             rect(24, 24, page_w - 48, page_h - 48, stroke="0.84 0.89 0.95", fill="1 1 1")
-            text_at(42, 800, labels["title"], 22 if not continued else 16, "0.04 0.12 0.24", True)
+            # Keep large title glyphs away from the outer border in PDF viewers.
+            text_at(42, 790, labels["title"], 22 if not continued else 16, "0.04 0.12 0.24", True)
             if continued:
-                text_at(42, 780, labels["continued"], 9, "0.34 0.42 0.52")
+                text_at(42, 770, labels["continued"], 9, "0.34 0.42 0.52")
 
         def finish_page() -> None:
             pages.append("\n".join(commands).encode("latin-1"))
@@ -8163,13 +8164,13 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                 y = table(content_x, y, widths, rows, row_h=row_h) - 20
 
         begin_page()
-        text_at(42, 775, f"{labels['generated']}: {report['generated_at']}   {labels['overall']}: {local(report['summary']['overall_status'])}", 9, status_color(report["summary"]["overall_status"]), True)
-        text_at(42, 758, labels["analysis"] if lang == "ko" else report["summary"]["analysis"], 9, "0.34 0.42 0.52")
+        text_at(42, 758, f"{labels['generated']}: {report['generated_at']}   {labels['overall']}: {local(report['summary']['overall_status'])}", 9, status_color(report["summary"]["overall_status"]), True)
+        text_at(42, 740, labels["analysis"] if lang == "ko" else report["summary"]["analysis"], 9, "0.34 0.42 0.52")
 
         customer = report["customer"]
         server = report["server"]
         # Match the WebUI report body: summary text flows directly into the customer/server tables.
-        y = 728
+        y = 710
 
         draw_table(labels["customer_info"], [116, 150, 116, 152], [
             [labels["field"], labels["value"], labels["field"], labels["value"]],
