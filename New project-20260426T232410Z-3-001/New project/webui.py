@@ -22,6 +22,7 @@ import threading
 import time
 import uuid
 import zipfile
+import zlib
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -7922,6 +7923,7 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         labels = self.report_export_labels(lang)
         local = lambda value: self.localize_report_export_value(value, lang)
         use_cjk_font = lang == "ko"
+        pdf_images: list[dict] = []
 
         def read_u16(data: bytes, offset: int) -> int:
             return int.from_bytes(data[offset : offset + 2], "big", signed=False)
@@ -8077,6 +8079,102 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             text_at(x + 10, y + h - 16, fit_text(label.upper(), w - 20, 7), 7, "0.32 0.40 0.50", True)
             text_at(x + 10, y + 13, fit_text(value_text, w - 20, value_size), value_size, color, True)
 
+        def png_data_to_rgb(data: bytes) -> tuple[int, int, bytes]:
+            if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise ValueError("not a png image")
+            offset = 8
+            width = height = bit_depth = color_type = 0
+            idat = bytearray()
+            while offset + 8 <= len(data):
+                length = int.from_bytes(data[offset : offset + 4], "big")
+                chunk_type = data[offset + 4 : offset + 8]
+                chunk_data = data[offset + 8 : offset + 8 + length]
+                offset += 12 + length
+                if chunk_type == b"IHDR":
+                    width = int.from_bytes(chunk_data[0:4], "big")
+                    height = int.from_bytes(chunk_data[4:8], "big")
+                    bit_depth = chunk_data[8]
+                    color_type = chunk_data[9]
+                elif chunk_type == b"IDAT":
+                    idat.extend(chunk_data)
+                elif chunk_type == b"IEND":
+                    break
+            if not width or not height or bit_depth != 8 or color_type not in {0, 2, 4, 6}:
+                raise ValueError("unsupported png signature format")
+            bpp = {0: 1, 2: 3, 4: 2, 6: 4}[color_type]
+            row_len = width * bpp
+            raw = zlib.decompress(bytes(idat))
+            rows: list[bytes] = []
+            previous = bytearray(row_len)
+            pos = 0
+            for _ in range(height):
+                filter_type = raw[pos]
+                pos += 1
+                scan = bytearray(raw[pos : pos + row_len])
+                pos += row_len
+                for idx in range(row_len):
+                    left = scan[idx - bpp] if idx >= bpp else 0
+                    up = previous[idx]
+                    upper_left = previous[idx - bpp] if idx >= bpp else 0
+                    if filter_type == 1:
+                        scan[idx] = (scan[idx] + left) & 0xFF
+                    elif filter_type == 2:
+                        scan[idx] = (scan[idx] + up) & 0xFF
+                    elif filter_type == 3:
+                        scan[idx] = (scan[idx] + ((left + up) // 2)) & 0xFF
+                    elif filter_type == 4:
+                        p = left + up - upper_left
+                        pa, pb, pc = abs(p - left), abs(p - up), abs(p - upper_left)
+                        predictor = left if pa <= pb and pa <= pc else (up if pb <= pc else upper_left)
+                        scan[idx] = (scan[idx] + predictor) & 0xFF
+                    elif filter_type != 0:
+                        raise ValueError("unsupported png filter")
+                rows.append(bytes(scan))
+                previous = scan
+            rgb = bytearray()
+            for row in rows:
+                for col in range(width):
+                    start = col * bpp
+                    if color_type == 0:
+                        r = g = b = row[start]
+                    elif color_type == 2:
+                        r, g, b = row[start], row[start + 1], row[start + 2]
+                    elif color_type == 4:
+                        gray, alpha = row[start], row[start + 1]
+                        r = g = b = (gray * alpha + 255 * (255 - alpha)) // 255
+                    else:
+                        alpha = row[start + 3]
+                        r = (row[start] * alpha + 255 * (255 - alpha)) // 255
+                        g = (row[start + 1] * alpha + 255 * (255 - alpha)) // 255
+                        b = (row[start + 2] * alpha + 255 * (255 - alpha)) // 255
+                    rgb.extend((r, g, b))
+            return width, height, bytes(rgb)
+
+        def register_pdf_image(value: str) -> dict | None:
+            image_bytes = self.image_data_url_bytes(value)
+            if not image_bytes:
+                return None
+            try:
+                width, height, rgb = png_data_to_rgb(image_bytes)
+            except ValueError:
+                return None
+            image = {
+                "name": f"Im{len(pdf_images) + 1}",
+                "width": width,
+                "height": height,
+                "data": zlib.compress(rgb),
+            }
+            pdf_images.append(image)
+            return image
+
+        def image_at(image: dict, x: float, y: float, w: float, h: float) -> None:
+            scale = min(w / image["width"], h / image["height"])
+            draw_w = image["width"] * scale
+            draw_h = image["height"] * scale
+            draw_x = x + ((w - draw_w) / 2)
+            draw_y = y + ((h - draw_h) / 2)
+            commands.append(f"q {draw_w:.1f} 0 0 {draw_h:.1f} {draw_x:.1f} {draw_y:.1f} cm /{image['name']} Do Q")
+
         def table(x: float, y: float, widths: list[float], rows: list[list[object]], header: bool = True, row_h: float = 21) -> float:
             total_w = sum(widths)
             if total_w > content_w:
@@ -8163,6 +8261,33 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             if not body_rows and len(rows) == 1:
                 y = table(content_x, y, widths, rows, row_h=row_h) - 12
 
+        def draw_signature_table(title: str, rows: list[list[object]], signature_images: list[dict | None]) -> None:
+            nonlocal y
+            section(title, 90)
+            widths = [150, 76, 84, 112, 112]
+            header_h = 18
+            row_h = 34 if any(signature_images) else 18
+            total_h = header_h + (row_h * (len(rows) - 1))
+            ensure_space(total_h + 12)
+            current_y = y
+            for row_index, row in enumerate(rows):
+                active_h = header_h if row_index == 0 else row_h
+                fill = "0.93 0.96 0.99" if row_index == 0 else "1 1 1"
+                rect(content_x, current_y - active_h, sum(widths), active_h, stroke="0.82 0.87 0.92", fill=fill, width=0.5)
+                current_x = content_x
+                for col_index, width in enumerate(widths):
+                    if col_index:
+                        line(current_x, current_y - active_h, current_x, current_y, width=0.4)
+                    if row_index > 0 and col_index == 4 and signature_images[row_index - 1]:
+                        image_at(signature_images[row_index - 1], current_x + 5, current_y - active_h + 3, width - 10, active_h - 6)
+                    else:
+                        text = str(row[col_index] if col_index < len(row) else "")
+                        clipped = textwrap.shorten(text, width=max(8, int(width / 5.4)), placeholder="...")
+                        text_at(current_x + 6, current_y - min(14, active_h - 6), clipped, 7 if row_index else 8, "0.05 0.13 0.24", row_index == 0)
+                    current_x += width
+                current_y -= active_h
+            y = current_y - 12
+
         begin_page()
         text_at(42, 758, f"{labels['generated']}: {report['generated_at']}   {labels['overall']}: {local(report['summary']['overall_status'])}", 9, status_color(report["summary"]["overall_status"]), True)
         text_at(42, 740, labels["analysis"] if lang == "ko" else report["summary"]["analysis"], 9, "0.34 0.42 0.52")
@@ -8224,11 +8349,13 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             text_at(54, opinion_top - 31 - (index * 11), opinion_line, 8, "0.05 0.13 0.24")
         y = opinion_bottom - 14
 
-        draw_table(labels["signature_confirmation"], [150, 76, 84, 112, 112], [
+        engineer_signature_image = register_pdf_image(extras.get("engineer_signature", ""))
+        manager_signature_image = register_pdf_image(extras.get("manager_signature", ""))
+        draw_signature_table(labels["signature_confirmation"], [
             [labels["signature_confirmation"], labels["role"], labels["status"], labels["signature_date"], labels["signature_seal"]],
             [labels["engineer_signature"], labels["engineer"], labels["signed"] if extras.get("engineer_signature") else labels["not_signed"], report["generated_at"] if extras.get("engineer_signature") else "-", labels["attached"] if extras.get("engineer_signature") else labels["pending"]],
             [labels["manager_signature"], labels["manager"], labels["signed"] if extras.get("manager_signature") else labels["not_signed"], report["generated_at"] if extras.get("manager_signature") else "-", labels["attached"] if extras.get("manager_signature") else labels["pending"]],
-        ], row_h=18)
+        ], [engineer_signature_image, manager_signature_image])
 
         ensure_space(54)
         line(42, 54, 550, 54, color="0.84 0.89 0.95", width=0.5)
@@ -8241,8 +8368,13 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         font1_ref = font_start
         font2_ref = font_start if use_cjk_font else font_start + 1
         font_object_count = 4 if use_cjk_font else 2
-        content_start = font_start + font_object_count
+        image_start = font_start + font_object_count
+        content_start = image_start + len(pdf_images)
         page_refs = list(range(3, 3 + page_count))
+        xobject_entries = []
+        for index, image in enumerate(pdf_images):
+            xobject_entries.append(f"/{image['name']} {image_start + index} 0 R")
+        xobject_resource = f" /XObject << {' '.join(xobject_entries)} >>" if xobject_entries else ""
         objects = [
             b"<< /Type /Catalog /Pages 2 0 R >>",
             f"<< /Type /Pages /Kids [{' '.join(f'{ref} 0 R' for ref in page_refs)}] /Count {page_count} >>".encode("ascii"),
@@ -8250,7 +8382,7 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         for index, page_ref in enumerate(page_refs):
             content_ref = content_start + index
             objects.append(
-                f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_w} {page_h}] /Resources << /Font << /F1 {font1_ref} 0 R /F2 {font2_ref} 0 R >> >> /Contents {content_ref} 0 R >>".encode("ascii")
+                f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_w} {page_h}] /Resources << /Font << /F1 {font1_ref} 0 R /F2 {font2_ref} 0 R >>{xobject_resource} >> /Contents {content_ref} 0 R >>".encode("ascii")
             )
         if use_cjk_font:
             def font_objects(font: dict, base_name: str, type0_ref: int, cid_ref: int, descriptor_ref: int, file_ref: int) -> list[bytes]:
@@ -8287,6 +8419,15 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                 b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
                 b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>",
             ])
+        for image in pdf_images:
+            objects.append(
+                (
+                    f"<< /Type /XObject /Subtype /Image /Width {image['width']} /Height {image['height']} "
+                    f"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length {len(image['data'])} >>\nstream\n"
+                ).encode("ascii")
+                + image["data"]
+                + b"\nendstream"
+            )
         for stream in pages:
             objects.append(b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream")
         output = io.BytesIO()

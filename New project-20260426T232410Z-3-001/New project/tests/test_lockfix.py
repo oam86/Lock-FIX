@@ -1017,6 +1017,8 @@ class LockFixTests(unittest.TestCase):
         handler.context = webui.WebContext(write_config(tmp_path))
         report = handler.report_summary()
         self.assertGreater(len(report["series"]), 0)
+        signature_png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+        report["extras"]["engineer_signature"] = signature_png
 
         pdf_body = handler.build_pdf_report(report)
         webui_source = Path.cwd().joinpath("webui.py").read_text(encoding="utf-8")
@@ -1033,6 +1035,8 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(b"Server Inspection Checklist", pdf_body)
         self.assertNotIn(b"Recent Monitoring Samples", pdf_body)
         self.assertIn(b"Signature Confirmation", pdf_body)
+        self.assertIn(b"/Subtype /Image", pdf_body)
+        self.assertIn(b"/XObject", pdf_body)
         self.assertIn(b"Engineer Inspection", pdf_body)
         self.assertIn(b"Manager Signature", pdf_body)
         self.assertIn(b"Not Signed", pdf_body)
