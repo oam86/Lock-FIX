@@ -8115,23 +8115,23 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
         pages: list[bytes] = []
         commands: list[str] = []
         y = 742.0
-        bottom_y = 74.0
+        bottom_y = 58.0
 
         def new_page(continued: bool = True) -> None:
             nonlocal y
             finish_page()
             begin_page(continued)
-            y = 742.0
+            y = 746.0
 
         def ensure_space(height: float) -> None:
             if y - height < bottom_y:
                 new_page(True)
 
-        def section(title: str, height: float = 30) -> None:
+        def section(title: str, height: float = 26) -> None:
             nonlocal y
             ensure_space(height)
-            text_at(content_x, y, title, 12, "0.04 0.12 0.24", True)
-            y -= 22
+            text_at(content_x, y, title, 11, "0.04 0.12 0.24", True)
+            y -= 18
 
         def draw_wrapped_text(x: float, width: float, value: object, size: int = 8, leading: float = 11) -> None:
             nonlocal y
@@ -8141,7 +8141,7 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                 text_at(x, y, wrapped, size, "0.05 0.13 0.24")
                 y -= leading
 
-        def draw_table(title: str, widths: list[float], rows: list[list[object]], row_h: float = 20) -> None:
+        def draw_table(title: str, widths: list[float], rows: list[list[object]], row_h: float = 18) -> None:
             nonlocal y
             section(title)
             header = rows[:1]
@@ -8151,17 +8151,17 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
                 if available_rows < 2:
                     new_page(True)
                     text_at(42, y, f"{title} ({labels['continued']})", 11, "0.04 0.12 0.24", True)
-                    y -= 22
+                    y -= 18
                     available_rows = max(1, int((y - bottom_y) // row_h) - 1)
                 chunk = body_rows[:available_rows]
-                y = table(content_x, y, widths, header + chunk, row_h=row_h) - 20
+                y = table(content_x, y, widths, header + chunk, row_h=row_h) - 12
                 body_rows = body_rows[available_rows:]
                 if body_rows:
                     new_page(True)
-                    text_at(42, y, f"{title} ({labels['continued']})", 11, "0.04 0.12 0.24", True)
-                    y -= 22
+                    text_at(42, y, f"{title} ({labels['continued']})", 10, "0.04 0.12 0.24", True)
+                    y -= 18
             if not body_rows and len(rows) == 1:
-                y = table(content_x, y, widths, rows, row_h=row_h) - 20
+                y = table(content_x, y, widths, rows, row_h=row_h) - 12
 
         begin_page()
         text_at(42, 758, f"{labels['generated']}: {report['generated_at']}   {labels['overall']}: {local(report['summary']['overall_status'])}", 9, status_color(report["summary"]["overall_status"]), True)
@@ -8177,7 +8177,7 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             [labels["customer_name"], customer["customer_name"], labels["inspection_date"], customer["inspection_date"]],
             [labels["customer_contact"], customer["customer_contact"], labels["engineer"], customer["engineer"]],
             [labels["customer_email"], customer["customer_email"], labels["engineer_contact"], customer["engineer_contact"]],
-        ], row_h=20)
+        ], row_h=18)
         draw_table(labels["server_basic"], [116, 392], [
             [labels["field"], labels["value"]],
             [labels["os_version"], server["os_version"]],
@@ -8186,51 +8186,51 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             [labels["disk"], server["disk"]],
             ["S/N", server["serial"]],
             [labels["hostname"], server["hostname"]],
-        ], row_h=20)
+        ], row_h=18)
         draw_table(labels["resource_usage"], [58, 48, 48, 48, 56, 62, 214], [
             [labels["metric"], labels["current"], labels["average"], labels["peak"], labels["threshold"], labels["result"], labels["recommendation"]],
             *[
                 [item["label"], f"{item['current']}%", f"{item['average']}%", f"{item['peak']}%", f"{item['threshold']}%", local(item["status"]), local(item["recommendation"])]
                 for item in report["cards"]
             ],
-        ], row_h=20)
+        ], row_h=18)
         inspection_items = report["inspection_items"]
         warning_items = [item for item in inspection_items if str(item.get("result", "")).lower() == "warning"]
         normal_count = len(inspection_items) - len(warning_items)
         draw_table(labels["inspection_summary"], [132, 134, 134, 134], [
             [labels["total_checks"], labels["normal"], labels["warning"], labels["overall"]],
             [len(inspection_items), normal_count, len(warning_items), labels["review_required"] if warning_items else labels["operational"]],
-        ], row_h=22)
+        ], row_h=20)
         attention_rows = [[labels["inspection_item"], labels["metric"], labels["criteria"], labels["result"]]]
         attention_rows.extend(
             [[item["item"], item["metric"], item["criteria"], local(item["result"])] for item in warning_items]
             or [[labels["no_attention"], "-", "-", labels["normal"]]]
         )
-        draw_table(labels["attention_items"], [154, 126, 174, 80], attention_rows, row_h=20)
+        draw_table(labels["attention_items"], [154, 126, 174, 80], attention_rows, row_h=18)
         draw_table(labels["checklist"], [48, 96, 132, 104, 84, 70], [
             [labels["category"], labels["inspection_item"], labels["details"], labels["criteria"], labels["metric"], labels["result"]],
             *[[item["category"], item["item"], item["detail"], item["criteria"], item["metric"], local(item["result"])] for item in inspection_items],
-        ], row_h=20)
+        ], row_h=18)
 
         extras = report["extras"]
-        section(labels["engineer_opinion"], 82)
+        section(labels["engineer_opinion"], 64)
         opinion_top = y - 2
-        opinion_height = 54
+        opinion_height = 42
         opinion_bottom = opinion_top - opinion_height
         rect(42, opinion_bottom, 508, opinion_height, stroke="0.82 0.87 0.92", fill="0.99 1 1")
         text_at(54, opinion_top - 16, labels["opinion_content"], 8, "0.32 0.40 0.50", True)
         opinion_lines = textwrap.wrap(str(extras.get("engineer_opinion") or "-"), width=110) or ["-"]
         for index, opinion_line in enumerate(opinion_lines[:2]):
             text_at(54, opinion_top - 31 - (index * 11), opinion_line, 8, "0.05 0.13 0.24")
-        y = opinion_bottom - 24
+        y = opinion_bottom - 14
 
         draw_table(labels["signature_confirmation"], [150, 76, 84, 112, 112], [
             [labels["signature_confirmation"], labels["role"], labels["status"], labels["signature_date"], labels["signature_seal"]],
             [labels["engineer_signature"], labels["engineer"], labels["signed"] if extras.get("engineer_signature") else labels["not_signed"], report["generated_at"] if extras.get("engineer_signature") else "-", labels["attached"] if extras.get("engineer_signature") else labels["pending"]],
             [labels["manager_signature"], labels["manager"], labels["signed"] if extras.get("manager_signature") else labels["not_signed"], report["generated_at"] if extras.get("manager_signature") else "-", labels["attached"] if extras.get("manager_signature") else labels["pending"]],
-        ], row_h=20)
+        ], row_h=18)
 
-        ensure_space(74)
+        ensure_space(54)
         line(42, 54, 550, 54, color="0.84 0.89 0.95", width=0.5)
         for index, footer_line in enumerate(self.report_company_footer_lines(ascii_only=True)):
             text_at(42, 43 - (index * 10), footer_line, 7, "0.34 0.42 0.52", index == 0)

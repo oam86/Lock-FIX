@@ -1021,6 +1021,7 @@ class LockFixTests(unittest.TestCase):
         pdf_body = handler.build_pdf_report(report)
         webui_source = Path.cwd().joinpath("webui.py").read_text(encoding="utf-8")
         self.assertTrue(pdf_body.startswith(b"%PDF-1.4"))
+        self.assertEqual(2, pdf_body.count(b"/Type /Page "))
         self.assertIn(b"LOCK-FIX System Inspection Report", pdf_body)
         self.assertIn(b"Customer / Inspection Information", pdf_body)
         self.assertIn(b"Server Basic Information", pdf_body)
@@ -1112,6 +1113,7 @@ class LockFixTests(unittest.TestCase):
             self.assertIn("<w:tbl>", document_xml)
 
         korean_pdf_body = handler.build_pdf_report(report, lang="ko")
+        self.assertEqual(2, korean_pdf_body.count(b"/Type /Page "))
         self.assertIn(b"/Identity-H", korean_pdf_body)
         self.assertIn(b"/CIDFontType2", korean_pdf_body)
         self.assertIn(b"/FontFile2", korean_pdf_body)
