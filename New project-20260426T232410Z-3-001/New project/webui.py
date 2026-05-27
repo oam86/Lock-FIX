@@ -860,7 +860,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/report.xlsx":
                 self.require_auth(Permission.REPORT_EXPORT)
                 self.send_report_xlsx()
-            elif parsed.path == "/api/report.hwp":
+            elif parsed.path in {"/api/report.hwp", "/api/report.hwpx"}:
                 self.require_auth(Permission.REPORT_EXPORT)
                 self.send_report_hwp()
             elif parsed.path == "/api/report.pdf":
@@ -5897,7 +5897,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "word": "/api/report.docx",
                 "csv": "/api/report.csv",
                 "pdf": "/api/report.pdf",
-                "hwp": "/api/report.hwp",
+                "hwp": "/api/report.hwpx",
             },
         }
 
@@ -7893,8 +7893,8 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
     def send_report_hwp(self) -> None:
         lang = self.report_export_language()
         report = self.report_export_summary()
-        body = self.build_hwp_report(report, lang=lang)
-        self.send_download(body, "application/x-hwp; charset=utf-8", "lockfix_report.hwp")
+        body = self.build_hwpx_report(report, lang=lang)
+        self.send_download(body, "application/hwp+zip", "lockfix_report.hwpx")
 
     def send_report_docx(self) -> None:
         lang = self.report_export_language()
@@ -8037,6 +8037,171 @@ th {{ background: #eaf1f8; text-align: left; }}
 </html>
 """
         return html.encode("utf-8-sig")
+
+    def build_hwpx_report(self, report: dict, lang: str = "en") -> bytes:
+        labels = self.report_export_labels(lang)
+        local = lambda value: self.localize_report_export_value(value, lang)
+        extras = report["extras"]
+        customer = report["customer"]
+        server = report["server"]
+        inspection_items = report["inspection_items"]
+        warning_items = [item for item in inspection_items if str(item.get("result", "")).lower() == "warning"]
+        normal_count = len(inspection_items) - len(warning_items)
+
+        def xml(value: object) -> str:
+            return escape(str(value if value is not None else "-"))
+
+        def cell_line(values: list[object]) -> str:
+            return "    ".join(str(value if value is not None else "-") for value in values)
+
+        def signature_status(value: str) -> str:
+            return labels["attached"] if self.image_data_url_bytes(value) else labels["pending"]
+
+        lines: list[str] = [
+            labels["title"],
+            f"{labels['generated']}: {report['generated_at']}    {labels['overall']}: {local(report['summary']['overall_status'])}",
+            labels["analysis"] if lang == "ko" else report["summary"]["analysis"],
+            "",
+            labels["customer_info"],
+            cell_line([labels["customer_name"], customer["customer_name"], labels["inspection_date"], customer["inspection_date"]]),
+            cell_line([labels["customer_contact"], customer["customer_contact"], labels["engineer"], customer["engineer"]]),
+            cell_line([labels["customer_email"], customer["customer_email"], labels["engineer_contact"], customer["engineer_contact"]]),
+            "",
+            labels["server_basic"],
+            cell_line([labels["os_version"], server["os_version"]]),
+            cell_line([labels["service"], server["service"]]),
+            cell_line([labels["model"], server["model"]]),
+            cell_line([labels["disk"], server["disk"]]),
+            cell_line(["S/N", server["serial"]]),
+            cell_line([labels["hostname"], server["hostname"]]),
+            "",
+            labels["resource_usage"],
+            cell_line([labels["metric"], labels["current"], labels["average"], labels["peak"], labels["threshold"], labels["result"], labels["recommendation"]]),
+        ]
+        for item in report["cards"]:
+            lines.append(cell_line([
+                item["label"],
+                f"{item['current']}%",
+                f"{item['average']}%",
+                f"{item['peak']}%",
+                f"{item['threshold']}%",
+                local(item["status"]),
+                local(item["recommendation"]),
+            ]))
+
+        lines.extend([
+            "",
+            labels["inspection_summary"],
+            cell_line([labels["total_checks"], labels["normal"], labels["warning"], labels["overall"]]),
+            cell_line([len(inspection_items), normal_count, len(warning_items), labels["review_required"] if warning_items else labels["operational"]]),
+            "",
+            labels["attention_items"],
+            cell_line([labels["inspection_item"], labels["metric"], labels["criteria"], labels["result"]]),
+        ])
+        if warning_items:
+            for item in warning_items:
+                lines.append(cell_line([item["item"], item["metric"], item["criteria"], local(item["result"])]))
+        else:
+            lines.append(cell_line([labels["no_attention"], "-", "-", labels["normal"]]))
+
+        lines.extend([
+            "",
+            labels["checklist"],
+            cell_line([labels["category"], labels["inspection_item"], labels["details"], labels["criteria"], labels["metric"], labels["result"]]),
+        ])
+        for item in inspection_items:
+            lines.append(cell_line([item["category"], item["item"], item["detail"], item["criteria"], item["metric"], local(item["result"])]))
+
+        lines.extend([
+            "",
+            labels["engineer_opinion"],
+            str(extras.get("engineer_opinion") or "-"),
+            "",
+            labels["electronic_signature"],
+            labels["signature_confirmation"],
+            cell_line([labels["signature_confirmation"], labels["role"], labels["status"], labels["signature_date"], labels["signature_seal"]]),
+            cell_line([
+                labels["engineer_signature"],
+                labels["engineer"],
+                labels["signed"] if extras.get("engineer_signature") else labels["not_signed"],
+                report["generated_at"] if extras.get("engineer_signature") else "-",
+                signature_status(extras.get("engineer_signature", "")),
+            ]),
+            cell_line([
+                labels["manager_signature"],
+                labels["manager"],
+                labels["signed"] if extras.get("manager_signature") else labels["not_signed"],
+                report["generated_at"] if extras.get("manager_signature") else "-",
+                signature_status(extras.get("manager_signature", "")),
+            ]),
+            "",
+            *self.report_company_footer_lines(),
+        ])
+
+        def paragraph(index: int, text: str) -> str:
+            return (
+                f'<hp:p id="{index}" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
+                f'<hp:run charPrIDRef="0"><hp:t>{xml(text)}</hp:t></hp:run>'
+                '<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000" textheight="1000" '
+                'baseline="850" spacing="600" horzpos="0" horzsize="42520" flags="393216" /></hp:linesegarray>'
+                '</hp:p>'
+            )
+
+        section_paragraphs = "\n".join(paragraph(index, line) for index, line in enumerate(lines))
+        section_xml = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
+{section_paragraphs}
+</hs:sec>
+'''
+        header_xml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" version="1.0" secCnt="1">
+  <hh:beginNum page="1" footnote="1" endnote="1" pic="1" tbl="1" equation="1" />
+  <hh:refList>
+    <hh:fontfaces itemCnt="1"><hh:fontface lang="ko" fontCnt="1"><hh:font id="0" face="맑은 고딕" type="ttf" /></hh:fontface></hh:fontfaces>
+    <hh:styles itemCnt="1"><hh:style id="0" type="PARA" name="바탕글" engName="Normal" paraPrIDRef="0" charPrIDRef="0" nextStyleIDRef="0" langID="1042" lockForm="0" /></hh:styles>
+    <hh:borderFills itemCnt="1"><hh:borderFill id="0" threeD="0" shadow="0"><hh:slash type="NONE" Crooked="0" isCounter="0" /><hh:backSlash type="NONE" Crooked="0" isCounter="0" /><hh:leftBorder type="NONE" width="0.1 mm" color="#000000" /><hh:rightBorder type="NONE" width="0.1 mm" color="#000000" /><hh:topBorder type="NONE" width="0.1 mm" color="#000000" /><hh:bottomBorder type="NONE" width="0.1 mm" color="#000000" /><hh:diagonal type="NONE" width="0.1 mm" color="#000000" /><hh:fillBrush><hc:winBrush xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core" faceColor="#FFFFFF" hatchColor="#000000" alpha="0" /></hh:fillBrush></hh:borderFill></hh:borderFills>
+    <hh:charProperties itemCnt="1"><hh:charPr id="0" height="1000" textColor="#000000" shadeColor="#FFFFFF" useFontSpace="0" useKerning="0"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0" /><hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100" /><hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0" /><hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100" /><hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0" /></hh:charPr></hh:charProperties>
+    <hh:paraProperties itemCnt="1"><hh:paraPr id="0" tabPrIDRef="0" condense="0" fontLineHeight="0" snapToGrid="1" suppressLineNumbers="0" checked="0"><hh:align horizontal="LEFT" vertical="BASELINE" /><hh:heading type="NONE" idRef="0" level="0" /><hh:breakSetting breakLatinWord="KEEP_WORD" breakNonLatinWord="KEEP_WORD" widowOrphan="0" keepWithNext="0" keepLines="0" pageBreakBefore="0" lineWrap="BREAK" /><hh:autoSpacing eAsianEng="0" eAsianNum="0" /><hh:margin><hh:intent value="0" /><hh:left value="0" /><hh:right value="0" /><hh:prev value="0" /><hh:next value="600" /></hh:margin><hh:lineSpacing type="PERCENT" value="160" /></hh:paraPr></hh:paraProperties>
+    <hh:tabProperties itemCnt="1"><hh:tabPr id="0" autoTabLeft="1" autoTabRight="1" /></hh:tabProperties>
+  </hh:refList>
+  <hh:compatibleDocument targetProgram="HWP2018"><hh:layoutCompatibility /></hh:compatibleDocument>
+</hh:head>
+'''
+        content_hpf = f'''<?xml version="1.0" encoding="UTF-8"?>
+<opf:package xmlns:opf="http://www.idpf.org/2007/opf/" version="3.0" unique-identifier="uid">
+  <opf:metadata>
+    <opf:identifier id="uid">urn:uuid:{uuid.uuid4()}</opf:identifier>
+    <opf:title>{xml(labels["title"])}</opf:title>
+    <opf:language>{"ko-KR" if lang == "ko" else "en-US"}</opf:language>
+  </opf:metadata>
+  <opf:manifest>
+    <opf:item id="header" href="header.xml" media-type="application/xml" />
+    <opf:item id="section0" href="section0.xml" media-type="application/xml" />
+  </opf:manifest>
+  <opf:spine><opf:itemref idref="section0" /></opf:spine>
+</opf:package>
+'''
+        container_xml = '''<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles><rootfile full-path="Contents/content.hpf" media-type="application/hwp+zip" /></rootfiles>
+</container>
+'''
+        version_xml = '''<?xml version="1.0" encoding="UTF-8"?>
+<version xmlns="http://www.hancom.co.kr/hwpml/2011/version" app="LOCK-FIX" version="1.0" />
+'''
+        settings_xml = '''<?xml version="1.0" encoding="UTF-8"?>
+<settings xmlns="http://www.hancom.co.kr/hwpml/2011/settings" />
+'''
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr(zipfile.ZipInfo("mimetype"), "application/hwp+zip")
+            archive.writestr("version.xml", version_xml)
+            archive.writestr("META-INF/container.xml", container_xml)
+            archive.writestr("Contents/content.hpf", content_hpf)
+            archive.writestr("Contents/header.xml", header_xml)
+            archive.writestr("Contents/section0.xml", section_xml)
+            archive.writestr("Settings/settings.xml", settings_xml)
+        return output.getvalue()
 
     def build_pdf_report(self, report: dict, lang: str = "en") -> bytes:
         labels = self.report_export_labels(lang)
