@@ -1014,7 +1014,19 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("pane ySplit", webui_source)
         self.assertIn("cellXfs", webui_source)
         self.assertNotIn('"LOCK-FIX Report"', webui_source)
-        self.assertIn("20260527-report-hwp-export", html)
+        self.assertIn("20260527-sharp-event-clock", html)
+
+    def test_dashboard_event_clock_is_crisp_and_visible(self) -> None:
+        styles = Path.cwd().joinpath("web", "static", "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn(".event-clock", styles)
+        self.assertIn("width: 18px", styles)
+        self.assertIn("height: 18px", styles)
+        self.assertIn("border: 2.4px solid #3f5264", styles)
+        self.assertIn("flex: 0 0 18px", styles)
+        self.assertIn("box-shadow: 0 1px 3px rgba(15, 31, 49, 0.12)", styles)
+        self.assertIn("width: 2.2px", styles)
+        self.assertIn("border-radius: 999px", styles)
 
     def test_report_exports_are_balanced_documents(self) -> None:
         tmp_path = self.make_workspace()
@@ -3872,9 +3884,9 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("grid-template-columns: 112px 1fr;", css_source)
         self.assertIn("font-size: 11.5px;", css_source)
         self.assertIn("font-size: 12px;", css_source)
-        self.assertIn("width: 16px;", css_source)
-        self.assertIn("height: 16px;", css_source)
-        self.assertIn("border: 2px solid #52606d;", css_source)
+        self.assertIn("width: 18px;", css_source)
+        self.assertIn("height: 18px;", css_source)
+        self.assertIn("border: 2.4px solid #3f5264;", css_source)
         self.assertIn("font-size: 14.5px;", css_source)
         self.assertIn("font-size: 20px;", css_source)
         self.assertIn("function dashboardFlowLabel", app_source)
