@@ -792,7 +792,7 @@ const translations = {
     "report.refresh": "Refresh",
     "report.exportWord": "Word",
     "report.exportPdf": "PDF",
-    "report.exportExcel": "Excel",
+    "report.exportHwp": "HWP",
     "report.avg": "Avg",
     "report.loading": "Refreshing latest report data...",
     "report.normal": "Normal",
@@ -1229,7 +1229,7 @@ const translations = {
     "report.refresh": "새로고침",
     "report.exportWord": "Word",
     "report.exportPdf": "PDF",
-    "report.exportExcel": "엑셀",
+    "report.exportHwp": "HWP",
     "report.avg": "평균",
     "report.loading": "최신 보고서 데이터를 갱신하는 중입니다...",
     "report.normal": "정상",
@@ -2007,7 +2007,7 @@ function setupReportSignatures() {
 function updateReportExportLinks() {
   const lang = uiSettings.language === "ko" ? "ko" : "en";
   [
-    [".report-export-csv", "/api/report.xlsx"],
+    [".report-export-hwp", "/api/report.hwp"],
     [".report-export-pdf", "/api/report.pdf"],
     [".report-export-word", "/api/report.docx"],
   ].forEach(([selector, basePath]) => {

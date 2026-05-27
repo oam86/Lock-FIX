@@ -860,6 +860,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/report.xlsx":
                 self.require_auth(Permission.REPORT_EXPORT)
                 self.send_report_xlsx()
+            elif parsed.path == "/api/report.hwp":
+                self.require_auth(Permission.REPORT_EXPORT)
+                self.send_report_hwp()
             elif parsed.path == "/api/report.pdf":
                 self.require_auth(Permission.REPORT_EXPORT)
                 self.send_report_pdf()
@@ -5894,7 +5897,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "word": "/api/report.docx",
                 "csv": "/api/report.csv",
                 "pdf": "/api/report.pdf",
-                "excel": "/api/report.xlsx",
+                "hwp": "/api/report.hwp",
             },
         }
 
@@ -7887,6 +7890,12 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             "lockfix_report.xlsx",
         )
 
+    def send_report_hwp(self) -> None:
+        lang = self.report_export_language()
+        report = self.report_export_summary()
+        body = self.build_hwp_report(report, lang=lang)
+        self.send_download(body, "application/x-hwp; charset=utf-8", "lockfix_report.hwp")
+
     def send_report_docx(self) -> None:
         lang = self.report_export_language()
         report = self.report_export_summary()
@@ -7918,6 +7927,116 @@ $ips = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceDescript
             "Tech Support : 070-7537-3438",
             "Zip code : 05838",
         ]
+
+    def build_hwp_report(self, report: dict, lang: str = "en") -> bytes:
+        labels = self.report_export_labels(lang)
+        local = lambda value: self.localize_report_export_value(value, lang)
+        extras = report["extras"]
+        customer = report["customer"]
+        server = report["server"]
+        inspection_items = report["inspection_items"]
+        warning_items = [item for item in inspection_items if str(item.get("result", "")).lower() == "warning"]
+        normal_count = len(inspection_items) - len(warning_items)
+
+        def e(value: object) -> str:
+            return escape(str(value if value is not None else "-"), {'"': "&quot;"})
+
+        def table_html(headers: list[object], rows: list[list[object]]) -> str:
+            head = "".join(f"<th>{e(header)}</th>" for header in headers)
+            body = []
+            for row in rows:
+                body.append("<tr>" + "".join(f"<td>{e(cell)}</td>" for cell in row) + "</tr>")
+            return f"<table><thead><tr>{head}</tr></thead><tbody>{''.join(body)}</tbody></table>"
+
+        def signature_cell(value: str) -> str:
+            if self.image_data_url_bytes(value):
+                return f'<img class="signature-img" src="{e(value)}" alt="{e(labels["signature_seal"])}" />'
+            return e(labels["pending"])
+
+        resource_rows = [
+            [
+                item["label"],
+                f"{item['current']}%",
+                f"{item['average']}%",
+                f"{item['peak']}%",
+                f"{item['threshold']}%",
+                local(item["status"]),
+                local(item["recommendation"]),
+            ]
+            for item in report["cards"]
+        ]
+        attention_rows = (
+            [[item["item"], item["metric"], item["criteria"], local(item["result"])] for item in warning_items]
+            or [[labels["no_attention"], "-", "-", labels["normal"]]]
+        )
+        checklist_rows = [
+            [item["category"], item["item"], item["detail"], item["criteria"], item["metric"], local(item["result"])]
+            for item in inspection_items
+        ]
+        footer = "<br/>".join(e(line) for line in self.report_company_footer_lines())
+        html = f"""<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>{e(labels["title"])}</title>
+<style>
+body {{ font-family: "Malgun Gothic", "맑은 고딕", Arial, sans-serif; color: #0b1f3a; margin: 28px; }}
+h1 {{ font-size: 26px; margin: 0 0 8px; }}
+h2 {{ font-size: 17px; margin: 24px 0 10px; }}
+p {{ margin: 6px 0; line-height: 1.45; }}
+table {{ border-collapse: collapse; width: 100%; margin: 8px 0 16px; table-layout: fixed; }}
+th, td {{ border: 1px solid #d6e0eb; padding: 8px 10px; font-size: 11px; vertical-align: middle; word-break: break-word; }}
+th {{ background: #eaf1f8; text-align: left; }}
+.meta {{ color: #c2410c; font-weight: 600; }}
+.muted {{ color: #53657a; }}
+.opinion {{ border: 1px solid #d6e0eb; min-height: 44px; padding: 10px; margin: 8px 0 16px; }}
+.signature-img {{ max-width: 150px; max-height: 48px; display: block; }}
+.footer {{ border-top: 1px solid #d6e0eb; margin-top: 22px; padding-top: 10px; color: #53657a; font-size: 10px; }}
+</style>
+</head>
+<body>
+<h1>{e(labels["title"])}</h1>
+<p class="meta">{e(labels["generated"])}: {e(report["generated_at"])} &nbsp; {e(labels["overall"])}: {e(local(report["summary"]["overall_status"]))}</p>
+<p class="muted">{e(labels["analysis"] if lang == "ko" else report["summary"]["analysis"])}</p>
+<h2>{e(labels["customer_info"])}</h2>
+{table_html([labels["field"], labels["value"], labels["field"], labels["value"]], [
+    [labels["customer_name"], customer["customer_name"], labels["inspection_date"], customer["inspection_date"]],
+    [labels["customer_contact"], customer["customer_contact"], labels["engineer"], customer["engineer"]],
+    [labels["customer_email"], customer["customer_email"], labels["engineer_contact"], customer["engineer_contact"]],
+])}
+<h2>{e(labels["server_basic"])}</h2>
+{table_html([labels["field"], labels["value"]], [
+    [labels["os_version"], server["os_version"]],
+    [labels["service"], server["service"]],
+    [labels["model"], server["model"]],
+    [labels["disk"], server["disk"]],
+    ["S/N", server["serial"]],
+    [labels["hostname"], server["hostname"]],
+])}
+<h2>{e(labels["resource_usage"])}</h2>
+{table_html([labels["metric"], labels["current"], labels["average"], labels["peak"], labels["threshold"], labels["result"], labels["recommendation"]], resource_rows)}
+<h2>{e(labels["inspection_summary"])}</h2>
+{table_html([labels["total_checks"], labels["normal"], labels["warning"], labels["overall"]], [[len(inspection_items), normal_count, len(warning_items), labels["review_required"] if warning_items else labels["operational"]]])}
+<h2>{e(labels["attention_items"])}</h2>
+{table_html([labels["inspection_item"], labels["metric"], labels["criteria"], labels["result"]], attention_rows)}
+<h2>{e(labels["checklist"])}</h2>
+{table_html([labels["category"], labels["inspection_item"], labels["details"], labels["criteria"], labels["metric"], labels["result"]], checklist_rows)}
+<h2>{e(labels["engineer_opinion"])}</h2>
+<div class="opinion">{e(extras.get("engineer_opinion") or "-")}</div>
+<h2>{e(labels["electronic_signature"])}</h2>
+<h2>{e(labels["signature_confirmation"])}</h2>
+<table>
+<thead><tr><th>{e(labels["signature_confirmation"])}</th><th>{e(labels["role"])}</th><th>{e(labels["status"])}</th><th>{e(labels["signature_date"])}</th><th>{e(labels["signature_seal"])}</th></tr></thead>
+<tbody>
+<tr><td>{e(labels["engineer_signature"])}</td><td>{e(labels["engineer"])}</td><td>{e(labels["signed"] if extras.get("engineer_signature") else labels["not_signed"])}</td><td>{e(report["generated_at"] if extras.get("engineer_signature") else "-")}</td><td>{signature_cell(extras.get("engineer_signature", ""))}</td></tr>
+<tr><td>{e(labels["manager_signature"])}</td><td>{e(labels["manager"])}</td><td>{e(labels["signed"] if extras.get("manager_signature") else labels["not_signed"])}</td><td>{e(report["generated_at"] if extras.get("manager_signature") else "-")}</td><td>{signature_cell(extras.get("manager_signature", ""))}</td></tr>
+</tbody>
+</table>
+<div class="footer">{footer}</div>
+</body>
+</html>
+"""
+        return html.encode("utf-8-sig")
 
     def build_pdf_report(self, report: dict, lang: str = "en") -> bytes:
         labels = self.report_export_labels(lang)

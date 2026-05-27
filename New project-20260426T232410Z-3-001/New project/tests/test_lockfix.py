@@ -982,23 +982,28 @@ class LockFixTests(unittest.TestCase):
         webui_source = (root / "webui.py").read_text(encoding="utf-8")
 
         report_header = html.split('class="report-export-actions"', 1)[1].split("</div>", 1)[0]
-        self.assertIn('href="/api/report.xlsx"', report_header)
-        self.assertIn('class="file-icon file-csv"', report_header)
+        self.assertIn('href="/api/report.hwp"', report_header)
+        self.assertIn('class="file-icon file-hwp"', report_header)
         self.assertIn('href="/api/report.pdf"', report_header)
         self.assertIn('class="file-icon file-pdf"', report_header)
         self.assertIn('href="/api/report.docx"', report_header)
         self.assertIn('class="file-icon file-word"', report_header)
         self.assertNotIn('href="/api/report.csv"', report_header)
-        self.assertIn('data-i18n="report.exportExcel"', report_header)
+        self.assertNotIn('href="/api/report.xlsx"', report_header)
+        self.assertIn('data-i18n="report.exportHwp"', report_header)
+        self.assertIn('"report.exportHwp": "HWP"', app)
         self.assertIn('"report.exportPdf": "PDF"', app)
         self.assertIn("function updateReportExportLinks", app)
-        self.assertIn('[".report-export-csv", "/api/report.xlsx"]', app)
+        self.assertIn('[".report-export-hwp", "/api/report.hwp"]', app)
         self.assertIn('[".report-export-pdf", "/api/report.pdf"]', app)
         self.assertIn('[".report-export-word", "/api/report.docx"]', app)
         self.assertIn("?lang=${encodeURIComponent(lang)}", app)
-        self.assertIn('background-image: url("/static/excel-export-logo.png");', css)
+        self.assertIn(".file-hwp", css)
         self.assertIn('background-image: url("/static/pdf-export-logo.png");', css)
         self.assertIn('background-image: url("/static/word-export-logo.png");', css)
+        self.assertIn('elif parsed.path == "/api/report.hwp":', webui_source)
+        self.assertIn("def send_report_hwp", webui_source)
+        self.assertIn("application/x-hwp", webui_source)
         self.assertIn('elif parsed.path == "/api/report.pdf":', webui_source)
         self.assertIn("def send_report_pdf", webui_source)
         self.assertIn("application/pdf", webui_source)
@@ -1009,7 +1014,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("pane ySplit", webui_source)
         self.assertIn("cellXfs", webui_source)
         self.assertNotIn('"LOCK-FIX Report"', webui_source)
-        self.assertIn("20260522-airgap-rest-live-stream", html)
+        self.assertIn("20260527-report-hwp-export", html)
 
     def test_report_exports_are_balanced_documents(self) -> None:
         tmp_path = self.make_workspace()
@@ -1102,6 +1107,25 @@ class LockFixTests(unittest.TestCase):
             self.assertIn("Tel : 1666-3736", sheet_xml)
             self.assertIn("Tech Support : 070-7537-3438", sheet_xml)
 
+        handler.context.store_report_snapshot(report)
+        captured_hwp = {}
+        handler.send_download = lambda body, content_type, filename: captured_hwp.update(
+            {"body": body, "content_type": content_type, "filename": filename}
+        )
+        handler.send_report_hwp()
+        hwp_html = captured_hwp["body"].decode("utf-8-sig")
+        self.assertEqual(captured_hwp["filename"], "lockfix_report.hwp")
+        self.assertIn("application/x-hwp", captured_hwp["content_type"])
+        self.assertIn("LOCK-FIX System Inspection Report", hwp_html)
+        self.assertIn("Customer / Inspection Information", hwp_html)
+        self.assertIn("Server Basic Information", hwp_html)
+        self.assertIn("Resource Usage Analysis", hwp_html)
+        self.assertIn("Server Inspection Checklist", hwp_html)
+        self.assertIn("Signature Confirmation", hwp_html)
+        self.assertIn("data:image/png;base64", hwp_html)
+        self.assertNotIn("Recent Monitoring Samples", hwp_html)
+        self.assertIn("OAM Electronics Co., Ltd.", hwp_html)
+
         docx_body = handler.build_docx(report)
         self.assertTrue(zipfile.is_zipfile(webui.io.BytesIO(docx_body)))
         with zipfile.ZipFile(webui.io.BytesIO(docx_body)) as archive:
@@ -1137,6 +1161,19 @@ class LockFixTests(unittest.TestCase):
             self.assertIn("서버 점검 체크리스트", sheet_xml)
             self.assertIn("전자 서명", sheet_xml)
             self.assertNotIn("Recent Monitoring Samples", sheet_xml)
+
+        handler.path = "/api/report.hwp?lang=ko"
+        captured_korean_hwp = {}
+        handler.send_download = lambda body, content_type, filename: captured_korean_hwp.update(
+            {"body": body, "content_type": content_type, "filename": filename}
+        )
+        handler.send_report_hwp()
+        korean_hwp_html = captured_korean_hwp["body"].decode("utf-8-sig")
+        self.assertIn("LOCK-FIX 시스템 점검 보고서", korean_hwp_html)
+        self.assertIn("고객 / 점검 정보", korean_hwp_html)
+        self.assertIn("서버 점검 체크리스트", korean_hwp_html)
+        self.assertIn("전자 서명", korean_hwp_html)
+        self.assertNotIn("Recent Monitoring Samples", korean_hwp_html)
 
         korean_docx_body = handler.build_docx(report, lang="ko")
         with zipfile.ZipFile(webui.io.BytesIO(korean_docx_body)) as archive:

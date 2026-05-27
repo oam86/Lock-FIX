@@ -12087,18 +12087,18 @@ td {
   background: var(--bg);
 }
 
-.file-csv {
-  color: #1fa565;
-  background-image: url("/static/excel-export-logo.png");
+.file-hwp {
+  color: #0b5fc7;
+  background-image: url("/static/word-export-logo.png");
 }
 
-.file-csv::before,
+.file-hwp::before,
 .file-pdf::before,
 .file-word::before {
   display: none;
 }
 
-.file-csv::after {
+.file-hwp::after {
   content: "";
 }
 
