@@ -8211,8 +8211,9 @@ th {{ background: #eaf1f8; text-align: left; }}
     <opf:language>{"ko-KR" if lang == "ko" else "en-US"}</opf:language>
   </opf:metadata>
   <opf:manifest>
-    <opf:item id="header" href="header.xml" media-type="application/xml" />
-    <opf:item id="section0" href="section0.xml" media-type="application/xml" />
+    <opf:item id="header" href="Contents/header.xml" media-type="application/xml" />
+    <opf:item id="section0" href="Contents/section0.xml" media-type="application/xml" />
+    <opf:item id="settings" href="Settings/settings.xml" media-type="application/xml" />
   </opf:manifest>
   <opf:spine><opf:itemref idref="section0" /></opf:spine>
 </opf:package>
