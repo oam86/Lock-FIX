@@ -8139,17 +8139,53 @@ th {{ background: #eaf1f8; text-align: left; }}
         ])
 
         def paragraph(index: int, text: str) -> str:
+            para_id = 1000000002 + index
             return (
-                f'<hp:p id="{index}" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
+                f'<hp:p id="{para_id}" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
                 f'<hp:run charPrIDRef="0"><hp:t>{xml(text)}</hp:t></hp:run>'
                 '<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000" textheight="1000" '
                 'baseline="850" spacing="600" horzpos="0" horzsize="42520" flags="393216" /></hp:linesegarray>'
                 '</hp:p>'
             )
 
+        section_preamble = '''<hp:p id="1000000001" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">
+  <hp:run charPrIDRef="0">
+    <hp:secPr id="0" textDirection="HORIZONTAL" spaceColumns="1134" tabStop="8000" tabStopVal="8000" tabStopUnit="HWPUNIT" outlineShapeIDRef="0" memoShapeIDRef="0" textVerticalWidthHead="0" masterPageCnt="0">
+      <hp:grid lineGrid="0" charGrid="0" wonggojiFormat="0" />
+      <hp:startNum pageStartsOn="BOTH" page="1" pic="1" tbl="1" equation="1" />
+      <hp:visibility hideFirstHeader="0" hideFirstFooter="0" hideFirstMasterPage="0" border="SHOW_ALL" fill="SHOW_ALL" hideFirstPageNum="0" hideFirstEmptyLine="0" showLineNumber="0" />
+      <hp:lineNumberShape textPos="LEFT" numberType="CONTINUOUS" distance="0" startNumber="1" />
+      <hp:pagePr landscape="0" width="59528" height="84188" gutterType="LEFT_ONLY">
+        <hp:margin header="4252" footer="4252" gutter="0" left="4252" right="4252" top="5669" bottom="4252" />
+      </hp:pagePr>
+      <hp:footNotePr>
+        <hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0" />
+        <hp:noteLine length="0" type="SOLID" width="0.1 mm" color="#000000" />
+        <hp:noteSpacing betweenNotes="0" belowLine="0" aboveLine="0" />
+        <hp:numbering type="CONTINUOUS" newNum="1" />
+        <hp:placement place="EACH_COLUMN" beneathText="0" />
+      </hp:footNotePr>
+      <hp:endNotePr>
+        <hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0" />
+        <hp:noteLine length="0" type="SOLID" width="0.1 mm" color="#000000" />
+        <hp:noteSpacing betweenNotes="0" belowLine="0" aboveLine="0" />
+        <hp:numbering type="CONTINUOUS" newNum="1" />
+        <hp:placement place="END_OF_DOCUMENT" beneathText="0" />
+      </hp:endNotePr>
+      <hp:pageBorderFill type="BOTH" borderFillIDRef="0" textBorder="PAPER" headerInside="0" footerInside="0" fillArea="PAPER">
+        <hp:offset left="0" right="0" top="0" bottom="0" />
+      </hp:pageBorderFill>
+    </hp:secPr>
+    <hp:ctrl>
+      <hp:colPr id="1" type="NEWSPAPER" layout="LEFT" colCount="1" sameSz="1" sameGap="0" />
+    </hp:ctrl>
+  </hp:run>
+  <hp:run charPrIDRef="0"><hp:t></hp:t></hp:run>
+</hp:p>'''
         section_paragraphs = "\n".join(paragraph(index, line) for index, line in enumerate(lines))
         section_xml = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+{section_preamble}
 {section_paragraphs}
 </hs:sec>
 '''
@@ -8192,15 +8228,30 @@ th {{ background: #eaf1f8; text-align: left; }}
         settings_xml = '''<?xml version="1.0" encoding="UTF-8"?>
 <settings xmlns="http://www.hancom.co.kr/hwpml/2011/settings" />
 '''
+        manifest_xml = '''<?xml version="1.0" encoding="UTF-8"?>
+<odf:manifest xmlns:odf="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0">
+  <odf:file-entry odf:full-path="/" odf:media-type="application/hwp+zip" />
+  <odf:file-entry odf:full-path="version.xml" odf:media-type="text/xml" />
+  <odf:file-entry odf:full-path="META-INF/container.xml" odf:media-type="text/xml" />
+  <odf:file-entry odf:full-path="Contents/content.hpf" odf:media-type="text/xml" />
+  <odf:file-entry odf:full-path="Contents/header.xml" odf:media-type="text/xml" />
+  <odf:file-entry odf:full-path="Contents/section0.xml" odf:media-type="text/xml" />
+  <odf:file-entry odf:full-path="Settings/settings.xml" odf:media-type="text/xml" />
+  <odf:file-entry odf:full-path="Preview/PrvText.txt" odf:media-type="text/plain" />
+</odf:manifest>
+'''
+        preview_text = "\r\n".join(lines)
         output = io.BytesIO()
         with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            archive.writestr(zipfile.ZipInfo("mimetype"), "application/hwp+zip")
+            archive.writestr("mimetype", "application/hwp+zip", compress_type=zipfile.ZIP_STORED)
             archive.writestr("version.xml", version_xml)
             archive.writestr("META-INF/container.xml", container_xml)
+            archive.writestr("META-INF/manifest.xml", manifest_xml)
             archive.writestr("Contents/content.hpf", content_hpf)
             archive.writestr("Contents/header.xml", header_xml)
             archive.writestr("Contents/section0.xml", section_xml)
             archive.writestr("Settings/settings.xml", settings_xml)
+            archive.writestr("Preview/PrvText.txt", preview_text)
         return output.getvalue()
 
     def build_pdf_report(self, report: dict, lang: str = "en") -> bytes:
