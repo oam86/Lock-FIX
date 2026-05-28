@@ -793,8 +793,9 @@ button {
 .side-item {
   position: relative;
   display: grid;
-  grid-template-columns: var(--side-icon-size) minmax(0, 1fr);
-  column-gap: 8px;
+  grid-template-columns: var(--side-icon-size) max-content;
+  justify-content: center;
+  column-gap: 10px;
   align-items: center;
   min-height: 38px;
   padding: 0;
@@ -833,6 +834,7 @@ button {
 .side-item > span:not(.nav-icon) {
   display: flex;
   align-items: center;
+  min-width: 76px;
   font-size: var(--side-label-size);
   line-height: 1;
 }
