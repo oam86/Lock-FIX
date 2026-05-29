@@ -6033,36 +6033,42 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         latest_backups = latest_session.get("veeam_backups") if isinstance(latest_session.get("veeam_backups"), list) else []
         steering_jobs = steering_state.get("veeam_jobs") if isinstance(steering_state, dict) and isinstance(steering_state.get("veeam_jobs"), list) else []
         steering_backups = steering_state.get("veeam_backups") if isinstance(steering_state, dict) and isinstance(steering_state.get("veeam_backups"), list) else []
-        for job_entry in list(latest_jobs) + list(latest_backups) + list(steering_jobs) + list(steering_backups):
+        primary_jobs = list(latest_jobs) + list(steering_jobs)
+        fallback_jobs = list(latest_backups) + list(steering_backups)
+        # When Veeam REST /jobs inventory is available, it is the source of truth.
+        # /backups and session logs can include historical policy/session names and
+        # must not be rendered as additional jobs.
+        for job_entry in primary_jobs or fallback_jobs:
             if isinstance(job_entry, dict):
                 add_job_row(job_entry)
 
         raw_logs = session_logs if isinstance(session_logs, list) else []
-        for entry in raw_logs:
-            if not isinstance(entry, dict):
-                continue
-            actions = [clean(item, "") for item in entry.get("actions", []) if clean(item, "")]
-            name = clean(entry.get("name") or entry.get("job") or veeam_settings.get("job_name"))
-            key = name.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            rows.append({
-                "name": name,
-                "type": infer_type(name, actions, entry),
-                "objects": clean(entry.get("objects") or entry.get("object_count") or entry.get("objectCount") or "1"),
-                "status": infer_job_status(entry),
-                "last_run": clean(entry.get("last_run") or entry.get("lastRun") or entry.get("started_at") or latest_session.get("started_at")),
-                "last_result": infer_last_result(entry),
-                "next_run": clean(entry.get("next_run") or entry.get("nextRun") or "<Not scheduled>"),
-                "target": infer_target(entry),
-                "description": clean(entry.get("description") or first_meaningful_action(actions)),
-            })
-            if len(rows) >= 8:
-                break
+        if not rows:
+            for entry in raw_logs:
+                if not isinstance(entry, dict):
+                    continue
+                actions = [clean(item, "") for item in entry.get("actions", []) if clean(item, "")]
+                name = clean(entry.get("name") or entry.get("job") or veeam_settings.get("job_name"))
+                key = name.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                rows.append({
+                    "name": name,
+                    "type": infer_type(name, actions, entry),
+                    "objects": clean(entry.get("objects") or entry.get("object_count") or entry.get("objectCount") or "1"),
+                    "status": infer_job_status(entry),
+                    "last_run": clean(entry.get("last_run") or entry.get("lastRun") or entry.get("started_at") or latest_session.get("started_at")),
+                    "last_result": infer_last_result(entry),
+                    "next_run": clean(entry.get("next_run") or entry.get("nextRun") or "<Not scheduled>"),
+                    "target": infer_target(entry),
+                    "description": clean(entry.get("description") or first_meaningful_action(actions)),
+                })
+                if len(rows) >= 8:
+                    break
 
         configured_job = clean(veeam_settings.get("job_name"), "")
-        if configured_job and configured_job.lower() not in seen:
+        if not rows and configured_job and configured_job.lower() not in seen:
             rows.append({
                 "name": configured_job,
                 "type": "Backup Copy" if "copy" in configured_job.lower() else "Backup",

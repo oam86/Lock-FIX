@@ -3978,6 +3978,34 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("@media (max-width: 1180px)", css_source)
         self.assertIn("@media (max-width: 640px)", css_source)
 
+    def test_dashboard_veeam_jobs_prefers_rest_jobs_inventory(self) -> None:
+        latest_session = {
+            "started_at": "2026-05-30 00:00:00",
+            "veeam_jobs": [
+                {"name": "Backup Configuration Job", "type": "Backup", "status": "Stopped", "last_result": "Success"},
+                {"name": "Agent_backup", "type": "Backup Copy", "status": "Stopped", "last_result": "Success"},
+            ],
+            "veeam_backups": [
+                {"name": "Backup Copy Job 1", "type": "Backup Copy", "status": "Waiting", "last_result": "Waiting"}
+            ],
+        }
+        steering_state = {
+            "veeam_backups": [
+                {"name": "Backup Copy Job 1", "type": "Backup Copy", "status": "Waiting", "last_result": "Waiting"}
+            ]
+        }
+
+        rows = webui.LockFixWebHandler.dashboard_veeam_jobs(
+            object(),
+            [{"name": "Backup Copy Job 1", "status": "Waiting"}],
+            {"job_name": "Backup Copy Job 1", "target_repository_name": "D REPO"},
+            latest_session,
+            steering_state,
+        )
+
+        self.assertEqual(["Backup Configuration Job", "Agent_backup"], [row["name"] for row in rows])
+        self.assertNotIn("Backup Copy Job 1", {row["name"] for row in rows})
+
     def test_airgap_procedure_steps_show_live_motion_state(self) -> None:
         root = Path.cwd()
         html_source = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
