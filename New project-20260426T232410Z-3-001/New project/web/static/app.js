@@ -3653,30 +3653,34 @@ function renderDashboard(data) {
     if (/(running|working|processing)/.test(text)) return "active";
     return "muted";
   };
-  const backupJobCards = backupJobs.length
+  const backupJobRows = backupJobs.length
     ? backupJobs.map((job) => {
       const resultTone = backupJobTone(job.last_result || job.status);
       const statusTone = backupJobTone(job.status || job.last_result);
+      const name = job.name || "-";
+      const type = job.type || "-";
+      const objects = String(job.objects ?? "-");
+      const status = job.status || "-";
+      const lastRun = job.last_run || "-";
+      const lastResult = job.last_result || "-";
+      const nextRun = job.next_run || "-";
+      const target = job.target || "-";
+      const description = job.description || "-";
       return `
-        <article class="backup-job-card">
-          <header>
-            <div>
-              <strong>${escapeHtml(job.name || "-")}</strong>
-              <span>${escapeHtml(job.type || "-")} · ${escapeHtml(String(job.objects ?? "-"))} objects</span>
-            </div>
-            <span class="backup-job-badge backup-job-badge-${resultTone}">${escapeHtml(job.last_result || "-")}</span>
-          </header>
-          <dl>
-            <div><dt>${escapeHtml(jobColumns.status || "Status")}</dt><dd><span class="backup-job-badge backup-job-badge-${statusTone}">${escapeHtml(job.status || "-")}</span></dd></div>
-            <div><dt>${escapeHtml(jobColumns.lastRun || "Last Run")}</dt><dd>${escapeHtml(job.last_run || "-")}</dd></div>
-            <div><dt>${escapeHtml(jobColumns.nextRun || "Next Run")}</dt><dd>${escapeHtml(job.next_run || "-")}</dd></div>
-            <div><dt>${escapeHtml(jobColumns.target || "Target")}</dt><dd>${escapeHtml(job.target || "-")}</dd></div>
-          </dl>
-          <p>${escapeHtml(job.description || "-")}</p>
-        </article>
+        <tr>
+          <td title="${escapeHtml(name)}"><strong>${escapeHtml(name)}</strong></td>
+          <td title="${escapeHtml(type)}">${escapeHtml(type)}</td>
+          <td title="${escapeHtml(objects)}">${escapeHtml(objects)}</td>
+          <td title="${escapeHtml(status)}"><span class="backup-job-badge backup-job-badge-${statusTone}">${escapeHtml(status)}</span></td>
+          <td title="${escapeHtml(lastRun)}">${escapeHtml(lastRun)}</td>
+          <td title="${escapeHtml(lastResult)}"><span class="backup-job-badge backup-job-badge-${resultTone}">${escapeHtml(lastResult)}</span></td>
+          <td title="${escapeHtml(nextRun)}">${escapeHtml(nextRun)}</td>
+          <td title="${escapeHtml(target)}">${escapeHtml(target)}</td>
+          <td title="${escapeHtml(description)}">${escapeHtml(description)}</td>
+        </tr>
       `;
     }).join("")
-    : `<div class="backup-jobs-empty">Veeam Jobs data is not available yet.</div>`;
+    : `<tr><td colspan="9" class="backup-jobs-empty">Veeam Jobs data is not available yet.</td></tr>`;
   const events = Array.isArray(data.logs) ? data.logs.slice(0, 5) : [];
   const alerts = Array.isArray(data.alerts) ? data.alerts : [];
   const auditSummary = data.audit_summary || {};
@@ -3756,8 +3760,25 @@ function renderDashboard(data) {
           <h2>${escapeHtml(copy.backupJobs)}</h2>
           <span>${escapeHtml(backup.last_checked || "-")}</span>
         </header>
-        <div class="panel-body backup-jobs-grid">
-          ${backupJobCards}
+        <div class="panel-body">
+          <div class="backup-jobs-table-wrap">
+            <table class="backup-jobs-table">
+              <thead>
+                <tr>
+                  <th>${escapeHtml(jobColumns.name || "Name")}</th>
+                  <th>${escapeHtml(jobColumns.type || "Type")}</th>
+                  <th>${escapeHtml(jobColumns.objects || "Objects")}</th>
+                  <th>${escapeHtml(jobColumns.status || "Status")}</th>
+                  <th>${escapeHtml(jobColumns.lastRun || "Last Run")}</th>
+                  <th>${escapeHtml(jobColumns.lastResult || "Last Result")}</th>
+                  <th>${escapeHtml(jobColumns.nextRun || "Next Run")}</th>
+                  <th>${escapeHtml(jobColumns.target || "Target")}</th>
+                  <th>${escapeHtml(jobColumns.description || "Description")}</th>
+                </tr>
+              </thead>
+              <tbody>${backupJobRows}</tbody>
+            </table>
+          </div>
         </div>
       </section>
 
