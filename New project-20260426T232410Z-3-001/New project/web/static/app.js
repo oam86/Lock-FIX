@@ -1508,6 +1508,18 @@ function dashboardCopy() {
       liveProtection: "Real-time Protection Status",
       repository: "Repository Status",
       backupLink: "Backup Integration Status",
+      backupJobs: "Veeam Jobs",
+      backupJobColumns: {
+        name: "Name",
+        type: "Type",
+        objects: "Objects",
+        status: "Status",
+        lastRun: "Last Run",
+        lastResult: "Last Result",
+        nextRun: "Next Run",
+        target: "Target",
+        description: "Description",
+      },
       event: "Recent Events",
       alert: "Warnings / Alerts",
       audit: "Audit Log Summary",
@@ -1552,6 +1564,18 @@ function dashboardCopy() {
     liveProtection: "실시간 보호 현황",
     repository: "Repository 상태",
     backupLink: "백업 연동 상태",
+    backupJobs: "Veeam Jobs",
+    backupJobColumns: {
+      name: "Name",
+      type: "Type",
+      objects: "Objects",
+      status: "Status",
+      lastRun: "Last Run",
+      lastResult: "Last Result",
+      nextRun: "Next Run",
+      target: "Target",
+      description: "Description",
+    },
     event: "최근 이벤트",
     alert: "경고 / 알림",
     audit: "감사 로그 요약",
@@ -3617,6 +3641,34 @@ function renderDashboard(data) {
       { lines: ["Offline"], state: "done" },
     ];
   const backup = data.backup || {};
+  const backupJobs = Array.isArray(backup.jobs) ? backup.jobs.slice(0, 6) : [];
+  const jobColumns = copy.backupJobColumns || {};
+  const backupJobTone = (value) => {
+    const text = String(value || "").toLowerCase();
+    if (/(success|complete|normal|stopped)/.test(text)) return "success";
+    if (/(fail|error|critical|warning)/.test(text)) return "danger";
+    if (/(running|working|processing)/.test(text)) return "active";
+    return "muted";
+  };
+  const backupJobRows = backupJobs.length
+    ? backupJobs.map((job) => {
+      const resultTone = backupJobTone(job.last_result || job.status);
+      const statusTone = backupJobTone(job.status || job.last_result);
+      return `
+        <tr>
+          <td><strong>${escapeHtml(job.name || "-")}</strong></td>
+          <td>${escapeHtml(job.type || "-")}</td>
+          <td>${escapeHtml(String(job.objects ?? "-"))}</td>
+          <td><span class="backup-job-badge backup-job-badge-${statusTone}">${escapeHtml(job.status || "-")}</span></td>
+          <td>${escapeHtml(job.last_run || "-")}</td>
+          <td><span class="backup-job-badge backup-job-badge-${resultTone}">${escapeHtml(job.last_result || "-")}</span></td>
+          <td>${escapeHtml(job.next_run || "-")}</td>
+          <td>${escapeHtml(job.target || "-")}</td>
+          <td>${escapeHtml(job.description || "-")}</td>
+        </tr>
+      `;
+    }).join("")
+    : `<tr><td colspan="9" class="backup-jobs-empty">Veeam Jobs data is not available yet.</td></tr>`;
   const events = Array.isArray(data.logs) ? data.logs.slice(0, 5) : [];
   const alerts = Array.isArray(data.alerts) ? data.alerts : [];
   const auditSummary = data.audit_summary || {};
@@ -3724,6 +3776,30 @@ function renderDashboard(data) {
             <div><dt>LOCK-FIX 상태</dt><dd>${escapeHtml(backup.isolation_state || "-")}</dd></div>
             <div><dt>차단 결과</dt><dd class="backup-result ${String(backup.result || "").includes("Failed") ? "backup-result-failed" : "backup-result-success"}">${escapeHtml(backup.result || "-")}</dd></div>
           </dl>
+          <div class="backup-jobs-card" aria-label="${escapeHtml(copy.backupJobs)}">
+            <div class="backup-jobs-head">
+              <strong>${escapeHtml(copy.backupJobs)}</strong>
+              <span>${escapeHtml(backup.last_checked || "-")}</span>
+            </div>
+            <div class="backup-jobs-table-wrap">
+              <table class="backup-jobs-table">
+                <thead>
+                  <tr>
+                    <th>${escapeHtml(jobColumns.name || "Name")}</th>
+                    <th>${escapeHtml(jobColumns.type || "Type")}</th>
+                    <th>${escapeHtml(jobColumns.objects || "Objects")}</th>
+                    <th>${escapeHtml(jobColumns.status || "Status")}</th>
+                    <th>${escapeHtml(jobColumns.lastRun || "Last Run")}</th>
+                    <th>${escapeHtml(jobColumns.lastResult || "Last Result")}</th>
+                    <th>${escapeHtml(jobColumns.nextRun || "Next Run")}</th>
+                    <th>${escapeHtml(jobColumns.target || "Target")}</th>
+                    <th>${escapeHtml(jobColumns.description || "Description")}</th>
+                  </tr>
+                </thead>
+                <tbody>${backupJobRows}</tbody>
+              </table>
+            </div>
+          </div>
         </div>
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-x" data-resize-axis="x" aria-hidden="true" title="Resize width"></span>
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>

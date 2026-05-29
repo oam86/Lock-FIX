@@ -5936,6 +5936,94 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             {"category": "OS", "item": "Network", "detail": "TX/RX traffic flow", "criteria": f"< {by_id['network']['threshold']}%", "result": result("network"), "metric": f"{by_id['network']['current']}%"},
         ]
 
+    def dashboard_veeam_jobs(self, session_logs: object, veeam_settings: dict, latest_session: dict) -> list[dict]:
+        rows: list[dict] = []
+        seen: set[str] = set()
+
+        def clean(value: object, fallback: str = "-") -> str:
+            text = LockFixWebHandler.compact_log_value(self, value or "")
+            return text if text else fallback
+
+        def infer_type(name: str, actions: list[str], entry: dict) -> str:
+            explicit = clean(entry.get("type") or entry.get("job_type") or entry.get("jobType"), "")
+            if explicit:
+                return explicit
+            haystack = " ".join([name] + actions).lower()
+            if "backup copy" in haystack:
+                return "Backup Copy"
+            if "agent" in haystack:
+                return "Linux Agent Backup"
+            return "Backup"
+
+        def infer_last_result(entry: dict) -> str:
+            result = clean(entry.get("last_result") or entry.get("lastResult") or entry.get("result"), "")
+            if result:
+                return result
+            status = clean(entry.get("status"), "")
+            return "Success" if status.lower() in {"success", "completed"} else (status or "-")
+
+        def infer_job_status(entry: dict) -> str:
+            status = clean(entry.get("job_status") or entry.get("jobStatus") or entry.get("state"), "")
+            if status:
+                return status
+            return "Stopped" if infer_last_result(entry).lower() in {"success", "failed", "warning"} else clean(entry.get("status"))
+
+        def infer_target(entry: dict) -> str:
+            return clean(
+                entry.get("target")
+                or entry.get("repository_name")
+                or entry.get("repository")
+                or veeam_settings.get("target_repository_name")
+                or veeam_settings.get("target_repository_path")
+            )
+
+        def first_meaningful_action(actions: list[str]) -> str:
+            for action in actions:
+                text = clean(action, "")
+                if text and not text.startswith("LOCK-FIX STEP"):
+                    return text
+            return "-"
+
+        raw_logs = session_logs if isinstance(session_logs, list) else []
+        for entry in raw_logs:
+            if not isinstance(entry, dict):
+                continue
+            actions = [clean(item, "") for item in entry.get("actions", []) if clean(item, "")]
+            name = clean(entry.get("name") or entry.get("job") or veeam_settings.get("job_name"))
+            key = name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append({
+                "name": name,
+                "type": infer_type(name, actions, entry),
+                "objects": clean(entry.get("objects") or entry.get("object_count") or entry.get("objectCount") or "1"),
+                "status": infer_job_status(entry),
+                "last_run": clean(entry.get("last_run") or entry.get("lastRun") or entry.get("started_at") or latest_session.get("started_at")),
+                "last_result": infer_last_result(entry),
+                "next_run": clean(entry.get("next_run") or entry.get("nextRun") or "<Not scheduled>"),
+                "target": infer_target(entry),
+                "description": clean(entry.get("description") or first_meaningful_action(actions)),
+            })
+            if len(rows) >= 6:
+                break
+
+        configured_job = clean(veeam_settings.get("job_name"), "")
+        if configured_job and configured_job.lower() not in seen:
+            rows.append({
+                "name": configured_job,
+                "type": "Backup Copy" if "copy" in configured_job.lower() else "Backup",
+                "objects": "1",
+                "status": "Waiting",
+                "last_run": clean(latest_session.get("started_at")),
+                "last_result": clean(latest_session.get("status") or "Waiting"),
+                "next_run": "<Not scheduled>",
+                "target": clean(veeam_settings.get("target_repository_name") or veeam_settings.get("target_repository_path")),
+                "description": "Configured LOCK-FIX Veeam job mapping.",
+            })
+
+        return rows
+
     def dashboard_summary(self, live: bool = False) -> dict:
         runtime_root = self.context.config.audit_log_path.parent
         cache_key = str(self.context.config.audit_log_path)
@@ -5996,6 +6084,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         veeam_issue_detected = bool(steering_state.get("issue_detected")) if isinstance(steering_state, dict) else False
         veeam_last_checked = str(steering_state.get("last_checked") or steering_state.get("last_run_at") or "-") if isinstance(steering_state, dict) else "-"
         veeam_health_message = LockFixWebHandler.dashboard_backup_health_message(steering_state)
+        veeam_jobs = LockFixWebHandler.dashboard_veeam_jobs(self, sessions, veeam_settings, latest_session)
         disk_number = str(storage_state.get("diskNumber") or "").strip() if isinstance(storage_state, dict) else ""
         configured_drive = str(storage_state.get("drive") or "").strip() if isinstance(storage_state, dict) else ""
         configured_path = str(storage_state.get("accessPath") or self.context.config.slot(slot_id).mount_point or "-") if isinstance(storage_state, dict) else "-"
@@ -6111,6 +6200,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "issue_detected": veeam_issue_detected,
                 "last_checked": veeam_last_checked,
                 "health_message": veeam_health_message,
+                "jobs": veeam_jobs,
             },
             "alerts": [
                 {"label": "Disk Offline", "value": "Normal" if disk_is_offline else "Failed"},
