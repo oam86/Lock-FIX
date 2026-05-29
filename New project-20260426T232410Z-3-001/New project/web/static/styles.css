@@ -643,7 +643,7 @@ button {
   background: #ffffff;
   border-right: 1px solid #d9e2ea;
   box-shadow: 8px 0 18px rgba(29, 42, 55, 0.08);
-  padding: 18px 13px 18px 9px;
+  padding: 18px 11px;
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
@@ -795,7 +795,7 @@ button {
   display: grid;
   grid-template-columns: var(--side-icon-size) max-content;
   justify-content: center;
-  column-gap: 10px;
+  column-gap: 9px;
   align-items: center;
   min-height: 38px;
   padding: 0;
@@ -834,7 +834,7 @@ button {
 .side-item > span:not(.nav-icon) {
   display: flex;
   align-items: center;
-  min-width: 76px;
+  min-width: 62px;
   font-size: var(--side-label-size);
   line-height: 1;
 }

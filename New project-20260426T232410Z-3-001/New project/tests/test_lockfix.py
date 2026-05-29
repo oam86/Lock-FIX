@@ -1015,7 +1015,7 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("pane ySplit", webui_source)
         self.assertIn("cellXfs", webui_source)
         self.assertNotIn('"LOCK-FIX Report"', webui_source)
-        self.assertIn("20260528-sidebar-menu-center", html)
+        self.assertIn("20260529-sidebar-menu-balanced", html)
 
     def test_dashboard_event_clock_is_crisp_and_visible(self) -> None:
         styles = Path.cwd().joinpath("web", "static", "styles.css").read_text(encoding="utf-8")
@@ -2625,7 +2625,9 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("grid-template-columns: 46px minmax(0, 1fr);", css_source)
         self.assertIn("grid-template-columns: var(--side-icon-size) max-content;", css_source)
         self.assertIn("justify-content: center;", css_source)
-        self.assertIn("min-width: 76px;", css_source)
+        self.assertIn("padding: 18px 11px;", css_source)
+        self.assertIn("column-gap: 9px;", css_source)
+        self.assertIn("min-width: 62px;", css_source)
         self.assertIn("padding: 28px 12px 22px;", css_source)
         self.assertIn("padding: 32px 34px 42px;", css_source)
         self.assertIn('id="sidebarToggle"', index_source)
