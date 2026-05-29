@@ -5049,6 +5049,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             if session:
                 diagnostic_config = diagnostics.get("config") if isinstance(diagnostics.get("config"), dict) else {}
                 jobs_payload = diagnostics.get("jobs") if isinstance(diagnostics.get("jobs"), dict) else {}
+                job_states_payload = diagnostics.get("job_states") if isinstance(diagnostics.get("job_states"), dict) else {}
                 backups_payload = diagnostics.get("backups") if isinstance(diagnostics.get("backups"), dict) else {}
                 base_url = str(diagnostic_config.get("base_url") or veeam_config.get("base_url") or "")
                 parsed = urlparse(base_url)
@@ -5059,6 +5060,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 if isinstance(jobs_payload.get("items"), list):
                     session["veeam_jobs"] = jobs_payload.get("items") or []
                     session["veeam_jobs_count"] = jobs_payload.get("count", len(session["veeam_jobs"]))
+                if isinstance(job_states_payload.get("items"), list):
+                    session["veeam_job_states"] = job_states_payload.get("items") or []
+                    session["veeam_job_states_count"] = job_states_payload.get("count", len(session["veeam_job_states"]))
                 if isinstance(backups_payload.get("items"), list):
                     session["veeam_backups"] = backups_payload.get("items") or []
                     session["veeam_backups_count"] = backups_payload.get("count", len(session["veeam_backups"]))
@@ -5959,7 +5963,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         def infer_type(name: str, actions: list[str], entry: dict) -> str:
             explicit = clean(entry.get("type") or entry.get("job_type") or entry.get("jobType"), "")
             if explicit:
-                return explicit
+                return explicit.replace("BackupCopy", "Backup Copy")
             haystack = " ".join([name] + actions).lower()
             if "backup copy" in haystack:
                 return "Backup Copy"
@@ -6002,6 +6006,53 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     return entry.get(key)
             return ""
 
+        def job_identity(entry: dict) -> tuple[str, str]:
+            raw_id = pick(entry, "id", "jobId", "job_id", "uid", "instanceUid", "instanceId")
+            raw_name = pick(entry, "name", "jobName", "displayName", "job")
+            return clean(raw_id, "").lower(), clean(raw_name, "").lower()
+
+        def job_object_count(entry: dict) -> str:
+            value = pick(entry, "objects", "object_count", "objectCount", "vm_count", "vmCount", "objectsCount")
+            if isinstance(value, list):
+                return str(len(value))
+            if isinstance(value, dict):
+                count = value.get("count") or value.get("total") or value.get("totalCount") or len(value)
+                return clean(count)
+            return clean(value or "1")
+
+        def merge_veeam_jobs(job_defs: list[dict], job_states: list[dict]) -> list[dict]:
+            merged: list[dict] = []
+            by_id: dict[str, dict] = {}
+            by_name: dict[str, dict] = {}
+            for state in job_states:
+                if not isinstance(state, dict):
+                    continue
+                state_id, state_name = job_identity(state)
+                if state_id:
+                    by_id[state_id] = state
+                if state_name:
+                    by_name[state_name] = state
+            used_states: set[int] = set()
+            for job_def in job_defs:
+                if not isinstance(job_def, dict):
+                    continue
+                job_id, job_name = job_identity(job_def)
+                state = by_id.get(job_id) if job_id else None
+                if state is None and job_name:
+                    state = by_name.get(job_name)
+                combined = dict(job_def)
+                if isinstance(state, dict):
+                    used_states.add(id(state))
+                    for key, value in state.items():
+                        if value not in (None, ""):
+                            combined.setdefault(key, value)
+                            combined[f"state_{key}"] = value
+                merged.append(combined)
+            for state in job_states:
+                if isinstance(state, dict) and id(state) not in used_states:
+                    merged.append(state)
+            return merged
+
         def add_job_row(entry: dict, fallback_description: str = "Veeam REST Jobs inventory.") -> None:
             if len(rows) >= 8:
                 return
@@ -6010,8 +6061,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             if key in seen:
                 return
             seen.add(key)
-            raw_status = clean(pick(entry, "status", "state", "jobStatus"), "")
-            raw_result_value = pick(entry, "last_result", "lastResult", "result")
+            raw_status = clean(pick(entry, "state_status", "state_state", "state_jobStatus", "status", "state", "jobStatus"), "")
+            raw_result_value = pick(entry, "state_lastResult", "state_result", "last_result", "lastResult", "result")
             if isinstance(raw_result_value, dict):
                 raw_result_value = raw_result_value.get("result") or raw_result_value.get("message") or ""
             raw_result = clean(raw_result_value, "")
@@ -6019,21 +6070,23 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 raw_result = raw_status
             rows.append({
                 "name": name,
-                "type": clean(pick(entry, "type", "jobType", "platform") or infer_type(name, [], entry)),
-                "objects": clean(pick(entry, "objects", "object_count", "objectCount", "vm_count", "vmCount") or "1"),
+                "type": infer_type(name, [], entry),
+                "objects": job_object_count(entry),
                 "status": raw_status or infer_job_status(entry),
-                "last_run": clean(pick(entry, "last_run", "lastRun", "lastStartTime", "creationTime", "started_at") or latest_session.get("started_at")),
+                "last_run": clean(pick(entry, "last_run", "lastRun", "lastStartTime", "creationTime", "started_at", "state_lastRun", "state_lastStartTime") or latest_session.get("started_at")),
                 "last_result": raw_result or infer_last_result(entry),
-                "next_run": clean(pick(entry, "next_run", "nextRun") or "<Not scheduled>"),
+                "next_run": clean(pick(entry, "next_run", "nextRun", "state_nextRun") or "<Not scheduled>"),
                 "target": infer_target(entry),
-                "description": clean(pick(entry, "description", "message") or fallback_description),
+                "description": clean(pick(entry, "description") or fallback_description),
             })
 
         latest_jobs = latest_session.get("veeam_jobs") if isinstance(latest_session.get("veeam_jobs"), list) else []
+        latest_job_states = latest_session.get("veeam_job_states") if isinstance(latest_session.get("veeam_job_states"), list) else []
         latest_backups = latest_session.get("veeam_backups") if isinstance(latest_session.get("veeam_backups"), list) else []
         steering_jobs = steering_state.get("veeam_jobs") if isinstance(steering_state, dict) and isinstance(steering_state.get("veeam_jobs"), list) else []
+        steering_job_states = steering_state.get("veeam_job_states") if isinstance(steering_state, dict) and isinstance(steering_state.get("veeam_job_states"), list) else []
         steering_backups = steering_state.get("veeam_backups") if isinstance(steering_state, dict) and isinstance(steering_state.get("veeam_backups"), list) else []
-        primary_jobs = list(latest_jobs) + list(steering_jobs)
+        primary_jobs = merge_veeam_jobs(list(latest_jobs) + list(steering_jobs), list(latest_job_states) + list(steering_job_states))
         fallback_jobs = list(latest_backups) + list(steering_backups)
         # When Veeam REST /jobs inventory is available, it is the source of truth.
         # /backups and session logs can include historical policy/session names and

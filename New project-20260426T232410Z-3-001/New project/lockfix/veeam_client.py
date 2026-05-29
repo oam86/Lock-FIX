@@ -335,6 +335,10 @@ class VeeamClient:
         data = self._request_json(f"{self.settings.api_base}/jobs", "GET")
         return list_items(data)
 
+    def get_job_states(self) -> list[dict[str, Any]]:
+        data = self._request_json(f"{self.settings.api_base}/jobs/states?limit=200", "GET")
+        return list_items(data)
+
     def get_sessions(self, limit: int = 100) -> list[dict[str, Any]]:
         query = f"?limit={int(limit)}" if limit else ""
         data = self._request_json(f"{self.settings.api_base}/sessions{query}", "GET")

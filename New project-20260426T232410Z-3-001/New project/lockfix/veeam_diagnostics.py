@@ -120,6 +120,11 @@ def run_veeam_diagnostics(config: LockFixConfig, controller: LockFixController |
 
         jobs = client.get_jobs()
         result["jobs"] = {"ok": True, "count": len(jobs), "items": jobs}
+        try:
+            job_states = client.get_job_states()
+            result["job_states"] = {"ok": True, "count": len(job_states), "items": job_states}
+        except Exception as exc:
+            result["job_states"] = {"ok": False, "count": 0, "items": [], "error": str(exc)}
         backups = client.get_backups()
         repositories = client.get_repositories()
         result["backups"] = {"ok": True, "count": len(backups), "items": backups}

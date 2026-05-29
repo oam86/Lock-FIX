@@ -3982,8 +3982,12 @@ class LockFixTests(unittest.TestCase):
         latest_session = {
             "started_at": "2026-05-30 00:00:00",
             "veeam_jobs": [
-                {"name": "Backup Configuration Job", "type": "Backup", "status": "Stopped", "last_result": "Success"},
-                {"name": "Agent_backup", "type": "Backup Copy", "status": "Stopped", "last_result": "Success"},
+                {"id": "job-1", "name": "Backup Configuration Job", "type": "Backup", "description": "Created by Veeam"},
+                {"id": "job-2", "name": "Agent_backup", "type": "BackupCopy", "description": "Created by VBR"},
+            ],
+            "veeam_job_states": [
+                {"jobId": "job-1", "status": "Stopped", "lastResult": "Success", "lastRun": "2026-05-30 00:00:01"},
+                {"jobId": "job-2", "status": "Stopped", "lastResult": "Success", "lastRun": "2026-05-30 00:00:02"},
             ],
             "veeam_backups": [
                 {"name": "Backup Copy Job 1", "type": "Backup Copy", "status": "Waiting", "last_result": "Waiting"}
@@ -4005,6 +4009,10 @@ class LockFixTests(unittest.TestCase):
 
         self.assertEqual(["Backup Configuration Job", "Agent_backup"], [row["name"] for row in rows])
         self.assertNotIn("Backup Copy Job 1", {row["name"] for row in rows})
+        self.assertEqual(["Stopped", "Stopped"], [row["status"] for row in rows])
+        self.assertEqual(["Success", "Success"], [row["last_result"] for row in rows])
+        self.assertEqual("Backup Copy", rows[1]["type"])
+        self.assertEqual("Created by VBR", rows[1]["description"])
 
     def test_airgap_procedure_steps_show_live_motion_state(self) -> None:
         root = Path.cwd()
