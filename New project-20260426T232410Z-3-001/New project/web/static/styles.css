@@ -1305,6 +1305,14 @@ button {
   box-shadow: 0 4px 12px rgba(25, 36, 48, 0.08);
 }
 
+.settings-card > div,
+.settings-card label,
+.settings-notification-form,
+.settings-smtp-grid,
+.settings-threat-policy-grid {
+  min-width: 0;
+}
+
 .settings-card h2 {
   margin: 0;
   color: #17212b;
@@ -1345,7 +1353,7 @@ button {
 
 .settings-notification-card {
   grid-column: span 7;
-  grid-template-columns: minmax(220px, 0.72fr) minmax(420px, 1.28fr);
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr);
   align-items: start;
 }
 
@@ -1375,6 +1383,8 @@ button {
 .settings-field-row input,
 .settings-field-row select {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   height: 38px;
   border: 1px solid #d8e4ef;
   border-radius: 8px;
@@ -1384,6 +1394,11 @@ button {
   font: inherit;
   font-size: 13px;
   font-weight: 800;
+}
+
+.settings-field-row input {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .settings-toggle-row {
@@ -16462,7 +16477,7 @@ body,
 
 .settings-threat-policy-card {
   grid-column: span 7;
-  grid-template-columns: minmax(220px, 0.7fr) minmax(420px, 1.3fr);
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
   align-items: stretch;
 }
 
@@ -16484,6 +16499,8 @@ body,
 .settings-threat-policy-grid input,
 .settings-threat-policy-grid select {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid #d9e5f2;
   border-radius: 8px;
   background: #fff;
