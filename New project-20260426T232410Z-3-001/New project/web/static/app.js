@@ -73,7 +73,7 @@ const dashboardView = document.querySelector("#dashboardView");
 const dashboardKpiOrderKey = "lockfix.dashboard.kpiOrder.v1";
 const dashboardKpiSizeKey = "lockfix.dashboard.kpiSize.v4";
 const dashboardPanelOrderKey = "lockfix.dashboard.panelOrder.v2";
-const dashboardPanelSizeKey = "lockfix.dashboard.panelSize.v3";
+const dashboardPanelSizeKey = "lockfix.dashboard.panelSize.v4";
 const dashboardEventsKey = "lockfix.dashboard.eventsVisible.v1";
 const dashboardAlertsKey = "lockfix.dashboard.alertsVisible.v1";
 const opsEventsVisibleKey = "lockfix.ops.eventsVisible.v2";
@@ -3763,7 +3763,7 @@ function renderDashboard(data) {
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>
       </section>
 
-      <section class="security-panel backup-panel" data-dashboard-panel="backup" data-panel-resizable="true" data-cols="12" data-rows="2">
+      <section class="security-panel backup-panel" data-dashboard-panel="backup" data-panel-resizable="true" data-cols="12" data-rows="5">
         <header><h2>${copy.backupLink}</h2><span class="dashboard-panel-grip" draggable="true" data-drag-axis="y" aria-hidden="true" title="Drag card up or down"></span></header>
         <div class="panel-body">
           <dl>

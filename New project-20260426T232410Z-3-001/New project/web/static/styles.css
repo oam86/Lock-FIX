@@ -11550,9 +11550,12 @@ td {
   color: #095bd7;
 }
 
-.repo-panel,
-.backup-panel {
+.repo-panel {
   min-height: 286px;
+}
+
+.backup-panel {
+  min-height: 430px;
 }
 
 .repo-row,

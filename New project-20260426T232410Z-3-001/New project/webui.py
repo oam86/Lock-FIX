@@ -274,6 +274,10 @@ class WebContext:
             "status": status,
             "progress_percent": runtime.get("progress_percent"),
             "current_step": runtime.get("current_step"),
+            "veeam_jobs": runtime.get("veeam_jobs") if isinstance(runtime.get("veeam_jobs"), list) else [],
+            "veeam_jobs_count": runtime.get("veeam_jobs_count") or 0,
+            "veeam_backups": runtime.get("veeam_backups") if isinstance(runtime.get("veeam_backups"), list) else [],
+            "veeam_backups_count": runtime.get("veeam_backups_count") or 0,
             "state_source": runtime.get("state_source"),
             "message": runtime.get("message") or "",
             "last_checked": runtime.get("last_checked") or "",
@@ -5044,12 +5048,20 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             session = diagnostics.get("latest_configured_session") or {}
             if session:
                 diagnostic_config = diagnostics.get("config") if isinstance(diagnostics.get("config"), dict) else {}
+                jobs_payload = diagnostics.get("jobs") if isinstance(diagnostics.get("jobs"), dict) else {}
+                backups_payload = diagnostics.get("backups") if isinstance(diagnostics.get("backups"), dict) else {}
                 base_url = str(diagnostic_config.get("base_url") or veeam_config.get("base_url") or "")
                 parsed = urlparse(base_url)
                 session.setdefault("server", parsed.hostname or server)
                 session.setdefault("port", parsed.port or port)
                 session.setdefault("api_version", diagnostic_config.get("api_version") or veeam_config.get("api_version") or "1.2-rev1")
                 session.setdefault("source", diagnostics.get("source") or "python_veeam_client")
+                if isinstance(jobs_payload.get("items"), list):
+                    session["veeam_jobs"] = jobs_payload.get("items") or []
+                    session["veeam_jobs_count"] = jobs_payload.get("count", len(session["veeam_jobs"]))
+                if isinstance(backups_payload.get("items"), list):
+                    session["veeam_backups"] = backups_payload.get("items") or []
+                    session["veeam_backups_count"] = backups_payload.get("count", len(session["veeam_backups"]))
             return session
         except Exception as exc:
             job_name = str(veeam_config.get("job_name") or "Veeam API")
@@ -5936,7 +5948,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             {"category": "OS", "item": "Network", "detail": "TX/RX traffic flow", "criteria": f"< {by_id['network']['threshold']}%", "result": result("network"), "metric": f"{by_id['network']['current']}%"},
         ]
 
-    def dashboard_veeam_jobs(self, session_logs: object, veeam_settings: dict, latest_session: dict) -> list[dict]:
+    def dashboard_veeam_jobs(self, session_logs: object, veeam_settings: dict, latest_session: dict, steering_state: dict | None = None) -> list[dict]:
         rows: list[dict] = []
         seen: set[str] = set()
 
@@ -5984,6 +5996,47 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     return text
             return "-"
 
+        def pick(entry: dict, *keys: str) -> object:
+            for key in keys:
+                if key in entry and entry.get(key) not in (None, ""):
+                    return entry.get(key)
+            return ""
+
+        def add_job_row(entry: dict, fallback_description: str = "Veeam REST Jobs inventory.") -> None:
+            if len(rows) >= 8:
+                return
+            name = clean(pick(entry, "name", "jobName", "displayName", "job") or veeam_settings.get("job_name"))
+            key = name.lower()
+            if key in seen:
+                return
+            seen.add(key)
+            raw_status = clean(pick(entry, "status", "state", "jobStatus"), "")
+            raw_result_value = pick(entry, "last_result", "lastResult", "result")
+            if isinstance(raw_result_value, dict):
+                raw_result_value = raw_result_value.get("result") or raw_result_value.get("message") or ""
+            raw_result = clean(raw_result_value, "")
+            if not raw_result and raw_status.lower() in {"success", "failed", "warning"}:
+                raw_result = raw_status
+            rows.append({
+                "name": name,
+                "type": clean(pick(entry, "type", "jobType", "platform") or infer_type(name, [], entry)),
+                "objects": clean(pick(entry, "objects", "object_count", "objectCount", "vm_count", "vmCount") or "1"),
+                "status": raw_status or infer_job_status(entry),
+                "last_run": clean(pick(entry, "last_run", "lastRun", "lastStartTime", "creationTime", "started_at") or latest_session.get("started_at")),
+                "last_result": raw_result or infer_last_result(entry),
+                "next_run": clean(pick(entry, "next_run", "nextRun") or "<Not scheduled>"),
+                "target": infer_target(entry),
+                "description": clean(pick(entry, "description", "message") or fallback_description),
+            })
+
+        latest_jobs = latest_session.get("veeam_jobs") if isinstance(latest_session.get("veeam_jobs"), list) else []
+        latest_backups = latest_session.get("veeam_backups") if isinstance(latest_session.get("veeam_backups"), list) else []
+        steering_jobs = steering_state.get("veeam_jobs") if isinstance(steering_state, dict) and isinstance(steering_state.get("veeam_jobs"), list) else []
+        steering_backups = steering_state.get("veeam_backups") if isinstance(steering_state, dict) and isinstance(steering_state.get("veeam_backups"), list) else []
+        for job_entry in list(latest_jobs) + list(latest_backups) + list(steering_jobs) + list(steering_backups):
+            if isinstance(job_entry, dict):
+                add_job_row(job_entry)
+
         raw_logs = session_logs if isinstance(session_logs, list) else []
         for entry in raw_logs:
             if not isinstance(entry, dict):
@@ -6005,7 +6058,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 "target": infer_target(entry),
                 "description": clean(entry.get("description") or first_meaningful_action(actions)),
             })
-            if len(rows) >= 6:
+            if len(rows) >= 8:
                 break
 
         configured_job = clean(veeam_settings.get("job_name"), "")
@@ -6084,7 +6137,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         veeam_issue_detected = bool(steering_state.get("issue_detected")) if isinstance(steering_state, dict) else False
         veeam_last_checked = str(steering_state.get("last_checked") or steering_state.get("last_run_at") or "-") if isinstance(steering_state, dict) else "-"
         veeam_health_message = LockFixWebHandler.dashboard_backup_health_message(steering_state)
-        veeam_jobs = LockFixWebHandler.dashboard_veeam_jobs(self, sessions, veeam_settings, latest_session)
+        veeam_jobs = LockFixWebHandler.dashboard_veeam_jobs(self, sessions, veeam_settings, latest_session, steering_state)
         disk_number = str(storage_state.get("diskNumber") or "").strip() if isinstance(storage_state, dict) else ""
         configured_drive = str(storage_state.get("drive") or "").strip() if isinstance(storage_state, dict) else ""
         configured_path = str(storage_state.get("accessPath") or self.context.config.slot(slot_id).mount_point or "-") if isinstance(storage_state, dict) else "-"
