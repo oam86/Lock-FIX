@@ -10908,7 +10908,8 @@ td {
 }
 
 .security-flow-panel,
-.backup-panel {
+.backup-panel,
+.backup-jobs-panel {
   grid-column: span 12;
 }
 
@@ -10929,6 +10930,7 @@ td {
 
 .security-flow-panel,
 .backup-panel,
+.backup-jobs-panel,
 .event-panel,
 .alert-panel,
 .audit-summary-panel {
@@ -11555,7 +11557,7 @@ td {
 }
 
 .backup-panel {
-  min-height: 430px;
+  min-height: 320px;
 }
 
 .repo-row,
@@ -11709,6 +11711,14 @@ td {
   padding: 12px;
 }
 
+.backup-jobs-panel {
+  min-height: 218px;
+}
+
+.backup-jobs-panel .panel-body {
+  padding: 14px 16px 16px;
+}
+
 .backup-jobs-head {
   display: flex;
   align-items: center;
@@ -11718,7 +11728,9 @@ td {
   font-size: 13px;
 }
 
+.backup-jobs-head h2,
 .backup-jobs-head strong {
+  margin: 0;
   font-size: 14px;
   font-weight: 800;
 }
@@ -11727,6 +11739,86 @@ td {
   color: #64748b;
   font-size: 12px;
   font-weight: 500;
+}
+
+.backup-jobs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: 12px;
+}
+
+.backup-job-card {
+  min-width: 0;
+  border: 1px solid #dbe7f2;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  padding: 12px 14px;
+  box-shadow: 0 8px 20px rgba(13, 37, 62, 0.04);
+}
+
+.backup-job-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+}
+
+.backup-job-card header strong {
+  display: block;
+  color: #081a33;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.backup-job-card header span:not(.backup-job-badge) {
+  display: block;
+  margin-top: 4px;
+  color: #5d7188;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.backup-job-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 10px;
+  margin: 12px 0 10px;
+}
+
+.backup-job-card dl div {
+  min-width: 0;
+}
+
+.backup-job-card dt {
+  color: #667c94;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.backup-job-card dd {
+  margin: 3px 0 0;
+  color: #0d223a;
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backup-job-card p {
+  margin: 0;
+  color: #48617a;
+  font-size: 11.5px;
+  line-height: 1.45;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .backup-jobs-table-wrap {
@@ -11800,6 +11892,10 @@ td {
 .backup-jobs-empty {
   color: #64748b;
   text-align: center;
+  border: 1px dashed #d5e2ef;
+  border-radius: 12px;
+  padding: 20px;
+  background: #f8fbff;
 }
 
 .backup-health-note {

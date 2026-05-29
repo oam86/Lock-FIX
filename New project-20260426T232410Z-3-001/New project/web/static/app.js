@@ -72,8 +72,8 @@ const veeamLogTable = document.querySelector("#veeamLogTable");
 const dashboardView = document.querySelector("#dashboardView");
 const dashboardKpiOrderKey = "lockfix.dashboard.kpiOrder.v1";
 const dashboardKpiSizeKey = "lockfix.dashboard.kpiSize.v4";
-const dashboardPanelOrderKey = "lockfix.dashboard.panelOrder.v2";
-const dashboardPanelSizeKey = "lockfix.dashboard.panelSize.v4";
+const dashboardPanelOrderKey = "lockfix.dashboard.panelOrder.v3";
+const dashboardPanelSizeKey = "lockfix.dashboard.panelSize.v5";
 const dashboardEventsKey = "lockfix.dashboard.eventsVisible.v1";
 const dashboardAlertsKey = "lockfix.dashboard.alertsVisible.v1";
 const opsEventsVisibleKey = "lockfix.ops.eventsVisible.v2";
@@ -3212,7 +3212,10 @@ function enableDashboardPanelDrag(board) {
       .filter(([id]) => Boolean(id))
   );
   const syncOrder = () => {
-    const order = [...board.querySelectorAll("[data-dashboard-panel]")].map((panel) => panel.dataset.dashboardPanel || "").filter(Boolean);
+    const order = [...board.querySelectorAll("[data-dashboard-panel]")]
+      .filter((panel) => panel.dataset.panelFixed !== "true")
+      .map((panel) => panel.dataset.dashboardPanel || "")
+      .filter(Boolean);
     saveDashboardPanelOrder(order);
   };
   const getPanel = (target) => target?.closest?.("[data-dashboard-panel]");
@@ -3238,7 +3241,7 @@ function enableDashboardPanelDrag(board) {
     const panels = panelsById();
     loadDashboardPanelOrder().forEach((id) => {
       const panel = panels.get(id);
-      if (panel) board.appendChild(panel);
+      if (panel && panel.dataset.panelFixed !== "true") board.appendChild(panel);
     });
   };
 
@@ -3265,7 +3268,7 @@ function enableDashboardPanelDrag(board) {
   board.addEventListener("dragover", (event) => {
     if (!dragging) return;
     const panel = getPanel(event.target);
-    if (!panel || panel === dragging) return;
+    if (!panel || panel === dragging || panel.dataset.panelFixed === "true") return;
     event.preventDefault();
     const rect = panel.getBoundingClientRect();
     const insertBefore = event.clientY < rect.top + rect.height / 2;
@@ -3650,25 +3653,30 @@ function renderDashboard(data) {
     if (/(running|working|processing)/.test(text)) return "active";
     return "muted";
   };
-  const backupJobRows = backupJobs.length
+  const backupJobCards = backupJobs.length
     ? backupJobs.map((job) => {
       const resultTone = backupJobTone(job.last_result || job.status);
       const statusTone = backupJobTone(job.status || job.last_result);
       return `
-        <tr>
-          <td><strong>${escapeHtml(job.name || "-")}</strong></td>
-          <td>${escapeHtml(job.type || "-")}</td>
-          <td>${escapeHtml(String(job.objects ?? "-"))}</td>
-          <td><span class="backup-job-badge backup-job-badge-${statusTone}">${escapeHtml(job.status || "-")}</span></td>
-          <td>${escapeHtml(job.last_run || "-")}</td>
-          <td><span class="backup-job-badge backup-job-badge-${resultTone}">${escapeHtml(job.last_result || "-")}</span></td>
-          <td>${escapeHtml(job.next_run || "-")}</td>
-          <td>${escapeHtml(job.target || "-")}</td>
-          <td>${escapeHtml(job.description || "-")}</td>
-        </tr>
+        <article class="backup-job-card">
+          <header>
+            <div>
+              <strong>${escapeHtml(job.name || "-")}</strong>
+              <span>${escapeHtml(job.type || "-")} · ${escapeHtml(String(job.objects ?? "-"))} objects</span>
+            </div>
+            <span class="backup-job-badge backup-job-badge-${resultTone}">${escapeHtml(job.last_result || "-")}</span>
+          </header>
+          <dl>
+            <div><dt>${escapeHtml(jobColumns.status || "Status")}</dt><dd><span class="backup-job-badge backup-job-badge-${statusTone}">${escapeHtml(job.status || "-")}</span></dd></div>
+            <div><dt>${escapeHtml(jobColumns.lastRun || "Last Run")}</dt><dd>${escapeHtml(job.last_run || "-")}</dd></div>
+            <div><dt>${escapeHtml(jobColumns.nextRun || "Next Run")}</dt><dd>${escapeHtml(job.next_run || "-")}</dd></div>
+            <div><dt>${escapeHtml(jobColumns.target || "Target")}</dt><dd>${escapeHtml(job.target || "-")}</dd></div>
+          </dl>
+          <p>${escapeHtml(job.description || "-")}</p>
+        </article>
       `;
     }).join("")
-    : `<tr><td colspan="9" class="backup-jobs-empty">Veeam Jobs data is not available yet.</td></tr>`;
+    : `<div class="backup-jobs-empty">Veeam Jobs data is not available yet.</div>`;
   const events = Array.isArray(data.logs) ? data.logs.slice(0, 5) : [];
   const alerts = Array.isArray(data.alerts) ? data.alerts : [];
   const auditSummary = data.audit_summary || {};
@@ -3743,6 +3751,16 @@ function renderDashboard(data) {
     </section>
 
     <div class="security-dashboard-grid dashboard-content-grid" id="dashboardContentBoard">
+      <section class="security-panel backup-jobs-panel" data-dashboard-panel="backupJobs" data-panel-fixed="true" data-cols="12" data-rows="2">
+        <header class="backup-jobs-head">
+          <h2>${escapeHtml(copy.backupJobs)}</h2>
+          <span>${escapeHtml(backup.last_checked || "-")}</span>
+        </header>
+        <div class="panel-body backup-jobs-grid">
+          ${backupJobCards}
+        </div>
+      </section>
+
       <section class="security-panel security-flow-panel" data-dashboard-panel="protection" data-panel-resizable="true" data-cols="12" data-rows="3" aria-live="polite">
         <header class="security-flow-header"><h2>${copy.liveProtection}</h2>${liveBadge}<span class="dashboard-panel-info">ⓘ</span><span class="dashboard-panel-grip" draggable="true" data-drag-axis="y" aria-hidden="true" title="Drag card up or down"></span></header>
         <div class="panel-body">
@@ -3763,7 +3781,7 @@ function renderDashboard(data) {
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>
       </section>
 
-      <section class="security-panel backup-panel" data-dashboard-panel="backup" data-panel-resizable="true" data-cols="12" data-rows="5">
+      <section class="security-panel backup-panel" data-dashboard-panel="backup" data-panel-resizable="true" data-cols="12" data-rows="3">
         <header><h2>${copy.backupLink}</h2><span class="dashboard-panel-grip" draggable="true" data-drag-axis="y" aria-hidden="true" title="Drag card up or down"></span></header>
         <div class="panel-body">
           <dl>
@@ -3776,30 +3794,6 @@ function renderDashboard(data) {
             <div><dt>LOCK-FIX 상태</dt><dd>${escapeHtml(backup.isolation_state || "-")}</dd></div>
             <div><dt>차단 결과</dt><dd class="backup-result ${String(backup.result || "").includes("Failed") ? "backup-result-failed" : "backup-result-success"}">${escapeHtml(backup.result || "-")}</dd></div>
           </dl>
-          <div class="backup-jobs-card" aria-label="${escapeHtml(copy.backupJobs)}">
-            <div class="backup-jobs-head">
-              <strong>${escapeHtml(copy.backupJobs)}</strong>
-              <span>${escapeHtml(backup.last_checked || "-")}</span>
-            </div>
-            <div class="backup-jobs-table-wrap">
-              <table class="backup-jobs-table">
-                <thead>
-                  <tr>
-                    <th>${escapeHtml(jobColumns.name || "Name")}</th>
-                    <th>${escapeHtml(jobColumns.type || "Type")}</th>
-                    <th>${escapeHtml(jobColumns.objects || "Objects")}</th>
-                    <th>${escapeHtml(jobColumns.status || "Status")}</th>
-                    <th>${escapeHtml(jobColumns.lastRun || "Last Run")}</th>
-                    <th>${escapeHtml(jobColumns.lastResult || "Last Result")}</th>
-                    <th>${escapeHtml(jobColumns.nextRun || "Next Run")}</th>
-                    <th>${escapeHtml(jobColumns.target || "Target")}</th>
-                    <th>${escapeHtml(jobColumns.description || "Description")}</th>
-                  </tr>
-                </thead>
-                <tbody>${backupJobRows}</tbody>
-              </table>
-            </div>
-          </div>
         </div>
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-x" data-resize-axis="x" aria-hidden="true" title="Resize width"></span>
         <span class="dashboard-panel-resize-line dashboard-panel-resize-line-y" data-resize-axis="y" aria-hidden="true" title="Resize height"></span>
