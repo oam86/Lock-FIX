@@ -12092,18 +12092,18 @@ td {
   background: var(--bg);
 }
 
-.file-hwp {
-  color: #0b5fc7;
-  background-image: url("/static/word-export-logo.png");
+.file-excel {
+  color: #0f9f57;
+  background-image: url("/static/excel-export-logo.png");
 }
 
-.file-hwp::before,
+.file-excel::before,
 .file-pdf::before,
 .file-word::before {
   display: none;
 }
 
-.file-hwp::after {
+.file-excel::after {
   content: "";
 }
 

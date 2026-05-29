@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LOCK-FIX PoC</title>
-    <!-- cache history: v=20260520-sidebar-account-actions, v=20260520-alert-link-routing, v=20260520-qr-icon-restore, v=20260520-muted-qr-logo, v=20260520-blue-qr-logo, v=20260520-centered-qr-logo, v=20260520-uploaded-qr-logo, v=20260520-qr2-image-logo, v=20260521-hide-ops-events-panel, v=20260521-compact-monitoring-chart, v=20260521-regular-log-text, v=20260522-airgap-rest-live-stream, v=20260523-veeam-health-live, v=20260523-threat-manual-proof, v=20260523-hide-backup-health-note, v=20260523-larger-kpi-cards, v=20260524-larger-kpi-type, v=20260524-balanced-flow-cards, v=20260524-localized-report-exports, v=20260524-report-table-sections, v=20260527-report-hwp-export, v=20260527-sharp-event-clock, v=20260528-report-hwpx-package, v=20260528-hwpx-webhwp-compat, v=20260528-sidebar-menu-center, v=20260529-sidebar-menu-balanced -->
-    <link rel="stylesheet" href="/static/styles.css?v=20260529-sidebar-menu-balanced" />
+    <!-- cache history: v=20260520-sidebar-account-actions, v=20260520-alert-link-routing, v=20260520-qr-icon-restore, v=20260520-muted-qr-logo, v=20260520-blue-qr-logo, v=20260520-centered-qr-logo, v=20260520-uploaded-qr-logo, v=20260520-qr2-image-logo, v=20260521-hide-ops-events-panel, v=20260521-compact-monitoring-chart, v=20260521-regular-log-text, v=20260522-airgap-rest-live-stream, v=20260523-veeam-health-live, v=20260523-threat-manual-proof, v=20260523-hide-backup-health-note, v=20260523-larger-kpi-cards, v=20260524-larger-kpi-type, v=20260524-balanced-flow-cards, v=20260524-localized-report-exports, v=20260524-report-table-sections, v=20260527-report-hwp-export, v=20260527-sharp-event-clock, v=20260528-report-hwpx-package, v=20260528-hwpx-webhwp-compat, v=20260528-sidebar-menu-center, v=20260529-sidebar-menu-balanced, v=20260529-report-excel-restore -->
+    <link rel="stylesheet" href="/static/styles.css?v=20260529-report-excel-restore" />
   </head>
   <body>
     <section class="login-screen" id="loginScreen">
@@ -178,7 +178,7 @@
           </div>
           <div class="report-export-actions">
             <button type="button" id="reportRefreshButton" data-i18n="report.refresh">Refresh</button>
-            <a href="/api/report.hwpx" class="report-export-link report-export-hwp"><i class="file-icon file-hwp" aria-hidden="true"></i><span data-i18n="report.exportHwp">HWPX</span></a>
+            <a href="/api/report.xlsx" class="report-export-link report-export-excel"><i class="file-icon file-excel" aria-hidden="true"></i><span data-i18n="report.exportExcel">Excel</span></a>
             <a href="/api/report.pdf" class="report-export-link report-export-pdf"><i class="file-icon file-pdf" aria-hidden="true"></i><span data-i18n="report.exportPdf">PDF</span></a>
             <a href="/api/report.docx" class="report-export-link report-export-word"><i class="file-icon file-word" aria-hidden="true"></i><span data-i18n="report.exportWord">Word</span></a>
           </div>
@@ -1173,6 +1173,6 @@
       </div>
     </template>
 
-    <script src="/static/app.js?v=20260529-sidebar-menu-balanced"></script>
+    <script src="/static/app.js?v=20260529-report-excel-restore"></script>
   </body>
 </html>
