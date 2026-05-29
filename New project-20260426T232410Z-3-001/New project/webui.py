@@ -8882,18 +8882,32 @@ th {{ background: #eaf1f8; text-align: left; }}
             "엔지니어 점검 담당자 서명",
         }
 
+        max_cols = max((len(row) for row in rows), default=1)
+        last_col_ref = cell_ref(1, max_cols).rstrip("1")
+        last_row = max(len(rows), 1)
+        print_area = f"Report!$A$1:${last_col_ref}${last_row}"
+        print_titles = "Report!$A$1:$A$1"
+        base_widths = [24, 28, 18, 20, 18, 20, 42]
+        col_xml = []
+        for col_index in range(1, max_cols + 1):
+            width = base_widths[col_index - 1] if col_index <= len(base_widths) else 22
+            col_xml.append(f'<col min="{col_index}" max="{col_index}" width="{width}" customWidth="1"/>')
+
         sheet_rows = []
         for row_index, row in enumerate(rows, start=1):
             first_value = str(row[0] if row else "")
             if first_value in section_titles:
                 style_id = 1
-                height = ' ht="24" customHeight="1"'
+                height = ' ht="26" customHeight="1"'
             elif first_value in table_headers:
                 style_id = 2
-                height = ' ht="21" customHeight="1"'
+                height = ' ht="23" customHeight="1"'
+            elif not row:
+                style_id = 0
+                height = ' ht="8" customHeight="1"'
             else:
                 style_id = 0
-                height = ""
+                height = ' ht="24" customHeight="1"'
             cells = []
             for col_index, value in enumerate(row, start=1):
                 ref = cell_ref(row_index, col_index)
@@ -8905,12 +8919,14 @@ th {{ background: #eaf1f8; text-align: left; }}
         sheet = (
             '<?xml version="1.0" encoding="UTF-8"?>'
             '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>'
+            f'<dimension ref="A1:{last_col_ref}{last_row}"/>'
             '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
-            '<cols><col min="1" max="1" width="22" customWidth="1"/><col min="2" max="2" width="24" customWidth="1"/>'
-            '<col min="3" max="3" width="18" customWidth="1"/><col min="4" max="4" width="18" customWidth="1"/>'
-            '<col min="5" max="5" width="18" customWidth="1"/><col min="6" max="6" width="18" customWidth="1"/>'
-            '<col min="7" max="7" width="44" customWidth="1"/></cols>'
+            f'<cols>{"".join(col_xml)}</cols>'
             f'<sheetData>{"".join(sheet_rows)}</sheetData>'
+            '<printOptions horizontalCentered="1"/>'
+            '<pageMargins left="0.25" right="0.25" top="0.45" bottom="0.45" header="0.2" footer="0.2"/>'
+            '<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0" scale="90"/>'
             '</worksheet>'
         )
         styles = (
@@ -8928,7 +8944,17 @@ th {{ background: #eaf1f8; text-align: left; }}
         with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>')
             archive.writestr("_rels/.rels", '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')
-            archive.writestr("xl/workbook.xml", '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Report" sheetId="1" r:id="rId1"/></sheets></workbook>')
+            archive.writestr(
+                "xl/workbook.xml",
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                '<sheets><sheet name="Report" sheetId="1" r:id="rId1"/></sheets>'
+                '<definedNames>'
+                f'<definedName name="_xlnm.Print_Area" localSheetId="0">{print_area}</definedName>'
+                f'<definedName name="_xlnm.Print_Titles" localSheetId="0">{print_titles}</definedName>'
+                '</definedNames>'
+                '</workbook>',
+            )
             archive.writestr("xl/_rels/workbook.xml.rels", '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>')
             archive.writestr("xl/styles.xml", styles)
             archive.writestr("xl/worksheets/sheet1.xml", sheet)

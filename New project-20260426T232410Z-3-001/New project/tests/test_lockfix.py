@@ -1097,7 +1097,16 @@ class LockFixTests(unittest.TestCase):
             self.assertIn("Not Signed", sheet_xml)
             self.assertIn("OAM Electronics Co., Ltd.", sheet_xml)
             self.assertIn("Zip code : 05838", sheet_xml)
+            self.assertIn('<pageSetUpPr fitToPage="1"', sheet_xml)
+            self.assertIn('<printOptions horizontalCentered="1"', sheet_xml)
+            self.assertIn('<pageMargins left="0.25" right="0.25" top="0.45" bottom="0.45"', sheet_xml)
+            self.assertIn('<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"', sheet_xml)
+            self.assertIn('<cols><col min="1" max="1" width="24"', sheet_xml)
+            self.assertIn('ht="24" customHeight="1"', sheet_xml)
             self.assertIn('wrapText="1"', archive.read("xl/styles.xml").decode("utf-8"))
+            workbook_xml = archive.read("xl/workbook.xml").decode("utf-8")
+            self.assertIn("_xlnm.Print_Area", workbook_xml)
+            self.assertIn("_xlnm.Print_Titles", workbook_xml)
 
         captured_xlsx = {}
         handler.send_download = lambda body, content_type, filename: captured_xlsx.update(
