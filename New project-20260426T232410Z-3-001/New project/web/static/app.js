@@ -3562,6 +3562,10 @@ function liveStateMeta(state) {
     : `Stale ${state.consecutiveFailures || 1}x · ${state.lastError || "No response"}`;
 }
 
+function opsText(ko, en) {
+  return uiSettings.language === "ko" ? ko : en;
+}
+
 function dashboardLiveBadge(data, copy, fallbackUpdatedAt) {
   const clientLive = data?._live || {};
   const serverLive = data?.live_status || {};
@@ -5557,7 +5561,7 @@ function opsToneFromText(value, fallback = "neutral") {
 function formatOpsLatency(veeam) {
   const value = veeam?.rest_latency_ms ?? veeam?.latency_ms;
   const numeric = Number(value);
-  return Number.isFinite(numeric) && numeric >= 0 ? `${numeric}ms` : "latency checking";
+  return Number.isFinite(numeric) && numeric >= 0 ? `${numeric}ms` : opsText("응답 시간 확인 중", "latency checking");
 }
 
 function formatOpsStatus(value) {
@@ -5638,24 +5642,24 @@ function renderOperationsOverview() {
   const timeline = Array.isArray(airGap.timeline) ? airGap.timeline : [];
   const activeStep = timeline.find((item) => /ACTIVE|RUNNING|WORKING/i.test(String(item.state || "")));
   const lastStep = timeline.filter((item) => /DONE|COMPLETED|SUCCESS/i.test(String(item.state || ""))).pop();
-  const liveProblem = ["stale", "error"].includes(String(opsOverviewLiveState.status || ""));
+  const liveProblem = ["stale", "error"].includes(String(opsOverviewLiveState.status || "")) && !apiSynced;
   const cards = [
     {
       label: "Veeam REST",
-      value: liveProblem ? (uiSettings.language === "ko" ? "지연" : "Stale") : apiSynced ? "Connected" : "Waiting",
+      value: liveProblem ? opsText("지연", "Stale") : apiSynced ? opsText("연동 정상", "Connected") : opsText("대기", "Waiting"),
       meta: `${veeam.server || "127.0.0.1"}:${veeam.port || 9419} · ${formatOpsLatency(veeam)} · ${liveStateMeta(opsOverviewLiveState)}`,
       tone: liveProblem ? "danger" : apiSynced ? "ok" : "warn",
     },
     {
-      label: "Backup",
+      label: opsText("백업", "Backup"),
       value: `${progress}%`,
       meta: veeam.job || veeam.job_name || "Veeam session",
       tone: progress >= 100 ? "ok" : progress > 0 ? "run" : "warn",
     },
     {
       label: "Air-Gap",
-      value: activeStep ? `Step ${activeStep.step}` : lastStep ? `Step ${lastStep.step} Done` : "Standby",
-      meta: activeStep ? activeStep.label || activeStep.title || "Working" : lastStep?.label || lastStep?.title || "Ready",
+      value: activeStep ? `Step ${activeStep.step}` : lastStep ? `Step ${lastStep.step} ${opsText("완료", "Done")}` : opsText("대기", "Standby"),
+      meta: activeStep ? activeStep.label || activeStep.title || opsText("작동 중", "Working") : lastStep?.label || lastStep?.title || opsText("준비", "Ready"),
       tone: activeStep ? "run" : lastStep ? "ok" : "neutral",
     },
     {
@@ -6940,10 +6944,10 @@ async function pollOpsOverviewLive() {
       if (sourcesResult.status === "fulfilled") latestSourcesData = sourcesResult.value;
       if (dashboardResult.status === "fulfilled") latestDashboardData = dashboardResult.value;
       const failures = [sourcesResult, dashboardResult].filter((result) => result.status === "rejected");
-      if (failures.length) {
-        markLiveFailure(opsOverviewLiveState, failures[0].reason);
-      } else {
+      if (sourcesResult.status === "fulfilled") {
         markLiveSuccess(opsOverviewLiveState);
+      } else if (failures.length) {
+        markLiveFailure(opsOverviewLiveState, failures[0].reason);
       }
       renderOperationsOverview();
     } catch (error) {
