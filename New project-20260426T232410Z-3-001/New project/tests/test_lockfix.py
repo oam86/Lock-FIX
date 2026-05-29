@@ -4014,6 +4014,22 @@ class LockFixTests(unittest.TestCase):
         self.assertEqual("Backup Copy", rows[1]["type"])
         self.assertEqual("Created by VBR", rows[1]["description"])
 
+    def test_dashboard_veeam_jobs_ignores_stale_waiting_session_rows(self) -> None:
+        rows = webui.LockFixWebHandler.dashboard_veeam_jobs(
+            object(),
+            [
+                {"name": "Backup Configuration Job", "status": "Success", "started_at": "2026-05-21 10:00:16"},
+                {"name": "Agent_backup", "status": "Success", "started_at": "2026-05-21 03:08:27"},
+                {"name": "Backup Copy Job 1", "status": "Waiting", "started_at": "2026-05-16 15:41:30"},
+            ],
+            {"job_name": "Agent_backup", "target_repository_name": "D REPO"},
+            {"started_at": "2026-05-21 10:00:16"},
+            {},
+        )
+
+        self.assertEqual(["Backup Configuration Job", "Agent_backup"], [row["name"] for row in rows])
+        self.assertNotIn("Backup Copy Job 1", {row["name"] for row in rows})
+
     def test_airgap_procedure_steps_show_live_motion_state(self) -> None:
         root = Path.cwd()
         html_source = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")

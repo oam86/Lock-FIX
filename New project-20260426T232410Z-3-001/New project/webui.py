@@ -6102,6 +6102,12 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     continue
                 actions = [clean(item, "") for item in entry.get("actions", []) if clean(item, "")]
                 name = clean(entry.get("name") or entry.get("job") or veeam_settings.get("job_name"))
+                status = infer_job_status(entry)
+                result = infer_last_result(entry)
+                if status.lower() in {"waiting", "wait", "pending"} and result.lower() in {"waiting", "wait", "pending"}:
+                    # Session logs are not the Veeam Jobs inventory. Do not let
+                    # old waiting sessions appear as active jobs on the dashboard.
+                    continue
                 key = name.lower()
                 if key in seen:
                     continue
@@ -6110,9 +6116,9 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                     "name": name,
                     "type": infer_type(name, actions, entry),
                     "objects": clean(entry.get("objects") or entry.get("object_count") or entry.get("objectCount") or "1"),
-                    "status": infer_job_status(entry),
+                    "status": status,
                     "last_run": clean(entry.get("last_run") or entry.get("lastRun") or entry.get("started_at") or latest_session.get("started_at")),
-                    "last_result": infer_last_result(entry),
+                    "last_result": result,
                     "next_run": clean(entry.get("next_run") or entry.get("nextRun") or "<Not scheduled>"),
                     "target": infer_target(entry),
                     "description": clean(entry.get("description") or first_meaningful_action(actions)),
