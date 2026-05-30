@@ -276,6 +276,8 @@ class WebContext:
             "current_step": runtime.get("current_step"),
             "veeam_jobs": runtime.get("veeam_jobs") if isinstance(runtime.get("veeam_jobs"), list) else [],
             "veeam_jobs_count": runtime.get("veeam_jobs_count") or 0,
+            "veeam_job_states": runtime.get("veeam_job_states") if isinstance(runtime.get("veeam_job_states"), list) else [],
+            "veeam_job_states_count": runtime.get("veeam_job_states_count") or 0,
             "veeam_backups": runtime.get("veeam_backups") if isinstance(runtime.get("veeam_backups"), list) else [],
             "veeam_backups_count": runtime.get("veeam_backups_count") or 0,
             "state_source": runtime.get("state_source"),
@@ -4163,6 +4165,12 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "step_logs": step_logs,
             "session_logs": session_logs,
             "auto_isolate": auto_isolate,
+            "veeam_jobs": payload.get("veeam_jobs") if isinstance(payload.get("veeam_jobs"), list) else [],
+            "veeam_jobs_count": payload.get("veeam_jobs_count") or 0,
+            "veeam_job_states": payload.get("veeam_job_states") if isinstance(payload.get("veeam_job_states"), list) else [],
+            "veeam_job_states_count": payload.get("veeam_job_states_count") or 0,
+            "veeam_backups": payload.get("veeam_backups") if isinstance(payload.get("veeam_backups"), list) else [],
+            "veeam_backups_count": payload.get("veeam_backups_count") or 0,
             "api_checks": payload.get("checks") if isinstance(payload.get("checks"), dict) else {},
             "message": (
                 "Veeam API is connected. Step colors change only when the current_step value advances."
@@ -5046,26 +5054,26 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             runner = getattr(self, "run_veeam_diagnostics_limited", None)
             diagnostics = runner(veeam_config) if callable(runner) else LockFixWebHandler.run_veeam_diagnostics_limited(self, veeam_config)
             session = diagnostics.get("latest_configured_session") or {}
-            if session:
-                diagnostic_config = diagnostics.get("config") if isinstance(diagnostics.get("config"), dict) else {}
-                jobs_payload = diagnostics.get("jobs") if isinstance(diagnostics.get("jobs"), dict) else {}
-                job_states_payload = diagnostics.get("job_states") if isinstance(diagnostics.get("job_states"), dict) else {}
-                backups_payload = diagnostics.get("backups") if isinstance(diagnostics.get("backups"), dict) else {}
-                base_url = str(diagnostic_config.get("base_url") or veeam_config.get("base_url") or "")
-                parsed = urlparse(base_url)
-                session.setdefault("server", parsed.hostname or server)
-                session.setdefault("port", parsed.port or port)
-                session.setdefault("api_version", diagnostic_config.get("api_version") or veeam_config.get("api_version") or "1.2-rev1")
-                session.setdefault("source", diagnostics.get("source") or "python_veeam_client")
-                if isinstance(jobs_payload.get("items"), list):
-                    session["veeam_jobs"] = jobs_payload.get("items") or []
-                    session["veeam_jobs_count"] = jobs_payload.get("count", len(session["veeam_jobs"]))
-                if isinstance(job_states_payload.get("items"), list):
-                    session["veeam_job_states"] = job_states_payload.get("items") or []
-                    session["veeam_job_states_count"] = job_states_payload.get("count", len(session["veeam_job_states"]))
-                if isinstance(backups_payload.get("items"), list):
-                    session["veeam_backups"] = backups_payload.get("items") or []
-                    session["veeam_backups_count"] = backups_payload.get("count", len(session["veeam_backups"]))
+            session = dict(session) if isinstance(session, dict) else {}
+            diagnostic_config = diagnostics.get("config") if isinstance(diagnostics.get("config"), dict) else {}
+            jobs_payload = diagnostics.get("jobs") if isinstance(diagnostics.get("jobs"), dict) else {}
+            job_states_payload = diagnostics.get("job_states") if isinstance(diagnostics.get("job_states"), dict) else {}
+            backups_payload = diagnostics.get("backups") if isinstance(diagnostics.get("backups"), dict) else {}
+            base_url = str(diagnostic_config.get("base_url") or veeam_config.get("base_url") or "")
+            parsed = urlparse(base_url)
+            session.setdefault("server", parsed.hostname or server)
+            session.setdefault("port", parsed.port or port)
+            session.setdefault("api_version", diagnostic_config.get("api_version") or veeam_config.get("api_version") or "1.2-rev1")
+            session.setdefault("source", diagnostics.get("source") or "python_veeam_client")
+            if isinstance(jobs_payload.get("items"), list):
+                session["veeam_jobs"] = jobs_payload.get("items") or []
+                session["veeam_jobs_count"] = jobs_payload.get("count", len(session["veeam_jobs"]))
+            if isinstance(job_states_payload.get("items"), list):
+                session["veeam_job_states"] = job_states_payload.get("items") or []
+                session["veeam_job_states_count"] = job_states_payload.get("count", len(session["veeam_job_states"]))
+            if isinstance(backups_payload.get("items"), list):
+                session["veeam_backups"] = backups_payload.get("items") or []
+                session["veeam_backups_count"] = backups_payload.get("count", len(session["veeam_backups"]))
             return session
         except Exception as exc:
             job_name = str(veeam_config.get("job_name") or "Veeam API")
@@ -6017,6 +6025,26 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             haystack = f"{name} {description}".lower()
             return "backup configuration job" in haystack or "configuration backup" in haystack
 
+        def is_relevant_backup_inventory(entry: dict) -> bool:
+            name = clean(pick(entry, "name", "jobName", "displayName", "job"), "")
+            haystack = f"{name} {clean(pick(entry, 'description'), '')}".lower()
+            configured_job = clean(veeam_settings.get("job_name"), "").lower()
+            target_repo_id = clean(veeam_settings.get("target_repository_id"), "").lower()
+            target_repo_name = clean(veeam_settings.get("target_repository_name"), "").lower()
+            repository_id = clean(pick(entry, "repositoryId", "repository_id"), "").lower()
+            repository_name = clean(pick(entry, "repositoryName", "repository_name", "repository"), "").lower()
+            if " on tape" in haystack:
+                return False
+            if configured_job and configured_job in haystack:
+                return True
+            if "backup copy" in haystack and (
+                not target_repo_id
+                or repository_id == target_repo_id
+                or (target_repo_name and target_repo_name in repository_name)
+            ):
+                return True
+            return False
+
         def job_object_count(entry: dict) -> str:
             value = pick(entry, "objects", "object_count", "objectCount", "vm_count", "vmCount", "objectsCount")
             if isinstance(value, list):
@@ -6095,7 +6123,10 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         steering_job_states = steering_state.get("veeam_job_states") if isinstance(steering_state, dict) and isinstance(steering_state.get("veeam_job_states"), list) else []
         steering_backups = steering_state.get("veeam_backups") if isinstance(steering_state, dict) and isinstance(steering_state.get("veeam_backups"), list) else []
         primary_jobs = merge_veeam_jobs(list(latest_jobs) + list(steering_jobs), list(latest_job_states) + list(steering_job_states))
-        fallback_jobs = list(latest_backups) + list(steering_backups)
+        fallback_jobs = [
+            entry for entry in list(latest_backups) + list(steering_backups)
+            if isinstance(entry, dict) and is_relevant_backup_inventory(entry)
+        ]
         # When Veeam REST /jobs inventory is available, it is the source of truth.
         # /backups and session logs can include historical policy/session names and
         # must not be rendered as additional jobs.

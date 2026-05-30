@@ -4039,6 +4039,33 @@ class LockFixTests(unittest.TestCase):
         self.assertEqual("Backup Copy", rows[0]["type"])
         self.assertEqual("Created by VBR", rows[0]["description"])
 
+    def test_dashboard_veeam_jobs_uses_relevant_backup_inventory_when_jobs_empty(self) -> None:
+        steering_state = {
+            "veeam_jobs": [],
+            "veeam_job_states": [],
+            "veeam_backups": [
+                {"name": "120_63 - 192.168.120.63 on Tape", "repositoryId": "00000000-0000-0000-0000-000000000000"},
+                {"name": "Backup Copy Job 1", "repositoryId": "repo-d", "creationTime": "2026-05-09T19:47:33+09:00"},
+                {"name": "Agent_backup - 192.168.219.102", "repositoryId": "repo-source", "creationTime": "2026-05-09T18:56:11+09:00"},
+                {"name": "Unrelated backup", "repositoryId": "repo-d", "creationTime": "2026-05-09T18:00:00+09:00"},
+            ],
+        }
+
+        rows = webui.LockFixWebHandler.dashboard_veeam_jobs(
+            object(),
+            [],
+            {
+                "job_name": "Agent_backup",
+                "target_repository_id": "repo-d",
+                "target_repository_name": "D REPO",
+            },
+            {},
+            steering_state,
+        )
+
+        self.assertEqual(["Backup Copy Job 1", "Agent_backup - 192.168.219.102"], [row["name"] for row in rows])
+        self.assertEqual(["Backup Copy", "Linux Agent Backup"], [row["type"] for row in rows])
+
     def test_dashboard_veeam_jobs_ignores_stale_waiting_session_rows(self) -> None:
         rows = webui.LockFixWebHandler.dashboard_veeam_jobs(
             object(),
@@ -4361,6 +4388,22 @@ class LockFixTests(unittest.TestCase):
                 create_veeam_client({"password_env": "LOCKFIX_MISSING_PASSWORD"})
             with self.assertRaisesRegex(ValueError, "LOCKFIX_MISSING_PASSWORD"):
                 create_veeam_client({"username": "administrator", "password_env": "LOCKFIX_MISSING_PASSWORD"})
+
+    def test_veeam_jobs_request_uses_explicit_limit(self) -> None:
+        class RecordingClient(VeeamClient):
+            def __init__(self) -> None:
+                super().__init__(VeeamSettings(base_url="https://veeam.example:9419", username="administrator", password="secret"))
+                self.requested_urls: list[str] = []
+
+            def _request_json(self, url, method="GET", headers=None, body=None, authenticated=True):
+                self.requested_urls.append(str(url))
+                return {"data": [{"name": "Agent_backup"}]}
+
+        client = RecordingClient()
+        jobs = client.get_jobs()
+
+        self.assertEqual([{"name": "Agent_backup"}], jobs)
+        self.assertTrue(client.requested_urls[0].endswith("/api/v1/jobs?limit=200"))
 
     def test_backup_copy_match_uses_non_c_target_repository(self) -> None:
         repositories = [
@@ -4727,6 +4770,93 @@ class LockFixTests(unittest.TestCase):
         self.assertEqual(result["port"], 9419)
         self.assertEqual(result["repository_name"], "DREPO")
         self.assertEqual(result["repository_path"], "D:\\copy")
+
+    def test_webui_veeam_api_preserves_jobs_inventory_without_session_match(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        raw["veeam"] = {
+            "enabled": True,
+            "base_url": "https://192.168.219.230:9419",
+            "username_env": "LOCKFIX_TEST_VEEAM_USER",
+            "password_env": "LOCKFIX_TEST_VEEAM_PASSWORD",
+            "job_name": "Agent_backup",
+            "target_repository_name": "D REPO",
+            "target_repository_path": "D:\\Backup",
+        }
+        config_path.write_text(json.dumps(raw), encoding="utf-8")
+
+        class Probe:
+            context = webui.WebContext(config_path)
+
+            def veeam_install_properties(self):
+                return {}
+
+            def run_veeam_diagnostics_limited(self, veeam_config, timeout_seconds=8.0):
+                return {
+                    "success": True,
+                    "source": "python_veeam_client",
+                    "config": {"base_url": "https://192.168.219.230:9419", "api_version": "1.2-rev1"},
+                    "matching": {"matched_session": False},
+                    "latest_configured_session": {},
+                    "jobs": {
+                        "ok": True,
+                        "count": 2,
+                        "items": [
+                            {
+                                "id": "job-agent",
+                                "name": "Agent_backup",
+                                "type": "BackupCopy",
+                                "description": "Created by VBR",
+                            },
+                            {
+                                "id": "job-copy",
+                                "name": "Backup Copy Job 1",
+                                "type": "BackupCopy",
+                                "description": "Backup copy policy",
+                            },
+                        ],
+                    },
+                    "job_states": {
+                        "ok": True,
+                        "count": 2,
+                        "items": [
+                            {
+                                "id": "job-agent",
+                                "state": "Stopped",
+                                "lastResult": "Success",
+                                "lastRun": "2026-05-30 10:00:00",
+                            },
+                            {
+                                "id": "job-copy",
+                                "state": "Stopped",
+                                "lastResult": "Success",
+                                "lastRun": "2026-05-30 10:05:00",
+                            },
+                        ],
+                    },
+                    "backups": {"ok": True, "count": 0, "items": []},
+                }
+
+        with patch.dict("os.environ", {"LOCKFIX_TEST_VEEAM_PASSWORD": "secret"}, clear=False):
+            result = webui.LockFixWebHandler.poll_veeam_api(Probe(), "127.0.0.1", 9419, {})
+
+        self.assertEqual(result["server"], "192.168.219.230")
+        self.assertEqual(result["port"], 9419)
+        self.assertEqual(result["veeam_jobs_count"], 2)
+        self.assertEqual(result["veeam_job_states_count"], 2)
+        self.assertEqual(["Agent_backup", "Backup Copy Job 1"], [item["name"] for item in result["veeam_jobs"]])
+
+        rows = webui.LockFixWebHandler.dashboard_veeam_jobs(
+            object(),
+            [],
+            raw["veeam"],
+            result,
+            {},
+        )
+        self.assertEqual(["Agent_backup", "Backup Copy Job 1"], [row["name"] for row in rows])
+        self.assertEqual(["Stopped", "Stopped"], [row["status"] for row in rows])
+        self.assertEqual(["Success", "Success"], [row["last_result"] for row in rows])
 
     def test_webui_loads_veeam_password_from_install_properties_into_process_env(self) -> None:
         tmp_path = self.make_workspace()

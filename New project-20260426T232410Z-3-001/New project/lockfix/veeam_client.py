@@ -332,7 +332,7 @@ class VeeamClient:
             self._token_expires_at = 0.0
 
     def get_jobs(self) -> list[dict[str, Any]]:
-        data = self._request_json(f"{self.settings.api_base}/jobs", "GET")
+        data = self._request_json(f"{self.settings.api_base}/jobs?limit=200", "GET")
         return list_items(data)
 
     def get_job_states(self) -> list[dict[str, Any]]:
