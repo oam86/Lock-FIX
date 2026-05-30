@@ -11717,7 +11717,7 @@ td {
 
 .backup-jobs-panel .panel-body {
   min-width: 0;
-  padding: 0 14px 14px;
+  padding: 0 12px 12px;
 }
 
 .backup-jobs-head {
@@ -11752,7 +11752,7 @@ td {
 .backup-jobs-table-wrap {
   width: 100%;
   min-width: 0;
-  margin-top: 12px;
+  margin-top: 10px;
   overflow-x: auto;
   border: 1px solid #dbe7f2;
   border-radius: 12px;
@@ -11767,14 +11767,14 @@ td {
   border-spacing: 0;
   color: #102033;
   font-size: 12px;
-  line-height: 1.35;
+  line-height: 1.32;
 }
 
 .backup-jobs-table th,
 .backup-jobs-table td {
   border-bottom: 1px solid #e4edf6;
   max-width: 0;
-  padding: 10px 11px;
+  padding: 8px 10px;
   text-align: left;
   vertical-align: middle;
   white-space: nowrap;
@@ -11792,7 +11792,7 @@ td {
 .backup-jobs-table th:nth-child(1),
 .backup-jobs-table td:nth-child(1) {
   width: 260px;
-  padding-left: 16px;
+  padding-left: 14px;
 }
 
 .backup-jobs-table th:nth-child(2),
@@ -11840,7 +11840,7 @@ td {
   text-overflow: clip;
   word-break: keep-all;
   overflow-wrap: anywhere;
-  line-height: 1.45;
+  line-height: 1.36;
 }
 
 .backup-jobs-table td.backup-job-name strong {
