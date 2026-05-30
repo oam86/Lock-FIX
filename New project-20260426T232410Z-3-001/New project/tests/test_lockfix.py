@@ -2632,10 +2632,13 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("detect-veeam-repository-card", css_source)
         self.assertIn("HARDWARE FAILURE RISK", app_source)
         self.assertIn("고장 위험도 점수 산정", app_source)
+        self.assertIn("부품 온도 위험 점수", app_source)
+        self.assertIn("temperatureRiskScore", app_source)
         self.assertIn("failureRiskComponents", app_source)
         self.assertIn(".detect-failure-risk-card", css_source)
+        self.assertIn(".detect-temperature-score-card", css_source)
         self.assertIn(".detect-failure-risk-critical", css_source)
-        self.assertIn("20260531-detect-failure-risk", index_source)
+        self.assertIn("20260531-temperature-risk-card", index_source)
 
     def test_customer_sidebar_uses_simplified_navigation_icons(self) -> None:
         root = Path.cwd()
