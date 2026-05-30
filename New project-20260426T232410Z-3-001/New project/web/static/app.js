@@ -4295,6 +4295,14 @@ function renderDetect(data) {
               <strong>${escapeHtml(diskSize?.value || "-")}</strong>
             </article>
           </div>
+            <article class="detect-temperature-score-card detect-temperature-score-${escapeHtml(temperatureRiskTone)}" id="detectTemperatureRiskCard" data-detect-temperature-risk-card="true" aria-label="Temperature-only hardware failure risk score">
+              <div>
+                <span>THERMAL TREND SCORE</span>
+                <h3>부품 온도 위험 점수</h3>
+                <p>${escapeHtml(temperatureRisk.evidence || "온도 데이터가 수집되면 현재 온도와 상승률을 함께 점수화합니다.")}</p>
+              </div>
+              <strong><b>${escapeHtml(String(temperatureRiskScore))}</b><small>/100</small><em>${escapeHtml(temperatureRisk.trend || "안정")}</em></strong>
+            </article>
             <div class="detect-action-row">
               <button type="button" class="detect-action-primary" data-detect-action="logs">상세 로그 보기</button>
               <button type="button" class="detect-action-secondary" data-detect-action="airgap">격리 유지</button>
@@ -4314,14 +4322,6 @@ function renderDetect(data) {
                 <span>분석 시각: ${escapeHtml(failureRisk.generated_at || "-")}</span>
                 <span>샘플 ${escapeHtml(String(failureRisk.signals?.sample_count ?? 0))}개 · 감사 이벤트 ${escapeHtml(String(failureRisk.signals?.audit_event_count ?? 0))}건</span>
               </div>
-              <article class="detect-temperature-score-card detect-temperature-score-${escapeHtml(temperatureRiskTone)}">
-                <div>
-                  <span>THERMAL TREND SCORE</span>
-                  <h3>부품 온도 위험 점수</h3>
-                  <p>${escapeHtml(temperatureRisk.evidence || "온도 데이터가 수집되면 현재 온도와 상승률을 함께 점수화합니다.")}</p>
-                </div>
-                <strong><b>${escapeHtml(String(temperatureRiskScore))}</b><small>/100</small><em>${escapeHtml(temperatureRisk.trend || "안정")}</em></strong>
-              </article>
               <div class="detect-failure-risk-grid">
                 ${failureRiskComponents.map((item) => `
                   <article>

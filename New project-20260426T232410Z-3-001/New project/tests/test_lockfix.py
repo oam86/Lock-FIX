@@ -2635,10 +2635,13 @@ class LockFixTests(unittest.TestCase):
         self.assertIn("부품 온도 위험 점수", app_source)
         self.assertIn("temperatureRiskScore", app_source)
         self.assertIn("failureRiskComponents", app_source)
+        self.assertIn('data-detect-temperature-risk-card="true"', app_source)
+        self.assertLess(app_source.index("detect-temperature-score-card"), app_source.index("detect-action-row"))
+        self.assertLess(app_source.index("detect-temperature-score-card"), app_source.index("detect-failure-risk-card"))
         self.assertIn(".detect-failure-risk-card", css_source)
         self.assertIn(".detect-temperature-score-card", css_source)
         self.assertIn(".detect-failure-risk-critical", css_source)
-        self.assertIn("20260531-temperature-risk-card", index_source)
+        self.assertIn("20260531-temperature-risk-visible", index_source)
 
     def test_customer_sidebar_uses_simplified_navigation_icons(self) -> None:
         root = Path.cwd()

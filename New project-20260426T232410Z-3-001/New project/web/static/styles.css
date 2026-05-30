@@ -6253,7 +6253,7 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  margin: 0 0 16px;
+  margin: 18px 0 20px;
   border: 1px solid #fed7aa;
   border-radius: 14px;
   background: linear-gradient(135deg, #fff7ed 0%, #ffffff 100%);

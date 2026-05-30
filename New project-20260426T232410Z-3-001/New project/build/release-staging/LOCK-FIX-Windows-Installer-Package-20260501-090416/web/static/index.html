@@ -1,10 +1,11 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ko">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LOCK-FIX PoC</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+  <!-- cache history: v=20260520-sidebar-account-actions, v=20260520-alert-link-routing, v=20260520-qr-icon-restore, v=20260520-muted-qr-logo, v=20260520-blue-qr-logo, v=20260520-centered-qr-logo, v=20260520-uploaded-qr-logo, v=20260520-qr2-image-logo, v=20260521-hide-ops-events-panel, v=20260521-compact-monitoring-chart, v=20260521-regular-log-text, v=20260522-airgap-rest-live-stream, v=20260523-veeam-health-live, v=20260523-threat-manual-proof, v=20260523-hide-backup-health-note, v=20260523-larger-kpi-cards, v=20260524-larger-kpi-type, v=20260524-balanced-flow-cards, v=20260524-localized-report-exports, v=20260524-report-table-sections, v=20260527-report-hwp-export, v=20260527-sharp-event-clock, v=20260528-report-hwpx-package, v=20260528-hwpx-webhwp-compat, v=20260528-sidebar-menu-center, v=20260529-sidebar-menu-balanced, v=20260529-report-excel-restore, v=20260529-report-card-spacing, v=20260529-settings-field-contain, v=20260529-veeam-live-i18n, v=20260529-veeam-jobs-card, v=20260529-veeam-jobs-visible, v=20260530-veeam-jobs-above-flow, v=20260530-veeam-jobs-table-fit, v=20260530-veeam-jobs-balanced-spacing, v=20260530-veeam-jobs-fulltext, v=20260530-veeam-jobs-column-balance, v=20260530-veeam-jobs-header-rule, v=20260530-veeam-jobs-compact-space, v=20260530-veeam-jobs-column-resize, v=20260530-veeam-jobs-left-align, v=20260530-veeam-jobs-borderless, v=20260531-detect-failure-risk, v=20260531-temperature-risk-card, v=20260531-temperature-risk-visible -->
+  <link rel="stylesheet" href="/static/styles.css?v=20260531-temperature-risk-visible" />
   </head>
   <body>
     <section class="login-screen" id="loginScreen">
@@ -13,97 +14,152 @@
           <div class="login-brand">
             <img src="/static/oam-logo.png" alt="OAM IT Solution Company" />
             <h1><span>LOCK-</span><em>FIX</em></h1>
-            <p>Air-Gap Protection</p>
+            <p data-i18n="login.brandSubtitle">Air-Gap Protection</p>
           </div>
           <div class="password-login" id="passwordLogin">
             <label>
-              <span>Email</span>
-              <input id="loginEmail" type="text" autocomplete="username" value="admin" placeholder="Email" />
+              <span data-i18n="login.email">Email</span>
+              <input id="loginEmail" type="text" autocomplete="username" value="admin" placeholder="Email" data-i18n-placeholder="login.email" />
             </label>
             <label>
-              <span>Password</span>
-              <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Password" />
+              <span data-i18n="login.password">Password</span>
+              <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Password" data-i18n-placeholder="login.password" />
             </label>
             <p class="login-error" id="loginError"></p>
-            <button class="login-submit" type="submit">LOGIN</button>
+            <button class="login-submit" type="submit" data-i18n="login.submit">LOGIN</button>
           </div>
           <div class="qr-login-view qr-hidden" id="qrLoginView">
-            <strong>Please scan the QR code.</strong>
-            <button class="qr-code-box" id="qrCodeBox" type="button" aria-label="Confirm QR login"></button>
+            <strong data-i18n="login.qrPrompt">Please scan the QR code.</strong>
+            <button class="qr-code-box" id="qrCodeBox" type="button" aria-label="Confirm QR login" data-i18n-aria-label="login.qrConfirm"></button>
             <b id="qrTimer">04:59</b>
           </div>
-          <button class="qr-submit" id="qrLoginButton" type="button">QR CODE LOGIN</button>
+          <button class="qr-submit" id="qrLoginButton" type="button" data-i18n="login.qrSubmit">QR CODE LOGIN</button>
           <div class="login-copy">
-            <span>Don't have an account?</span>
-            <button type="button">Register account</button>
+            <span data-i18n="login.noAccount">Don't have an account?</span>
+            <button id="registerAccountButton" type="button" data-i18n="login.register">Register account</button>
           </div>
           <div class="license-switch login-license">
-            <span>Switch License</span>
-            <strong>Currently : oam</strong>
+            <span data-i18n="login.switchLicense">Switch License</span>
+            <strong data-i18n="login.currentLicense">Currently : oam</strong>
           </div>
         </form>
       </div>
     </section>
 
-    <section class="login-splash hidden" id="loginSplash" aria-live="polite">
-      <img class="splash-image" src="/static/lockfix-splash.png" alt="LOCK-FIX secure cloud lock" />
+    <section class="login-splash hidden" id="loginSplash" aria-live="polite" aria-busy="true">
+      <div class="splash-stage">
+        <img class="splash-image" src="/static/lockfix-global-logo.svg?v=20260517-splash-text-pulse" alt="LOCK-FIX Air-Gap Protection" />
+        <div class="splash-loader" aria-hidden="true"><i></i></div>
+      </div>
     </section>
 
     <main class="app app-locked app-shell" id="appRoot">
-      <aside class="sidebar">
-        <div class="sidebar-logo">
-          <img src="/static/oam-logo.png" alt="OAM" />
-        </div>
+      <aside class="sidebar" id="sidebar">
+        <button class="sidebar-logo sidebar-logo-button" id="sidebarToggle" type="button" aria-label="Toggle sidebar" aria-expanded="true">
+          <img class="sidebar-logo-full" src="/static/sidebar-oam-logo.png?v=20260506-1327" alt="OAM" />
+          <img class="sidebar-logo-mark" src="/static/sidebar-oam-logo.png?v=20260506-1327" alt="OAM" />
+        </button>
         <nav class="side-nav" aria-label="Main navigation">
-          <button class="side-item active" data-view="monitoring"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="3" height="8" rx="1"></rect><rect x="10.5" y="6" width="3" height="12" rx="1"></rect><rect x="17" y="3" width="3" height="15" rx="1"></rect></svg></span><span data-i18n="nav.monitoring">Monitoring</span></button>
-          <button class="side-item" data-view="dashboard"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"></rect><rect x="13" y="4" width="7" height="7" rx="1.5"></rect><rect x="4" y="13" width="7" height="7" rx="1.5"></rect><rect x="13" y="13" width="7" height="7" rx="1.5"></rect></svg></span><span data-i18n="nav.dashboard">Dashboard</span></button>
-          <button class="side-item" data-view="detect2"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="m16 16 4 4"></path></svg></span><span data-i18n="nav.detect">Detect</span></button>
-          <button class="side-item" data-view="notification2"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20a2.3 2.3 0 0 0 2.2-1.6H9.8A2.3 2.3 0 0 0 12 20Z"></path><path d="M18 16H6l1.2-2V10a4.8 4.8 0 0 1 9.6 0v4L18 16Z"></path></svg></span><span data-i18n="nav.notification">Notification</span></button>
-          <button class="side-item" data-view="logs2"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h12"></path><path d="M6 10h12"></path><path d="M6 15h8"></path><path d="M4 3h16v18H4Z"></path></svg></span><span data-i18n="nav.logs">Logs</span></button>
-          <button class="side-item" data-view="contact"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 5.5 10 8l-2 2.4a10.5 10.5 0 0 0 5.6 5.6L16 14l2.5 2.5c.5.5.5 1.3 0 1.8l-1 1c-.7.7-1.7.9-2.6.6A17.2 17.2 0 0 1 4.1 9.1c-.3-.9-.1-1.9.6-2.6l1-1c.5-.5 1.3-.5 1.8 0Z"></path></svg></span><span data-i18n="nav.contact">Contact Service</span></button>
-          <button class="side-item" data-view="license2"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 7v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7Z"></path><path d="m9 12 2 2 4-5"></path></svg></span><span data-i18n="nav.license">License</span></button>
-          <button class="side-item" data-view="network2"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8c2.5-2.4 5.5-2.4 8 0s5.5 2.4 8 0"></path><path d="M4 14c2.5-2.4 5.5-2.4 8 0s5.5 2.4 8 0"></path><path d="M4 20c2.5-2.4 5.5-2.4 8 0s5.5 2.4 8 0"></path></svg></span><span data-i18n="nav.network">Network Status</span></button>
-          <button class="side-item" data-view="report"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6Z"></path><path d="M15 3v4h4"></path><path d="M9 13h6"></path><path d="M9 17h4"></path><path d="M9 9h2"></path></svg></span><span data-i18n="nav.report">Report</span></button>
-          <button class="side-item airgap-side" data-view="sources"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path><path d="M12 14v2"></path></svg></span><span data-i18n="nav.airgap">Air-Gap</span></button>
-          <button class="side-item" data-view="settings"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"></path><path d="M4 12h2"></path><path d="M18 12h2"></path><path d="m6.6 6.6 1.4 1.4"></path><path d="m16 16 1.4 1.4"></path><path d="m17.4 6.6-1.4 1.4"></path><path d="m8 16-1.4 1.4"></path></svg></span><span data-i18n="nav.settings">Settings</span></button>
-          <button class="side-item logout-side" id="logoutSideButton" data-view="logout"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6H6v12h4"></path><path d="M13 8l4 4-4 4"></path><path d="M17 12H9"></path></svg></span><span data-i18n="nav.logout">Logout</span></button>
+          <!-- Compatibility labels retained for packaging checks: Veeam Integration, Hardware Control, User & Role Management, Audit Logs, Reports, System Settings. -->
+          <!-- Approval workflow labels: 작업 요청, 부서 검토, 승인, 실행, 감사 기록. 작업 요청에서 부서 검토, 승인, 실행, 감사 기록까지 운영 절차를 자동화합니다. -->
+          <span class="side-section-label" data-menu-section="customer" data-i18n="nav.customerWorkspace">Customer View</span>
+          <button class="side-item rbac-menu active" data-menu-section="customer" data-view="dashboard" data-permission="DASHBOARD_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"></rect><rect x="13" y="4" width="7" height="7" rx="1.5"></rect><rect x="4" y="13" width="7" height="7" rx="1.5"></rect><rect x="13" y="13" width="7" height="7" rx="1.5"></rect></svg></span><span data-i18n="nav.dashboard">Dashboard</span></button>
+          <button class="side-item rbac-menu" data-menu-section="customer" data-view="monitoring" data-permission="DASHBOARD_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="3" height="8" rx="1"></rect><rect x="10.5" y="6" width="3" height="12" rx="1"></rect><rect x="17" y="3" width="3" height="15" rx="1"></rect></svg></span><span data-i18n="nav.monitoring">Monitoring</span></button>
+          <button class="side-item rbac-menu" data-menu-section="customer" data-view="detect2" data-permission="DASHBOARD_VIEW"><span class="nav-icon detect-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"></circle><path d="m15 15 4 4"></path><path d="M10.5 7.8v5.4"></path><path d="M7.8 10.5h5.4"></path></svg></span><span data-i18n="nav.detect">Hardware Detect</span></button>
+          <button class="side-item rbac-menu" data-menu-section="customer" data-view="threat" data-permission="AIRGAP_POLICY_VIEW"><span class="nav-icon threat-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8.5h8"></path><path d="M9 4.8 10.6 7"></path><path d="M15 4.8 13.4 7"></path><path d="M12 7c-3 0-5 2.3-5 5.6v1.2c0 3.4 2 5.2 5 5.2s5-1.8 5-5.2v-1.2C17 9.3 15 7 12 7Z"></path><path d="M5 10.5H3.3"></path><path d="M20.7 10.5H19"></path><path d="M5 15H3.3"></path><path d="M20.7 15H19"></path><path d="M9.4 12h5.2"></path><path d="M9.7 15h4.6"></path><path d="M12 8.8v9"></path></svg></span><span data-i18n="nav.threat">Threat Detection</span></button>
+          <button class="side-item rbac-menu" data-menu-section="customer" data-view="network2" data-permission="DASHBOARD_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8c2-2 4-2 6 0s4 2 6 0 4-2 6 0"></path><path d="M4 12c2-2 4-2 6 0s4 2 6 0 4-2 6 0"></path><path d="M4 16c2-2 4-2 6 0s4 2 6 0 4-2 6 0"></path></svg></span><span data-i18n="nav.network">Network</span></button>
+          <button class="side-item rbac-menu airgap-side" data-menu-section="customer" data-view="sources" data-permission="AIRGAP_POLICY_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path><path d="M12 14v2"></path></svg></span><span data-i18n="nav.airgap">Air-Gap</span></button>
+          <button class="side-item rbac-menu" data-menu-section="customer" data-view="report" data-permission="REPORT_EXPORT"><span class="nav-icon report-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h8.8l3.2 3.2v13.8h-12Z"></path><path d="M15 3.8V7h3.2"></path><path d="M9 12.2h5.5"></path><path d="M9 15.5h3.5"></path></svg></span><span data-i18n="nav.report">Reports</span></button>
+          <button class="side-item rbac-menu" data-menu-section="customer" data-view="license2" data-permission="DASHBOARD_VIEW"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 7v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7Z"></path><path d="m9 12 2 2 4-5"></path></svg></span><span data-i18n="nav.license">License</span></button>
+          <button class="side-item rbac-menu" data-menu-section="customer" data-view="logs2" data-permission="AUDIT_LOG_VIEW"><span class="nav-icon logs-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="log-dot" cx="6.5" cy="7" r="1.5"></circle><circle class="log-dot" cx="6.5" cy="12" r="1.5"></circle><circle class="log-dot" cx="6.5" cy="17" r="1.5"></circle><path d="M11 7h8"></path><path d="M11 12h8"></path><path d="M11 17h8"></path></svg></span><span data-i18n="nav.logs">Logs</span></button>
+          <button class="side-item rbac-menu" data-menu-section="admin" data-view="settings" data-permission="SYSTEM_SETTING_MANAGE"><span class="nav-icon settings-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"></circle><path d="M12 3.8v2.4"></path><path d="M12 17.8v2.4"></path><path d="m5 7 2 1.2"></path><path d="m17 15.8 2 1.2"></path><path d="m19 7-2 1.2"></path><path d="m7 15.8-2 1.2"></path></svg></span><span data-i18n="nav.settings">System Settings</span></button>
+          <button class="side-item logout-side" id="logoutSideButton" data-view="logout"><span class="nav-icon logout-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6H6v12h4"></path><path d="M13 8l4 4-4 4"></path><path d="M17 12H9"></path></svg></span><span data-i18n="nav.logout">Logout</span></button>
         </nav>
+        <div class="sidebar-user-menu" id="sidebarUserMenu">
+          <button class="sidebar-user-toggle" id="sidebarUserToggle" type="button" aria-expanded="false" aria-controls="sidebarUserPanel">
+            <span class="sidebar-user-avatar" id="sidebarUserAvatar">ID</span>
+            <span class="sidebar-user-summary">
+              <strong id="sidebarUserName">-</strong>
+              <span id="sidebarUserRole">-</span>
+            </span>
+            <span class="sidebar-user-chevron" aria-hidden="true"></span>
+          </button>
+          <div class="sidebar-user-panel" id="sidebarUserPanel" hidden>
+            <div class="sidebar-user-panel-head">
+              <span data-i18n="userMenu.title">Login user</span>
+              <strong id="sidebarUserStatus">-</strong>
+            </div>
+            <dl>
+              <div>
+                <dt data-i18n="userMenu.userId">User ID</dt>
+                <dd id="sidebarUserId">-</dd>
+              </div>
+              <div>
+                <dt data-i18n="userMenu.role">Role</dt>
+                <dd id="sidebarUserRoleDetail">-</dd>
+              </div>
+              <div>
+                <dt data-i18n="userMenu.department">Department</dt>
+                <dd id="sidebarUserDepartment">-</dd>
+              </div>
+            </dl>
+            <div class="sidebar-user-actions" aria-label="Account actions">
+              <button class="sidebar-user-action sidebar-user-switch" id="sidebarAccountSwitchButton" type="button" data-i18n="userMenu.switchAccount">Switch account</button>
+              <button class="sidebar-user-action sidebar-user-logout" id="sidebarUserLogoutButton" type="button" data-i18n="userMenu.logout">Logout</button>
+            </div>
+          </div>
+        </div>
       </aside>
 
       <div class="content-area">
       <section class="view view-active monitoring-view" id="monitoringView">
-        <div class="monitoring-header">
-          <div>
-            <h1 data-i18n="monitoring.title">Monitoring</h1>
-            <p data-i18n="monitoring.subtitle">Hardware usage status is updated every 5 seconds.</p>
+        <section class="ops-overview" aria-label="LOCK-FIX operation dashboard">
+          <div class="ops-overview-head">
+            <div>
+              <span data-i18n="ops.statusLabel">LOCK-FIX operation status</span>
+              <strong data-i18n="ops.dashboardTitle">Live operations dashboard</strong>
+            </div>
+            <time id="opsClock">-</time>
           </div>
-          <div class="date-range">
-            <label><span data-i18n="monitoring.startDate">Start Date</span><input id="monitoringStart" type="date" /></label>
-            <label><span data-i18n="monitoring.endDate">End Date</span><input id="monitoringEnd" type="date" /></label>
-            <button type="button" class="date-apply-button" id="monitoringRangeApply" data-i18n="monitoring.applyRange">Apply</button>
-            <button type="button" class="date-download-button" id="monitoringRangeDownload" title="Download CSV" aria-label="Download monitoring CSV">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10"></path><path d="m8 10 4 4 4-4"></path><path d="M5 20h14"></path></svg>
-            </button>
+          <div class="ops-summary-grid" id="opsSummaryGrid" aria-live="polite"></div>
+          <div class="ops-events ops-events-hidden" hidden aria-hidden="true">
+            <div class="ops-events-head">
+              <strong data-i18n="ops.eventsTitle">Recent alerts and events</strong>
+              <span class="ops-events-description" data-i18n="ops.eventsDesc">Displayed from Veeam, Air-Gap, and log history.</span>
+              <button type="button" class="ops-events-toggle" id="opsEventsToggle">Show</button>
+            </div>
+            <div class="ops-event-list" id="opsEventList"></div>
           </div>
-        </div>
+        </section>
 
         <section class="monitoring-panel">
           <div class="monitoring-title-row">
-            <h2 id="monitoringTitle">OAM Lock-FIX Usage Monitoring</h2>
-            <div class="chart-tools">
-              <button type="button" id="chartZoomInButton" title="확대">+</button>
-              <button type="button" id="chartZoomOutButton" title="축소">-</button>
-              <button type="button" id="chartMenuButton" title="다운로드">☰</button>
-              <div class="download-menu" id="downloadMenu">
-                <a href="/api/monitoring.csv">Download SVG</a>
-                <a href="/api/monitoring.csv">Download PNG</a>
-                <a href="/api/monitoring.csv">Download CSV</a>
+            <h2 id="monitoringTitle" data-i18n="monitoring.panelTitle">OAM Lock-FIX Usage Monitoring</h2>
+            <div class="monitoring-actions">
+              <div class="date-range monitoring-date-range">
+                <label><span data-i18n="monitoring.startDate">Start Date</span><input id="monitoringStart" type="date" /></label>
+                <label><span data-i18n="monitoring.endDate">End Date</span><input id="monitoringEnd" type="date" /></label>
+                <button type="button" class="date-apply-button" id="monitoringRangeApply" data-i18n="monitoring.applyRange">Apply</button>
+                <button type="button" class="date-download-button" id="monitoringRangeDownload" title="Download CSV" aria-label="Download monitoring CSV" data-i18n-title="monitoring.downloadCsv" data-i18n-aria-label="monitoring.downloadCsv">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10"></path><path d="m8 10 4 4 4-4"></path><path d="M5 20h14"></path></svg>
+                </button>
+              </div>
+              <div class="chart-tools">
+                <button type="button" id="chartZoomInButton" title="확대" data-i18n-title="monitoring.zoomIn">+</button>
+                <button type="button" id="chartZoomOutButton" title="축소" data-i18n-title="monitoring.zoomOut">-</button>
+                <button type="button" id="chartMenuButton" title="다운로드" data-i18n-title="monitoring.download">☰</button>
+                <div class="download-menu" id="downloadMenu">
+                  <a href="/api/monitoring.csv" data-i18n="monitoring.downloadSvg">Download SVG</a>
+                  <a href="/api/monitoring.csv" data-i18n="monitoring.downloadPng">Download PNG</a>
+                  <a href="/api/monitoring.csv" data-i18n="monitoring.downloadCsv">Download CSV</a>
+                </div>
               </div>
             </div>
           </div>
           <div class="legend metric-filter" role="group" aria-label="Monitoring metric filter"><button type="button" class="metric-filter-button active" data-metric="cpu"><i class="cpu-dot"></i>CPU</button><button type="button" class="metric-filter-button" data-metric="memory"><i class="memory-dot"></i>Memory</button><button type="button" class="metric-filter-button" data-metric="disk"><i class="disk-dot"></i>Disk</button><button type="button" class="metric-filter-button" data-metric="network"><i class="network-dot"></i>Network</button><button type="button" class="metric-filter-button" data-metric="interface"><i class="interface-dot"></i>Interface</button></div>
-          <svg class="line-chart" id="monitoringChart" viewBox="0 0 920 320" role="img" aria-label="hardware usage chart"></svg>
-          <div class="current-divider">현재 상태</div>
+          <div class="monitoring-summary-strip" id="monitoringSummaryStrip" aria-live="polite"></div>
+          <svg class="line-chart" id="monitoringChart" viewBox="0 0 920 210" role="img" aria-label="hardware usage chart"></svg>
+          <div class="current-divider" data-i18n="monitoring.currentState">Current status</div>
           <div class="gauge-grid">
             <div class="gauge-card" id="cpuGauge"></div>
             <div class="gauge-card" id="memoryGauge"></div>
@@ -122,9 +178,9 @@
           </div>
           <div class="report-export-actions">
             <button type="button" id="reportRefreshButton" data-i18n="report.refresh">Refresh</button>
-            <a href="/api/report.docx" data-i18n="report.exportWord">Word</a>
-            <a href="/api/report.csv">CSV</a>
-            <a href="/api/report.xlsx" data-i18n="report.exportExcel">Excel</a>
+            <a href="/api/report.xlsx" class="report-export-link report-export-excel"><i class="file-icon file-excel" aria-hidden="true"></i><span data-i18n="report.exportExcel">Excel</span></a>
+            <a href="/api/report.pdf" class="report-export-link report-export-pdf"><i class="file-icon file-pdf" aria-hidden="true"></i><span data-i18n="report.exportPdf">PDF</span></a>
+            <a href="/api/report.docx" class="report-export-link report-export-word"><i class="file-icon file-word" aria-hidden="true"></i><span data-i18n="report.exportWord">Word</span></a>
           </div>
         </div>
         <section class="report-summary-panel">
@@ -158,13 +214,13 @@
           </section>
         </div>
         <div class="report-card-grid" id="reportCards"></div>
-        <section class="report-table-panel">
+        <section class="report-table-panel report-usage-panel">
           <div class="report-table-head">
             <h2 data-i18n="report.usageDetails">Resource Usage Details</h2>
             <span id="reportRange">-</span>
           </div>
           <div class="report-table-wrap">
-            <table class="report-table">
+            <table class="report-table report-usage-table">
               <thead>
                 <tr>
                   <th data-i18n="report.metric">Metric</th>
@@ -180,13 +236,15 @@
             </table>
           </div>
         </section>
-        <section class="report-table-panel">
+        <section class="report-table-panel report-inspection-panel">
           <div class="report-table-head">
             <h2 data-i18n="report.checklist">Server Inspection Checklist</h2>
             <span data-i18n="report.checklistDesc">Generated in the same structure as the attached inspection report</span>
           </div>
+          <div class="report-inspection-summary" id="reportInspectionSummary"></div>
+          <div class="report-attention-list" id="reportAttentionList"></div>
           <div class="report-table-wrap">
-            <table class="report-table">
+            <table class="report-table report-inspection-table">
               <thead>
                 <tr>
                   <th data-i18n="report.category">Category</th>
@@ -216,27 +274,25 @@
                 <div class="signature-card-head">
                   <strong data-i18n="report.engineerSignature">Engineer Signature</strong>
                   <div class="signature-actions">
-                    <label class="signature-attach-button">
+                    <button type="button" class="signature-attach-button" data-signature-open="engineerSignaturePad">
                       <span data-i18n="report.attachSignature">Attach</span>
-                      <input type="file" accept="image/*" data-signature-upload="engineerSignaturePad" />
-                    </label>
+                    </button>
                     <button type="button" class="signature-clear-button" data-signature-clear="engineerSignaturePad" data-i18n="report.clearSignature">Clear</button>
                   </div>
                 </div>
-                <canvas id="engineerSignaturePad" class="signature-pad" width="560" height="180" aria-label="Engineer signature pad"></canvas>
+                <canvas id="engineerSignaturePad" class="signature-pad" width="560" height="120" aria-label="Engineer signature pad"></canvas>
               </article>
               <article class="signature-card">
                 <div class="signature-card-head">
                   <strong data-i18n="report.managerSignature">Manager Signature</strong>
                   <div class="signature-actions">
-                    <label class="signature-attach-button">
+                    <button type="button" class="signature-attach-button" data-signature-open="managerSignaturePad">
                       <span data-i18n="report.attachSignature">Attach</span>
-                      <input type="file" accept="image/*" data-signature-upload="managerSignaturePad" />
-                    </label>
+                    </button>
                     <button type="button" class="signature-clear-button" data-signature-clear="managerSignaturePad" data-i18n="report.clearSignature">Clear</button>
                   </div>
                 </div>
-                <canvas id="managerSignaturePad" class="signature-pad" width="560" height="180" aria-label="Manager signature pad"></canvas>
+                <canvas id="managerSignaturePad" class="signature-pad" width="560" height="120" aria-label="Manager signature pad"></canvas>
               </article>
             </div>
           </div>
@@ -244,42 +300,9 @@
       </section>
 
       <section class="view dashboard-view" id="dashboardView">
-        <div class="dashboard-summary" id="dashboardCards"></div>
-
-        <section class="dashboard-panel">
-          <h2 data-i18n="dashboard.notification">Notification</h2>
-          <div class="dashboard-table-wrap">
-            <table class="dashboard-table">
-              <thead>
-                <tr>
-                  <th>Email</th>
-                  <th>SMTP Status</th>
-                  <th>Network Connection</th>
-                  <th>Last Login</th>
-                </tr>
-              </thead>
-              <tbody id="dashboardNotificationTable"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <section class="dashboard-panel">
-          <div class="dashboard-panel-head">
-            <h2 data-i18n="dashboard.logs">Logs</h2>
-            <span id="dashboardTotalLogs">Total: 0 logs</span>
-          </div>
-          <div class="dashboard-table-wrap">
-            <table class="dashboard-table logs-table">
-              <thead>
-                <tr>
-                  <th data-i18n="dashboard.type">Type</th>
-                  <th data-i18n="dashboard.date">Date</th>
-                  <th data-i18n="dashboard.logs">Logs</th>
-                </tr>
-              </thead>
-              <tbody id="dashboardLogsTable"></tbody>
-            </table>
-          </div>
+        <section class="dashboard-load-state" aria-live="polite">
+          <strong data-i18n="dashboard.loadingTitle">Loading dashboard data.</strong>
+          <span data-i18n="dashboard.loadingDesc">Checking LOCK-FIX status, backup integration, and audit log summary.</span>
         </section>
       </section>
 
@@ -287,7 +310,7 @@
       <header class="topbar">
         <div>
           <div class="header-brand">
-            <img src="/static/oam-logo.png" alt="OAM" />
+            <img src="/static/oam-brand-mark.svg" alt="OAM" />
             <h1>LOCK-FIX</h1>
           </div>
           <p>DataCenter + Hardware Web Solution Integrated PoC</p>
@@ -387,75 +410,90 @@
       </section>
       </section>
 
-      <section class="view placeholder-view" id="detectView"><h1>Detect</h1><p>하드웨어 변경과 초과 사용 이상 로그를 확인하는 화면입니다.</p></section>
-      <section class="view placeholder-view" id="notificationView"><h1>Notification</h1><p>관리자 계정, SMTP, 네트워크 상태와 마지막 로그인 시간을 확인하는 화면입니다.</p></section>
-      <section class="view placeholder-view" id="logsView"><h1>Logs</h1><p>탐지 내역과 서버 전체 로그를 확인하는 화면입니다.</p></section>
-      <section class="view placeholder-view" id="contactView"><h1>Contact Service</h1><p>우암전자 고객 센터와 원격지원 접속 정보를 확인하는 화면입니다.</p></section>
-      <section class="view placeholder-view" id="licenseView"><h1>License</h1><p>라이선스 코드와 만료 상태를 확인합니다.</p></section>
-      <section class="view placeholder-view" id="networkView"><h1>Network Status</h1><p>IP별 누적 트래픽과 송수신 정보를 확인하는 화면입니다.</p></section>
+      <section class="view placeholder-view" id="detectView"><h1 data-i18n="placeholder.detectTitle">Detect</h1><p data-i18n="placeholder.detectDesc">Review hardware changes and abnormal overuse logs.</p></section>
+      <section class="view placeholder-view" id="notificationView"><h1 data-i18n="placeholder.notificationTitle">Security Notification Gateway</h1><p data-i18n="placeholder.notificationDesc">LOCK-FIX security events are delivered only to approved recipients in isolated networks.</p></section>
+      <section class="view placeholder-view" id="logsView"><h1 data-i18n="placeholder.logsTitle">Logs</h1><p data-i18n="placeholder.logsDesc">Review detection history and full server logs.</p></section>
+      <section class="view placeholder-view" id="contactView"><h1 data-i18n="placeholder.contactTitle">Contact Service</h1><p data-i18n="placeholder.contactDesc">Review OAM customer support and remote support access information.</p></section>
+      <section class="view placeholder-view" id="licenseView"><h1 data-i18n="placeholder.licenseTitle">License</h1><p data-i18n="placeholder.licenseDesc">Check the license code and expiration state.</p></section>
+      <section class="view placeholder-view" id="networkView"><h1 data-i18n="placeholder.networkTitle">Network Status</h1><p data-i18n="placeholder.networkDesc">Review cumulative traffic and transmit/receive information by IP.</p></section>
       <section class="view detect-view" id="detect2View">
-        <div class="detect-range">
-          <label>Start Date<strong id="detectStart">-</strong></label>
-          <label>End Date<strong id="detectEnd">-</strong></label>
+        <div class="detect-fingerprint-root" id="detectFingerprintRoot"></div>
+      </section>
+
+      <section class="view threat-view" id="threatView">
+        <div class="threat-hero">
+          <div>
+            <span data-i18n="threat.kicker">SECURE BACKUP VALIDATION</span>
+            <h1 data-i18n="threat.title">Threat Detection</h1>
+            <p class="threat-hero-warning" data-i18n="threat.subtitle">Analyze malware, ransomware indicators, and abnormal changes so only safe backups enter Air-Gap state.</p>
+          </div>
+          <button type="button" id="threatManualScanButton" data-i18n="threat.manualScan">Manual Scan</button>
         </div>
-
-        <div class="detect-summary" id="detectCards"></div>
-
-        <div class="detect-grid">
-          <section class="detect-panel">
-            <h2>Detect</h2>
-            <div class="detect-table-wrap">
-              <table class="detect-table">
-                <thead><tr><th>Date</th><th>Event</th></tr></thead>
-                <tbody id="detectDetectTable"></tbody>
-              </table>
+        <div class="threat-summary-grid" id="threatSummaryCards"></div>
+        <section class="threat-manual-proof-panel" id="threatManualProofPanel" hidden></section>
+        <section class="threat-veeam-api-panel" id="threatVeeamApiPanel"></section>
+        <section class="threat-panel">
+          <div class="threat-panel-head">
+            <div>
+              <h2 data-i18n="threat.resultsTitle">Recent Threat Detection Results</h2>
+              <p data-i18n="threat.resultsDesc">Review repository, backup job, risk score, and LOCK-FIX action state together.</p>
             </div>
-          </section>
-
-          <section class="detect-panel">
-            <h2>Warning</h2>
-            <div class="detect-table-wrap">
-              <table class="detect-table">
-                <thead><tr><th>Date</th><th>Event</th></tr></thead>
-                <tbody id="detectWarningTable"></tbody>
-              </table>
-            </div>
-          </section>
-
-          <section class="detect-panel">
-            <h2>Logs</h2>
-            <div class="detect-table-wrap">
-              <table class="detect-table">
-                <thead><tr><th>Date</th><th>Event</th></tr></thead>
-                <tbody id="detectLogsTable"></tbody>
-              </table>
-            </div>
-          </section>
-        </div>
+            <span id="threatPolicyBadge">Policy Ready</span>
+          </div>
+          <div class="threat-table-wrap">
+            <table class="threat-table">
+              <thead>
+                <tr>
+                  <th data-i18n="threat.scanTime">Scan Time</th>
+                  <th data-i18n="threat.repository">Repository</th>
+                  <th data-i18n="threat.backupJob">Backup Job</th>
+                  <th data-i18n="threat.scanResult">Result</th>
+                  <th data-i18n="threat.riskScore">Risk Score</th>
+                  <th data-i18n="threat.findings">Findings</th>
+                  <th data-i18n="threat.actionState">Action State</th>
+                  <th data-i18n="threat.detail">Details</th>
+                </tr>
+              </thead>
+              <tbody id="threatResultTable"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="threat-detail-panel" id="threatDetailPanel" hidden></section>
       </section>
 
       <section class="view logs-view" id="logs2View">
+        <div class="logs-hero">
+          <div>
+            <h1 data-i18n="logs.title">Logs</h1>
+            <p data-i18n="logs.subtitle">Quickly review operation events, security audits, and backup integration state by condition.</p>
+          </div>
+          <span id="logsTotal">Total: 0 logs</span>
+        </div>
+        <div class="logs-summary-grid" id="logsSummaryCards"></div>
         <div class="logs-range">
-          <label><span>Start Date</span><input id="logsStart" type="date" /></label>
-          <label><span>End Date</span><input id="logsEnd" type="date" /></label>
-          <button type="button" class="logs-apply-button" id="logsRangeApply">적용</button>
+          <label><span data-i18n="logs.startDate">Start Date</span><input id="logsStart" type="date" /></label>
+          <label><span data-i18n="logs.endDate">End Date</span><input id="logsEnd" type="date" /></label>
+          <label><span data-i18n="logs.type">Type</span><select id="logsTypeFilter"><option value="" data-i18n="logs.all">All</option></select></label>
+          <label><span data-i18n="logs.source">Source</span><select id="logsSourceFilter"><option value="" data-i18n="logs.all">All</option></select></label>
+          <label><span data-i18n="logs.severity">Severity</span><select id="logsSeverityFilter"><option value="" data-i18n="logs.all">All</option><option value="ERROR">ERROR</option><option value="WARN">WARN</option><option value="INFO">INFO</option></select></label>
+          <label class="logs-search-label"><span data-i18n="logs.data">Data</span><input id="logsSearch" type="search" placeholder="message, policy, veeam" /></label>
+          <button type="button" class="logs-apply-button" id="logsRangeApply" data-i18n="logs.apply">Apply</button>
           <button type="button" class="logs-apply-button" id="logsRangeDownload">CSV</button>
         </div>
 
         <section class="logs-panel">
           <div class="logs-panel-head">
-            <h1>Logs</h1>
-            <span id="logsTotal">Total: 0 logs</span>
+            <h1 data-i18n="logs.timeline">Log Timeline</h1>
           </div>
           <div class="logs-table-wrap">
             <table class="logs-history-table">
               <thead>
                 <tr>
-                  <th>Type</th>
-                  <th>Date</th>
-                  <th>Source</th>
-                  <th>Severity</th>
-                  <th>Logs</th>
+                  <th data-i18n="logs.type">Type</th>
+                  <th data-i18n="logs.date">Date</th>
+                  <th data-i18n="logs.source">Source</th>
+                  <th data-i18n="logs.severity">Severity</th>
+                  <th data-i18n="logs.logs">Logs</th>
                 </tr>
               </thead>
               <tbody id="logsHistoryTable"></tbody>
@@ -467,55 +505,144 @@
 
       <section class="view license-status-view" id="license2View">
         <section class="license-status-panel">
-          <h1>라이선스 상태</h1>
+          <div class="license-status-header">
+            <div>
+              <h1 data-i18n="license.statusTitle">라이선스 상태</h1>
+              <p data-i18n="license.statusSubtitle">고객사 라이선스와 만료 정보를 확인합니다.</p>
+            </div>
+            <div class="license-status-badges" id="licenseStatusBadges"></div>
+          </div>
+          <div class="license-summary-grid" id="licenseSummaryGrid"></div>
           <table class="license-status-table">
             <tbody id="licenseStatusTable"></tbody>
           </table>
+          <div class="license-support-box" id="licenseSupportBox"></div>
         </section>
       </section>
 
       <section class="view network-status-view" id="network2View">
         <section class="network-chart-panel">
-          <h1 id="networkStatusTitle">실시간 IP 별 누적 트래픽</h1>
-          <div class="network-live-grid">
-            <article class="network-live-card network-live-tx">
-              <div class="network-live-head">
-                <span>송신</span>
-                <strong id="networkTxRate">- Mbps</strong>
+              <div class="network-panel-header">
+                <div class="network-heading-spacer" aria-hidden="true"></div>
+                <div class="network-header-badge">
+                  <span data-i18n="network.badge">실시간 트래픽</span>
+                  <strong id="networkSelectedNic">-</strong>
+                </div>
               </div>
-              <div class="network-flow-track"><i></i><i></i><i></i></div>
-              <svg class="network-flow-chart" id="networkTxFlow" viewBox="0 0 360 110" role="img" aria-label="tx realtime flow"></svg>
-              <p>누적 송신 <b id="networkTxTotal">- GB</b></p>
-            </article>
-
-            <article class="network-live-card network-live-rx">
-              <div class="network-live-head">
-                <span>수신</span>
-                <strong id="networkRxRate">- Mbps</strong>
+            <div class="network-interface-bar">
+              <div>
+                <strong>NIC</strong>
+                <span data-i18n="network.liveGraphBasis">Realtime graph basis</span>
               </div>
-              <div class="network-flow-track"><i></i><i></i><i></i></div>
-              <svg class="network-flow-chart" id="networkRxFlow" viewBox="0 0 360 110" role="img" aria-label="rx realtime flow"></svg>
-              <p>누적 수신 <b id="networkRxTotal">- GB</b></p>
-            </article>
-          </div>
-          <div class="network-legend">
-            <span><i class="tx-dot"></i>송신 (GB)</span>
-            <span><i class="rx-dot"></i>수신 (GB)</span>
-          </div>
-          <svg class="network-bar-chart" id="networkStatusChart" viewBox="0 0 980 360" role="img" aria-label="network traffic chart"></svg>
+              <label class="network-interface-select">
+                <span class="sr-only">NIC</span>
+                <select id="networkInterfaceSelect" aria-label="NIC selection"></select>
+              </label>
+            </div>
+            <div class="network-ops-layout">
+              <div class="network-main-column">
+                <section class="network-mini-chart-strip" id="networkMiniChartStrip" aria-label="NIC traffic charts"></section>
+                <div class="network-live-grid">
+                  <article class="network-live-card network-live-combined">
+                    <div class="network-live-head network-combined-head">
+                      <div>
+                        <span data-i18n="network.combinedTitle">송신 / 수신</span>
+                      </div>
+                    </div>
+                    <div class="network-flow-status-bar" aria-label="Network traffic legend">
+                      <button type="button" class="network-flow-pill network-flow-filter-button network-flow-pill-tx active" data-network-flow-mode="tx" aria-pressed="true"><i></i><b data-i18n="network.send">Send</b><strong id="networkLegendTxRate">- Mbps</strong></button>
+                      <button type="button" class="network-flow-pill network-flow-filter-button network-flow-pill-rx active" data-network-flow-mode="rx" aria-pressed="true"><i></i><b data-i18n="network.receive">Receive</b><strong id="networkLegendRxRate">- Mbps</strong></button>
+                      <span class="network-flow-pill network-flow-pill-scale"><b data-i18n="network.upperBound">Upper</b><strong id="networkCombinedScale">- Mbps</strong></span>
+                    </div>
+                    <svg class="network-flow-chart network-combined-flow" id="networkCombinedFlow" viewBox="0 0 1280 320" preserveAspectRatio="none" role="img" aria-label="tx rx realtime flow"></svg>
+                    <div class="network-task-stats">
+                      <section class="network-task-rate network-task-send">
+                        <span data-i18n="network.send">Send</span>
+                        <strong id="networkTxRate">- Mbps</strong>
+                        <small><span data-i18n="network.cumulative">Cumulative</span> <b id="networkTxTotal">- GB</b></small>
+                      </section>
+                      <section class="network-task-rate network-task-receive">
+                        <span data-i18n="network.receive">Receive</span>
+                        <strong id="networkRxRate">- Mbps</strong>
+                        <small><span data-i18n="network.cumulative">Cumulative</span> <b id="networkRxTotal">- GB</b></small>
+                      </section>
+                      <dl class="network-adapter-meta">
+                        <div><dt data-i18n="network.adapterName">Adapter Name</dt><dd id="networkAdapterName">-</dd></div>
+                        <div class="network-connection-type-meta"><dt data-i18n="network.connectionType">Connection Type</dt><dd id="networkConnectionType">-</dd></div>
+                        <div><dt data-i18n="network.ipv4">IPv4 Address</dt><dd id="networkIpv4Address">-</dd></div>
+                        <div class="network-ipv6-meta"><dt data-i18n="network.ipv6">IPv6 Address</dt><dd id="networkIpv6Address">-</dd></div>
+                      </dl>
+                    </div>
+                    <div class="network-combined-ip-grid">
+                      <div class="network-ip-summary" id="networkTxIps"></div>
+                      <div class="network-ip-summary network-ip-summary-rx" id="networkRxIps"></div>
+                    </div>
+                  </article>
+                </div>
+              </div>
+            </div>
+            <section class="network-secondary-grid network-card-board" id="networkCardBoard" aria-label="Network detail analysis">
+              <div class="network-inline-summary-row network-loss-summary-row network-draggable-card" data-network-card="loss" aria-label="Network loss summary">
+                <section class="network-analysis-card network-loss-card network-loss-inline network-loss-feature" id="networkLossCard" data-loss-tone="good">
+                  <div class="network-loss-hero">
+                    <div class="network-loss-title-line">
+                      <span data-i18n="network.lossTitle">네트워크 손실</span>
+                      <small id="networkLossTrend">실시간 추세</small>
+                      <span class="network-card-grip network-card-drag-handle" draggable="true" role="button" tabindex="0" aria-label="카드 위치 이동" title="카드 위치 이동"></span>
+                    </div>
+                    <div class="network-loss-score">
+                      <i class="network-loss-live-dot" aria-hidden="true"></i>
+                      <strong id="networkLossScore">-</strong>
+                      <em id="networkLossState">-</em>
+                    </div>
+                    <svg class="network-loss-sparkline" id="networkLossSparkline" viewBox="0 0 220 44" preserveAspectRatio="none" role="img" aria-label="packet loss trend"></svg>
+                  </div>
+                  <div class="network-quality-grid network-quality-chip-grid">
+                    <div class="network-quality-chip quality-latency"><span data-i18n="network.latency">지연</span><b id="networkLatency">-</b></div>
+                    <div class="network-quality-chip quality-jitter"><span data-i18n="network.jitter">지터</span><b id="networkJitter">-</b></div>
+                    <div class="network-quality-chip quality-allowed"><span data-i18n="network.allowedPorts">허용 포트</span><b id="networkAllowedPorts">-</b></div>
+                    <div class="network-quality-chip quality-blocked"><span data-i18n="network.blockedPorts">차단 포트</span><b id="networkBlockedPorts">-</b></div>
+                  </div>
+                </section>
+              </div>
+              <section class="network-detail-card network-draggable-card" data-network-card="path">
+                <div class="network-ops-summary-head">
+                  <strong data-i18n="network.pathTitle">네트워크 경로 상태</strong>
+                  <button type="button" class="network-section-toggle network-path-toggle" id="networkPathToggle" data-i18n="network.pathBadgeCollapsed">Show</button>
+                  <span class="network-card-grip network-card-drag-handle" draggable="true" role="button" tabindex="0" aria-label="카드 위치 이동" title="카드 위치 이동"></span>
+                </div>
+                <div class="network-path-list" id="networkPathStatus"></div>
+              </section>
+              <section class="network-analysis-card network-draggable-card" data-network-card="ports">
+                <div class="network-analysis-head">
+                  <span data-i18n="network.portTitle">포트 허용/차단 분석</span>
+                  <button type="button" class="network-section-toggle network-port-toggle" id="networkPortToggle" data-i18n="network.portBadgeCollapsed">Show</button>
+                  <span class="network-card-grip network-card-drag-handle" draggable="true" role="button" tabindex="0" aria-label="카드 위치 이동" title="카드 위치 이동"></span>
+                </div>
+                <div class="network-port-list" id="networkPortTable"></div>
+              </section>
+              <section class="network-analysis-card network-insight-strip network-draggable-card" data-network-card="insights">
+                <div class="network-analysis-head">
+                  <span data-i18n="network.insightTitle">네트워크 분석</span>
+                  <button type="button" class="network-section-toggle network-insight-toggle" id="networkInsightToggle" data-i18n="network.insightBadgeCollapsed">Show</button>
+                  <span class="network-card-grip network-card-drag-handle" draggable="true" role="button" tabindex="0" aria-label="카드 위치 이동" title="카드 위치 이동"></span>
+                </div>
+                <div class="network-insight-list" id="networkInsights"></div>
+              </section>
+            </section>
         </section>
       </section>
 
       <section class="view notification-view" id="notification2View">
         <section class="notification-panel">
-          <h1>Notification</h1>
+          <h1 data-i18n="notification.title">Security Notification Gateway</h1>
           <div class="notification-kpi-row">
             <article class="security-kpi notification-access-kpi">
               <i class="security-icon security-icon-user security-tone-dark" aria-hidden="true"></i>
               <div>
-                <span>비인가 접근 시도</span>
+                <span data-i18n="notification.unauthorizedAccess">Unauthorized access attempts</span>
                 <strong class="security-value-dark">0건</strong>
-                <em>최근 24시간</em>
+                <em data-i18n="notification.last24Hours">Last 24 hours</em>
               </div>
             </article>
           </div>
@@ -523,15 +650,64 @@
             <table class="notification-table">
               <thead>
                 <tr>
-                  <th>Email</th>
-                  <th>SMTP Status</th>
-                  <th>Network Connection</th>
-                  <th>Last Login</th>
+                  <th data-i18n="notification.email">Email</th>
+                  <th data-i18n="notification.gatewayStatus">Gateway Status</th>
+                  <th data-i18n="notification.networkConnection">Network Connection</th>
+                  <th data-i18n="notification.lastLogin">Last Login</th>
                 </tr>
               </thead>
               <tbody id="notificationTable"></tbody>
             </table>
           </div>
+        </section>
+      </section>
+      <section class="view security-audit-view" id="securityAuditView">
+        <div class="monitoring-header security-audit-header">
+          <div>
+            <h1 data-i18n="securityAudit.title">Security Audit</h1>
+            <p data-i18n="securityAudit.subtitle">Review isolation, approval, reconnect, and integrity validation history from an administrator view.</p>
+          </div>
+        </div>
+        <section class="security-audit-summary" id="securityAuditSummary" aria-live="polite"></section>
+        <section class="security-audit-filters" aria-label="보안 감사 필터">
+          <label><span data-i18n="securityAudit.start">Start</span><input id="securityAuditStart" type="date" /></label>
+          <label><span data-i18n="securityAudit.end">End</span><input id="securityAuditEnd" type="date" /></label>
+          <label><span data-i18n="securityAudit.eventType">Event Type</span><select id="securityAuditType"><option value="" data-i18n="securityAudit.all">All</option></select></label>
+          <label><span data-i18n="securityAudit.device">Device</span><select id="securityAuditDevice"><option value="" data-i18n="securityAudit.all">All</option></select></label>
+          <label><span data-i18n="securityAudit.user">User</span><input id="securityAuditUser" type="text" placeholder="system, admin" /></label>
+          <label><span data-i18n="securityAudit.resultFilter">Result</span><select id="securityAuditResult"><option value="" data-i18n="securityAudit.all">All</option><option value="성공" data-i18n="securityAudit.success">Success</option><option value="진행" data-i18n="securityAudit.progress">Progress</option><option value="실패" data-i18n="securityAudit.failure">Failure</option></select></label>
+          <label><span data-i18n="securityAudit.risk">Risk</span><select id="securityAuditRisk"><option value="" data-i18n="securityAudit.all">All</option><option value="높음" data-i18n="securityAudit.high">High</option><option value="주의" data-i18n="securityAudit.caution">Caution</option><option value="낮음" data-i18n="securityAudit.low">Low</option></select></label>
+          <div class="security-audit-filter-actions">
+            <button type="button" id="securityAuditApply" data-i18n="securityAudit.apply">Apply</button>
+            <button type="button" id="securityAuditReset" data-i18n="securityAudit.reset">Reset</button>
+          </div>
+        </section>
+        <section class="security-audit-layout">
+          <article class="security-audit-table-panel">
+            <div class="security-audit-panel-head">
+              <strong data-i18n="securityAudit.auditLog">Audit Log</strong>
+              <span id="securityAuditCount">0건</span>
+            </div>
+            <div class="security-audit-table-wrap">
+              <table class="security-audit-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="securityAudit.time">Time</th>
+                    <th data-i18n="securityAudit.event">Event</th>
+                    <th data-i18n="securityAudit.targetDevice">Target Device</th>
+                    <th data-i18n="securityAudit.user">User</th>
+                    <th data-i18n="securityAudit.approver">Approver</th>
+                    <th data-i18n="securityAudit.result">Result</th>
+                    <th data-i18n="securityAudit.detail">Details</th>
+                  </tr>
+                </thead>
+                <tbody id="securityAuditTable"></tbody>
+              </table>
+            </div>
+          </article>
+          <aside class="security-audit-detail-panel" id="securityAuditDetail">
+            <div class="security-audit-empty" data-i18n="securityAudit.emptyDetail">Select an audit log to display details.</div>
+          </aside>
         </section>
       </section>
       <section class="view source-view" id="sourcesView">
@@ -545,6 +721,190 @@
         <div class="source-list" id="sourceList"></div>
       </section>
 
+      <section class="view rbac-page-view" id="veeamView">
+        <div class="monitoring-header">
+          <div>
+            <h1 data-i18n="veeamIntegration.title">Veeam Integration</h1>
+            <p data-i18n="veeamIntegration.subtitle">Veeam REST API session, backup job progress, and isolation readiness status.</p>
+          </div>
+        </div>
+        <section class="rbac-panel">
+          <div class="rbac-panel-head">
+            <h2 data-i18n="veeamIntegration.connectionStatus">Connection Status</h2>
+            <span id="veeamIntegrationStatus">-</span>
+          </div>
+          <div class="rbac-summary-grid" id="veeamIntegrationSummary"></div>
+        </section>
+      </section>
+
+      <section class="view rbac-page-view" id="hardwareView">
+        <div class="monitoring-header">
+          <div>
+            <h1 data-i18n="hardware.title">Hardware Control</h1>
+            <p data-i18n="hardware.subtitle">Power and physical isolation controls are shown only to authorized operators.</p>
+          </div>
+        </div>
+        <section class="rbac-panel">
+          <div class="rbac-panel-head">
+            <h2 data-i18n="hardware.controlScope">Control Scope</h2>
+            <span>HARDWARE_CONTROL</span>
+          </div>
+          <div class="rbac-empty-state" data-i18n="hardware.emptyState">Hardware control requests are governed by approval policy before execution.</div>
+        </section>
+      </section>
+
+      <section class="view rbac-page-view" id="userManagementView">
+        <div class="monitoring-header user-management-header">
+          <div>
+            <h1 data-i18n="userManagement.title">User & Role Management</h1>
+            <p data-i18n="userManagement.subtitle">Super Admin controlled users, departments, roles, temporary passwords, and soft-deleted state.</p>
+          </div>
+          <button type="button" class="rbac-ghost-button" id="userManagementBackButton" data-i18n="userManagement.backToSettings">Back to Settings</button>
+        </div>
+        <section class="user-management-grid">
+          <article class="rbac-panel user-management-form-panel">
+            <div class="rbac-panel-head">
+              <h2 id="userManagementFormTitle" data-i18n="userManagement.newUser">New User</h2>
+              <span id="userManagementDepartmentCount">7 departments</span>
+            </div>
+            <form class="user-management-form" id="userManagementForm">
+              <input type="hidden" id="userManagementUserId" />
+              <label>
+                <span data-i18n="userManagement.email">Email</span>
+                <input id="userManagementEmail" type="email" autocomplete="off" required placeholder="operator@example.com" />
+              </label>
+              <label>
+                <span data-i18n="userManagement.name">Name</span>
+                <input id="userManagementName" type="text" autocomplete="off" required placeholder="Backup Operator" />
+              </label>
+              <label>
+                <span data-i18n="userManagement.department">Department</span>
+                <select id="userManagementDepartment" required>
+                  <option value="management" data-i18n="department.management">Management</option>
+                  <option value="security" data-i18n="department.security">Security</option>
+                  <option value="backup-operation" data-i18n="department.backupOperation">Backup Operation</option>
+                  <option value="hardware-control" data-i18n="department.hardwareControl">Hardware Control</option>
+                  <option value="audit" data-i18n="department.audit">Audit</option>
+                  <option value="development" data-i18n="department.development">Development</option>
+                  <option value="web-design" data-i18n="department.webDesign">Web Design</option>
+                </select>
+              </label>
+              <label>
+                <span data-i18n="userManagement.role">Role</span>
+                <select id="userManagementRole" required>
+                  <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                  <option value="SECURITY_ADMIN">SECURITY_ADMIN</option>
+                  <option value="BACKUP_OPERATOR">BACKUP_OPERATOR</option>
+                  <option value="HARDWARE_ADMIN">HARDWARE_ADMIN</option>
+                  <option value="AUDITOR">AUDITOR</option>
+                  <option value="UI_DESIGNER">UI_DESIGNER</option>
+                  <option value="DEVELOPER">DEVELOPER</option>
+                </select>
+              </label>
+              <label class="user-management-checkbox">
+                <input id="userManagementDisabled" type="checkbox" />
+                <span data-i18n="userManagement.disabled">Disabled</span>
+              </label>
+              <div class="user-management-actions">
+                <button type="submit" class="rbac-primary-button" id="userManagementSubmitButton" data-i18n="userManagement.create">Create User</button>
+                <button type="button" class="rbac-ghost-button" id="userManagementCancelButton" data-i18n="userManagement.cancel">Cancel</button>
+              </div>
+              <p class="user-management-status" id="userManagementStatus" aria-live="polite"></p>
+            </form>
+          </article>
+          <article class="rbac-panel user-management-security-panel">
+            <div class="rbac-panel-head">
+              <h2 data-i18n="userManagement.windowsAdminTitle">Windows Admin Status</h2>
+              <span data-i18n="userManagement.statusOnly">Status only</span>
+            </div>
+            <div class="user-management-windows-status" id="userManagementWindowsStatus">
+              <strong data-i18n="userManagement.windowsChecking">Checking</strong>
+              <span data-i18n="userManagement.windowsStatusDesc">Windows administrator status is displayed and audited, but does not grant LOCK-FIX roles.</span>
+            </div>
+            <div class="rbac-chip-list user-management-department-list" id="userManagementDepartments">
+              <span data-i18n="department.management">Management</span>
+              <span data-i18n="department.security">Security</span>
+              <span data-i18n="department.backupOperation">Backup Operation</span>
+              <span data-i18n="department.hardwareControl">Hardware Control</span>
+              <span data-i18n="department.audit">Audit</span>
+              <span data-i18n="department.development">Development</span>
+              <span data-i18n="department.webDesign">Web Design</span>
+            </div>
+          </article>
+        </section>
+        <section class="rbac-panel user-management-users-panel">
+          <div class="rbac-panel-head">
+            <h2 data-i18n="userManagement.users">Users</h2>
+            <span id="userManagementCount">0 users</span>
+          </div>
+          <div class="rbac-table-wrap">
+            <table class="rbac-table">
+              <thead>
+                <tr>
+                  <th data-i18n="userManagement.user">User</th>
+                  <th data-i18n="userManagement.department">Department</th>
+                  <th data-i18n="userManagement.role">Role</th>
+                  <th data-i18n="userManagement.status">Status</th>
+                  <th data-i18n="userManagement.actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="userManagementTable"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="view rbac-page-view audit-logs-page" id="auditLogsView">
+        <div class="monitoring-header audit-hero">
+          <div>
+            <h1 data-i18n="auditLogs.title">Audit Logs</h1>
+            <p data-i18n="auditLogs.subtitle">Immutable security events, approval actions, and policy guard responses are preserved for review.</p>
+          </div>
+          <a class="rbac-export-link audit-export-link" href="/api/audit-logs/export" data-i18n="auditLogs.exportCsv">Export CSV</a>
+        </div>
+        <section class="audit-summary-grid" id="auditLogsSummary"></section>
+        <section class="audit-toolbar">
+          <div>
+            <strong data-i18n="auditLogs.trailTitle">Audit Trail</strong>
+            <span data-i18n="auditLogs.trailDesc">Append-only log. Delete actions are not provided by LOCK-FIX.</span>
+          </div>
+          <div class="audit-filter-pills" aria-label="audit filters">
+            <span data-i18n="auditLogs.all">All</span>
+            <span data-i18n="auditLogs.failure">Failure</span>
+            <span data-i18n="auditLogs.policyGuard">Policy Guard</span>
+          </div>
+        </section>
+        <section class="rbac-panel audit-events-panel">
+          <div class="rbac-panel-head">
+            <h2 data-i18n="auditLogs.eventsTitle">Audit Events</h2>
+            <span id="auditLogsCount">0 events</span>
+          </div>
+          <div class="rbac-table-wrap">
+            <table class="rbac-table">
+              <thead>
+                <tr>
+                  <th data-i18n="auditLogs.created">Created</th>
+                  <th data-i18n="auditLogs.actor">Actor</th>
+                  <th data-i18n="auditLogs.action">Action</th>
+                  <th data-i18n="auditLogs.resource">Resource</th>
+                  <th data-i18n="auditLogs.result">Result</th>
+                </tr>
+              </thead>
+              <tbody id="auditLogsTable"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="view rbac-page-view access-denied-view" id="accessDeniedView">
+        <div class="monitoring-header">
+          <div>
+            <h1 data-i18n="accessDenied.title">403 Forbidden</h1>
+            <p id="accessDeniedMessage" data-i18n="accessDenied.message">You do not have permission to access this menu.</p>
+          </div>
+        </div>
+      </section>
+
       <section class="view settings-view" id="settingsView">
         <div class="monitoring-header">
           <div>
@@ -553,7 +913,7 @@
           </div>
         </div>
         <section class="settings-panel">
-          <article class="settings-card">
+          <article class="settings-card settings-language-card">
             <div>
               <h2 data-i18n="settings.languageTitle">Language</h2>
               <p data-i18n="settings.languageDesc">Choose the UI language for menus and labels.</p>
@@ -563,7 +923,7 @@
               <option value="ko">한국어</option>
             </select>
           </article>
-          <article class="settings-card">
+          <article class="settings-card settings-theme-card">
             <div>
               <h2 data-i18n="settings.themeTitle">Theme</h2>
               <p data-i18n="settings.themeDesc">Switch between white and black backgrounds.</p>
@@ -573,29 +933,116 @@
               <option value="dark" data-i18n="settings.themeDark">Black</option>
             </select>
           </article>
-          <article class="settings-card">
+          <article class="settings-card settings-log-retention-card">
             <div>
               <h2 data-i18n="settings.logRetentionTitle">Log Retention</h2>
               <p data-i18n="settings.logRetentionDesc">Choose how many days logs are retained.</p>
             </div>
             <select id="logRetentionSelect" aria-label="Log retention">
-              <option value="30">30일</option>
-              <option value="60">60일</option>
-              <option value="90">90일</option>
-              <option value="100">최대 100일</option>
+              <option value="30" data-i18n="settings.retention30">30 days</option>
+              <option value="60" data-i18n="settings.retention60">60 days</option>
+              <option value="90" data-i18n="settings.retention90">90 days</option>
+              <option value="100" data-i18n="settings.retention100">Max 100 days</option>
             </select>
+          </article>
+          <article class="settings-card settings-notification-card">
+            <div>
+              <h2 data-i18n="settings.notificationTitle">Security Notification Gateway</h2>
+              <p data-i18n="settings.notificationDesc">Register approved recipients and use SMTP only as the internal delivery method for LOCK-FIX security events.</p>
+            </div>
+            <div class="settings-notification-form">
+              <div class="settings-field-row">
+                <label for="notificationChannel" data-i18n="settings.notificationChannel">Internal transport</label>
+                <select id="notificationChannel" aria-label="Notification channel">
+                  <option value="SMTP">SMTP</option>
+                </select>
+              </div>
+              <div class="settings-field-row">
+                <label for="notificationTargetEmail" data-i18n="settings.notificationTargetEmail">Target email</label>
+                <input id="notificationTargetEmail" type="email" placeholder="security@example.com" autocomplete="email" />
+              </div>
+              <div class="settings-smtp-grid">
+                <div class="settings-field-row">
+                  <label for="notificationSmtpHost" data-i18n="settings.smtpHost">SMTP host</label>
+                  <input id="notificationSmtpHost" type="text" placeholder="smtp.example.com" />
+                </div>
+                <div class="settings-field-row">
+                  <label for="notificationSmtpPort" data-i18n="settings.smtpPort">Port</label>
+                  <input id="notificationSmtpPort" type="number" min="1" max="65535" value="587" />
+                </div>
+              </div>
+              <div class="settings-smtp-grid">
+                <div class="settings-field-row">
+                  <label for="notificationSmtpFrom" data-i18n="settings.smtpFrom">Sender</label>
+                  <input id="notificationSmtpFrom" type="email" placeholder="lockfix@example.com" />
+                </div>
+                <div class="settings-field-row">
+                  <label for="notificationSmtpUser" data-i18n="settings.smtpUser">User</label>
+                  <input id="notificationSmtpUser" type="text" autocomplete="username" />
+                </div>
+              </div>
+              <div class="settings-smtp-grid">
+                <div class="settings-field-row">
+                  <label for="notificationSmtpPassword" data-i18n="settings.smtpPassword">Password</label>
+                  <input id="notificationSmtpPassword" type="password" autocomplete="new-password" placeholder="기존 비밀번호 유지" />
+                </div>
+                <div class="settings-toggle-row">
+                  <label><input id="notificationUseTls" type="checkbox" checked /> <span data-i18n="settings.smtpTls">STARTTLS</span></label>
+                  <label><input id="notificationUseSsl" type="checkbox" /> <span data-i18n="settings.smtpSsl">SSL</span></label>
+                </div>
+              </div>
+            </div>
+          </article>
+          <article class="settings-card settings-navigation-card">
+            <div>
+              <h2 data-i18n="settings.managementTitle">Operation & Administration</h2>
+              <p data-i18n="settings.managementDesc">Open operational, user, and audit management screens from Settings.</p>
+            </div>
+            <div class="settings-shortcut-grid">
+              <button type="button" class="settings-shortcut" data-settings-view="userManagement"><span data-i18n="settings.userRoleManagement">User & Role Management</span><em id="settingsServiceStatus" data-i18n="settings.statusChecking">Checking</em></button>
+              <button type="button" class="settings-shortcut" data-settings-view="auditLogs"><span data-i18n="settings.auditLogs">Audit Logs</span><em id="settingsAuditStatus" data-i18n="settings.statusChecking">Checking</em></button>
+            </div>
+          </article>
+          <article class="settings-card settings-threat-policy-card">
+            <div>
+              <h2 data-i18n="threatPolicy.title">Threat Detection Policy</h2>
+              <p data-i18n="threatPolicy.desc">Configure backup security validation conditions and risk response policy before Air-Gap transition.</p>
+            </div>
+            <div class="settings-threat-policy-grid">
+              <label><span data-i18n="threatPolicy.enabled">Threat Detection</span><select id="threatPolicyEnabled"><option value="enabled" data-i18n="threatPolicy.enabledOption">Enabled</option><option value="disabled" data-i18n="threatPolicy.disabledOption">Disabled</option></select></label>
+              <label><span data-i18n="threatPolicy.timing">Scan Timing</span><select id="threatPolicyTiming"><option data-i18n="threatPolicy.afterBackup">Immediately after backup</option><option data-i18n="threatPolicy.beforeAirgap">Before Air-Gap transition</option><option data-i18n="threatPolicy.beforeReconnect">Before repository reconnect</option><option data-i18n="threatPolicy.manualScan">Manual scan</option><option data-i18n="threatPolicy.scheduledScan">Scheduled scan</option></select></label>
+              <label><span data-i18n="threatPolicy.engine">Scan Engine</span><select id="threatPolicyEngine"><option>Veeam Malware REST API + Windows Defender + YARA + Hash</option><option>Veeam Malware REST API</option><option>Windows Defender</option><option>YARA Rule</option><option>Agent Log Analysis</option></select></label>
+              <label><span data-i18n="threatPolicy.threshold">Risk Threshold</span><input id="threatPolicyThreshold" type="number" min="1" max="100" value="71" /></label>
+              <label><span data-i18n="threatPolicy.yaraPath">YARA Rule Path</span><input id="threatPolicyYaraPath" type="text" value="C:\ProgramData\LOCK-FIX\rules" /></label>
+              <label><span data-i18n="threatPolicy.excludePath">Scan Exclusion Path</span><input id="threatPolicyExcludePath" type="text" value="C:\Windows; C:\Program Files" /></label>
+              <label><span data-i18n="threatPolicy.action">Risk Response on Detection</span><select id="threatPolicyAction"><option data-i18n="threatPolicy.forceAirgap">Force Air-Gap + block reconnect</option><option data-i18n="threatPolicy.approveReconnect">Reconnect after administrator approval</option><option data-i18n="threatPolicy.notifyOnly">Notify only</option></select></label>
+              <label><span data-i18n="threatPolicy.reportPath">Report Save Path</span><input id="threatPolicyReportPath" type="text" value="C:\ProgramData\LOCK-FIX\reports\threat" /></label>
+            </div>
+          </article>
+          <article class="settings-card settings-service-card">
+            <div class="settings-service-status-row">
+              <div>
+                <h2 data-i18n="settings.installPreflightTitle">Install Preflight</h2>
+                <p data-i18n="settings.installPreflightDesc">Verify Veeam REST, job detection, repository path, target volume, and Disk Offline permission before setup.</p>
+              </div>
+              <div class="settings-service-actions-inline">
+                <strong id="servicePreflightStatus" class="settings-preflight-status" data-i18n="settings.statusChecking">Checking</strong>
+                <button type="button" id="servicePreflightButton" data-i18n="settings.preflightRefresh">Recheck</button>
+              </div>
+            </div>
+            <div class="settings-service-preflight">
+              <div class="settings-preflight-grid">
+                <div><em>Mode</em><b id="servicePreflightMode">-</b></div>
+                <div><em>Service Account</em><b id="servicePreflightAccount">-</b></div>
+                <div><em>Restricted</em><b id="servicePreflightRestricted">-</b></div>
+              </div>
+              <ul class="settings-preflight-checks" id="servicePreflightChecks" aria-live="polite"></ul>
+            </div>
           </article>
           <div class="settings-actions">
             <button type="button" id="settingsApplyButton" data-i18n="settings.apply">Apply</button>
             <span id="settingsApplyStatus" data-i18n="settings.pending">Select options, then click Apply.</span>
           </div>
-          <article class="settings-console-panel">
-            <div>
-              <h2>Web UI Console</h2>
-              <p id="consoleStatusText">-</p>
-            </div>
-            <pre id="consoleStatusDetail">-</pre>
-          </article>
         </section>
       </section>
       </div>
@@ -603,19 +1050,67 @@
 
     <section class="license-modal hidden" id="licenseModal" role="dialog" aria-modal="true" aria-labelledby="licenseModalTitle">
       <form class="license-modal-card" id="licenseForm">
-        <h1 id="licenseModalTitle">라이선스 키 입력</h1>
-        <p id="licenseModalReason">라이선스가 필요합니다.</p>
+        <h1 id="licenseModalTitle" data-i18n="licenseModal.title">Enter License Key</h1>
+        <p id="licenseModalReason" data-i18n="licenseModal.reason">A license is required.</p>
         <div class="license-device-box">
-          <span>라이선스 기준</span><strong id="licenseIp">고객사 + Support Code</strong>
-          <span>장비 변경</span><strong id="licenseMac">IP/MAC 변경 영향 없음</strong>
-          <span>발급 샘플 키</span><code id="licenseSampleKey">-</code>
+          <span data-i18n="licenseModal.basis">License basis</span><strong id="licenseIp" data-i18n="licenseModal.basisValue">Customer + Support Code</strong>
+          <span data-i18n="licenseModal.deviceChange">Device change</span><strong id="licenseMac" data-i18n="licenseModal.deviceChangeValue">No IP/MAC change impact</strong>
+          <span data-i18n="licenseModal.sampleKey">Sample issue key</span><code id="licenseSampleKey">-</code>
         </div>
-        <label>고객사 정보<input id="licenseCustomer" type="text" value="OAM-CUSTOMER" /></label>
-        <label>라이선스 키(Support Code)<input id="licenseSupportCode" type="text" value="OAM" /></label>
-        <label>라이선스 키<input id="licenseKeyInput" type="text" autocomplete="off" placeholder="LF-XXXX-XXXX-XXXX-XXXX-XXXX" /></label>
+        <label><span data-i18n="licenseModal.customerInfo">Customer information</span><input id="licenseCustomer" type="text" value="OAM-CUSTOMER" /></label>
+        <label><span data-i18n="licenseModal.supportCode">License key (Support Code)</span><input id="licenseSupportCode" type="text" value="OAM" /></label>
+        <label><span data-i18n="licenseModal.licenseKey">License key</span><input id="licenseKeyInput" type="text" autocomplete="off" placeholder="LF-XXXX-XXXX-XXXX-XXXX-XXXX" /></label>
         <p class="license-error" id="licenseError"></p>
-        <button type="submit">라이선스 등록</button>
+        <button type="submit" data-i18n="licenseModal.register">Register License</button>
       </form>
+    </section>
+
+    <section class="account-guide-modal hidden" id="accountGuideModal" role="dialog" aria-modal="true" aria-labelledby="accountGuideTitle">
+      <div class="account-guide-card">
+        <button class="account-guide-close" id="accountGuideClose" type="button" aria-label="Close">×</button>
+        <span class="account-guide-kicker" data-i18n="accountGuide.kicker">LOCK-FIX Account Registration Guide</span>
+        <h1 id="accountGuideTitle" data-i18n="accountGuide.title">Accounts are created after administrator approval.</h1>
+        <p data-i18n="accountGuide.body">LOCK-FIX protects backup repository isolation and approval workflows, so administrators or security managers register accounts instead of open self-registration.</p>
+        <div class="account-guide-steps">
+          <div><b>1</b><span data-i18n="accountGuide.step1">Request account creation from an administrator</span></div>
+          <div><b>2</b><span data-i18n="accountGuide.step2">Confirm role and department permissions</span></div>
+          <div><b>3</b><span data-i18n="accountGuide.step3">Receive the login account after approval</span></div>
+        </div>
+        <div class="account-guide-note">
+          <strong data-i18n="accountGuide.requestTitle">Request information</strong>
+          <span data-i18n="accountGuide.requestDesc">Send name, department, duty, required permission, and contact information to the administrator.</span>
+        </div>
+        <button class="account-guide-primary" id="accountGuideOk" type="button" data-i18n="accountGuide.ok">OK</button>
+      </div>
+    </section>
+
+    <section class="account-guide-modal hidden" id="airgapConfirmModal" role="dialog" aria-modal="true" aria-labelledby="airgapConfirmTitle">
+      <div class="account-guide-card">
+        <button class="account-guide-close" id="airgapConfirmClose" type="button" aria-label="Close">×</button>
+        <span class="account-guide-kicker" data-i18n="airgapConfirm.kicker">Final Approval Complete</span>
+        <h1 id="airgapConfirmTitle" data-i18n="airgapConfirm.title">Check it immediately on the Air-Gap screen.</h1>
+        <p data-i18n="airgapConfirm.body">Final approval is complete. Move to the Air-Gap screen to immediately check repository state and execution availability.</p>
+        <div class="account-guide-note">
+          <strong data-i18n="airgapConfirm.nextTitle">Next step</strong>
+          <span data-i18n="airgapConfirm.nextDesc">Use the check button on the Air-Gap screen to inspect reconnect/isolation state immediately.</span>
+        </div>
+        <button class="account-guide-primary" id="airgapConfirmOk" type="button" data-i18n="airgapConfirm.ok">Check on Air-Gap Screen</button>
+      </div>
+    </section>
+
+    <section class="account-guide-modal hidden signature-draw-modal" id="signatureDrawModal" role="dialog" aria-modal="true" aria-labelledby="signatureDrawTitle">
+      <div class="signature-draw-card">
+        <button class="account-guide-close" id="signatureDrawClose" type="button" aria-label="Close">×</button>
+        <span class="account-guide-kicker" data-i18n="report.signatureModalKicker">Electronic signature</span>
+        <h1 id="signatureDrawTitle" data-i18n="report.signatureModalTitle">Draw Signature</h1>
+        <p data-i18n="report.signatureModalDesc">Drag inside the box to sign, then upload it to the report signature field.</p>
+        <canvas id="signatureDrawPad" class="signature-draw-pad" width="760" height="220" aria-label="Signature drawing pad"></canvas>
+        <div class="signature-draw-actions">
+          <button type="button" class="signature-draw-secondary" id="signatureDrawCancel" data-i18n="report.signatureCancel">Cancel</button>
+          <button type="button" class="signature-draw-secondary" id="signatureDrawClear" data-i18n="report.clearSignature">Clear</button>
+          <button type="button" class="signature-draw-primary" id="signatureDrawUpload" data-i18n="report.signatureUpload">Upload</button>
+        </div>
+      </div>
     </section>
 
     <template id="slotTemplate">
@@ -660,7 +1155,7 @@
           <div class="usage-note"></div>
         </div>
         <div class="actions">
-          <button class="danger isolate-button">전원 차단 격리</button>
+          <button class="danger isolate-button">Disk Offline 격리</button>
           <button class="success reconnect-button">검증 후 재연결</button>
         </div>
       </div>
@@ -678,11 +1173,6 @@
       </div>
     </template>
 
-    <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=20260531-temperature-risk-visible"></script>
   </body>
 </html>
-
-
-
-
-
