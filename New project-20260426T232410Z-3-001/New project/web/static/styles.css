@@ -11806,14 +11806,14 @@ td {
 .backup-jobs-table th:nth-child(2),
 .backup-jobs-table td:nth-child(2) {
   width: 116px;
-  text-align: right;
-  padding-right: 18px;
+  text-align: left;
+  padding-right: 10px;
 }
 
 .backup-jobs-table th:nth-child(3),
 .backup-jobs-table td:nth-child(3) {
   width: 58px;
-  text-align: center;
+  text-align: left;
 }
 
 .backup-jobs-table th:nth-child(4),
