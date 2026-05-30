@@ -4250,6 +4250,10 @@ function renderDetect(data) {
         className: veeamRepositoryEligible ? "detect-veeam-repository-card" : "detect-veeam-repository-card detect-veeam-repository-blocked",
       },
     ];
+    const failureRisk = data.failure_risk || {};
+    const failureRiskScore = Number(failureRisk.score ?? 0);
+    const failureRiskComponents = Array.isArray(failureRisk.components) ? failureRisk.components : [];
+    const failureRiskTone = failureRiskScore >= 80 ? "critical" : failureRiskScore >= 60 ? "high" : failureRiskScore >= 40 ? "elevated" : failureRiskScore >= 20 ? "guarded" : "low";
     detectFingerprintRoot.innerHTML = `
       <div class="detect-judgement-page">
         <header class="detect-judgement-head">
@@ -4293,6 +4297,33 @@ function renderDetect(data) {
               <button type="button" class="detect-action-secondary" data-detect-action="airgap">격리 유지</button>
               <button type="button" class="detect-action-secondary" data-detect-action="settings">등록 요청</button>
             </div>
+            <section class="detect-failure-risk-card detect-failure-risk-${escapeHtml(failureRiskTone)}" aria-label="Hardware failure risk score">
+              <div class="detect-failure-risk-head">
+                <div>
+                  <span>HARDWARE FAILURE RISK</span>
+                  <h2>고장 위험도 점수 산정</h2>
+                  <p>${escapeHtml(failureRisk.summary || "수집 데이터의 임계치, 증가 속도, 변화율, 시계열 추세를 함께 분석합니다.")}</p>
+                </div>
+                <strong><b>${escapeHtml(String(failureRiskScore))}</b><small>/100</small><em>${escapeHtml(failureRisk.label || failureRisk.level || "낮음")}</em></strong>
+              </div>
+              <div class="detect-failure-risk-meta">
+                <span>추세: ${escapeHtml(failureRisk.trend || "안정")}</span>
+                <span>분석 시각: ${escapeHtml(failureRisk.generated_at || "-")}</span>
+                <span>샘플 ${escapeHtml(String(failureRisk.signals?.sample_count ?? 0))}개 · 감사 이벤트 ${escapeHtml(String(failureRisk.signals?.audit_event_count ?? 0))}건</span>
+              </div>
+              <div class="detect-failure-risk-grid">
+                ${failureRiskComponents.map((item) => `
+                  <article>
+                    <div>
+                      <span>${escapeHtml(item.label || item.key || "-")}</span>
+                      <b>${escapeHtml(String(item.score ?? 0))}</b>
+                    </div>
+                    <p>${escapeHtml(item.evidence || "-")}</p>
+                    <em>${escapeHtml(item.trend || "-")}</em>
+                  </article>
+                `).join("")}
+              </div>
+            </section>
             <section class="detect-volume-unified-card" aria-label="Air-Gap isolated volume status">
               <div class="detect-volume-head">
                 <div>

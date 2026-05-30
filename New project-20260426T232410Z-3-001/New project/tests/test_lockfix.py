@@ -2533,10 +2533,79 @@ class LockFixTests(unittest.TestCase):
         self.assertFalse(repository["eligible"])
         self.assertNotIn("C:", json.dumps(repository))
 
+    def test_hardware_failure_risk_score_uses_trend_and_required_indicators(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+
+        class Probe:
+            context = webui.WebContext(config_path)
+
+        monitoring = {
+            "series": [
+                {
+                    "time": f"2026-05-31 10:{index:02d}:00",
+                    "memory": 55 + index,
+                    "disk": 18,
+                    "cpu": 22,
+                    "network_error_rate": index * 0.5,
+                    "io_latency_ms": 5 + index,
+                    "temperature_c": 40 + (index * 2),
+                }
+                for index in range(10)
+            ]
+        }
+        audit_items = [
+            {"severity": "WARN", "message": "ECC corrected memory error"},
+            {"severity": "ERROR", "message": "SMART pending sector detected"},
+            {"severity": "ERROR", "message": "CPU Machine Check Event MCE"},
+            {"severity": "WARN", "message": "network error rate increased"},
+            {"severity": "WARN", "message": "I/O latency timeout"},
+            {"severity": "WARN", "message": "temperature thermal rise"},
+        ]
+
+        risk = webui.LockFixWebHandler.hardware_failure_risk_score(Probe(), monitoring=monitoring, audit_items=audit_items)
+        components = {item["key"]: item for item in risk["components"]}
+
+        self.assertGreaterEqual(risk["score"], 45)
+        self.assertEqual(len(components), 7)
+        self.assertEqual(components["temperature_rise"]["trend"], "급상승")
+        self.assertIn("메모리 ECC 오류", {item["label"] for item in risk["components"]})
+        self.assertIn("저장장치 SMART 지표", {item["label"] for item in risk["components"]})
+        self.assertIn("CPU Machine Check Event", {item["label"] for item in risk["components"]})
+        self.assertIn("네트워크 오류율", {item["label"] for item in risk["components"]})
+        self.assertIn("I/O 지연 시간", {item["label"] for item in risk["components"]})
+        self.assertIn("오류 발생 빈도 변화율", {item["label"] for item in risk["components"]})
+
+    def test_webui_detect_summary_includes_hardware_failure_risk_score(self) -> None:
+        tmp_path = self.make_workspace()
+        config_path = write_config(tmp_path)
+
+        class Probe:
+            context = webui.WebContext(config_path)
+
+            def emergency_access_summary(self):
+                return webui.LockFixWebHandler.emergency_access_summary(self)
+
+            def detect_veeam_repository_summary(self):
+                return {"repository_name": "D REPO", "repository_path": "D:\\Backup", "eligible": True}
+
+            def monitoring_summary(self):
+                return {"series": [{"memory": 20, "disk": 15, "cpu": 10, "temperature_c": 30}]}
+
+            def audit_items(self):
+                return []
+
+        summary = webui.LockFixWebHandler.detect_summary(Probe(), live=True)
+
+        self.assertIn("failure_risk", summary)
+        self.assertIn("components", summary["failure_risk"])
+        self.assertIn("threshold + velocity + trend", summary["failure_risk"]["method"])
+
     def test_detect_webui_uses_judgement_module_layout(self) -> None:
         root = Path.cwd()
         app_source = (root / "web" / "static" / "app.js").read_text(encoding="utf-8")
         css_source = (root / "web" / "static" / "styles.css").read_text(encoding="utf-8")
+        index_source = (root / "web" / "static" / "index.html").read_text(encoding="utf-8")
 
         self.assertIn("디스크 식별 판정", app_source)
         self.assertIn("detect-action-row", app_source)
@@ -2561,6 +2630,12 @@ class LockFixTests(unittest.TestCase):
         self.assertIn(".detect-judgement-panel {\n  width: 100%;", css_source)
         self.assertIn("VEEAM REPOSITORY", app_source)
         self.assertIn("detect-veeam-repository-card", css_source)
+        self.assertIn("HARDWARE FAILURE RISK", app_source)
+        self.assertIn("고장 위험도 점수 산정", app_source)
+        self.assertIn("failureRiskComponents", app_source)
+        self.assertIn(".detect-failure-risk-card", css_source)
+        self.assertIn(".detect-failure-risk-critical", css_source)
+        self.assertIn("20260531-detect-failure-risk", index_source)
 
     def test_customer_sidebar_uses_simplified_navigation_icons(self) -> None:
         root = Path.cwd()

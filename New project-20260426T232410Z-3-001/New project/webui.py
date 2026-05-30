@@ -6970,6 +6970,157 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             LockFixWebHandler.detect_cache_by_key[cache_key] = (time.monotonic(), payload)
         return LockFixWebHandler.clone_payload(payload)
 
+    def hardware_failure_risk_score(self, monitoring: dict | None = None, audit_items: list[dict] | None = None) -> dict:
+        if not isinstance(monitoring, dict):
+            try:
+                monitoring = LockFixWebHandler.monitoring_summary(self)
+            except Exception:
+                monitoring = {}
+        series = monitoring.get("series") if isinstance(monitoring.get("series"), list) else []
+        if not isinstance(audit_items, list):
+            try:
+                audit_items = LockFixWebHandler.audit_items(self)
+            except Exception:
+                audit_items = []
+
+        def clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
+            return max(low, min(high, value))
+
+        def numbers(key_options: tuple[str, ...]) -> list[float]:
+            values: list[float] = []
+            for item in series:
+                if not isinstance(item, dict):
+                    continue
+                for key in key_options:
+                    if key in item:
+                        try:
+                            values.append(float(item[key]))
+                        except (TypeError, ValueError):
+                            pass
+                        break
+            return values
+
+        def trend_score(values: list[float], safe_limit: float, rapid_delta: float) -> tuple[float, float, float]:
+            if not values:
+                return 0.0, 0.0, 0.0
+            latest = values[-1]
+            peak = max(values)
+            baseline = values[0] if values else latest
+            delta = latest - baseline
+            threshold_pressure = clamp(((peak - safe_limit) / max(safe_limit, 1.0)) * 100.0)
+            velocity_pressure = clamp((delta / max(rapid_delta, 1.0)) * 100.0)
+            return clamp(max(threshold_pressure, velocity_pressure)), latest, delta
+
+        def event_count(pattern: str) -> int:
+            regex = re.compile(pattern, re.IGNORECASE)
+            count = 0
+            for item in audit_items:
+                text = json.dumps(item, ensure_ascii=False)
+                if regex.search(text):
+                    count += 1
+            return count
+
+        def error_like(item: dict) -> bool:
+            text = json.dumps(item, ensure_ascii=False).lower()
+            severity = str(item.get("severity") or item.get("level") or "").lower()
+            return severity in {"warn", "warning", "error", "critical"} or any(
+                token in text for token in ("error", "failed", "failure", "warn", "critical", "mce", "smart", "ecc", "오류", "실패", "주의")
+            )
+
+        def component(key: str, label: str, weight: float, score: float, evidence: str, trend: str) -> dict:
+            return {
+                "key": key,
+                "label": label,
+                "weight": weight,
+                "score": int(round(clamp(score))),
+                "evidence": evidence,
+                "trend": trend,
+            }
+
+        memory_values = numbers(("memory", "memory_percent", "memory_usage"))
+        memory_pressure, memory_latest, memory_delta = trend_score(memory_values, 80.0, 5.0)
+        ecc_events = event_count(r"\bECC\b|corrected memory|uncorrected memory|memory parity|메모리.*오류")
+        memory_score = clamp(memory_pressure * 0.45 + min(ecc_events, 5) * 18)
+
+        disk_values = numbers(("disk", "disk_percent", "disk_usage"))
+        disk_pressure, disk_latest, disk_delta = trend_score(disk_values, 85.0, 6.0)
+        smart_events = event_count(r"\bSMART\b|reallocated|pending sector|uncorrectable|wear level|disk led|디스크.*오류|저장장치")
+        smart_score = clamp(disk_pressure * 0.45 + min(smart_events, 5) * 18)
+
+        cpu_values = numbers(("cpu", "cpu_percent", "cpu_usage"))
+        cpu_pressure, cpu_latest, cpu_delta = trend_score(cpu_values, 80.0, 20.0)
+        mce_events = event_count(r"machine check|\bMCE\b|WHEA|CPU hardware|processor error|CPU.*오류")
+        cpu_mce_score = clamp(cpu_pressure * 0.35 + min(mce_events, 5) * 20)
+
+        network_values = numbers(("network_error_rate", "packet_loss", "loss", "network_errors", "network"))
+        network_pressure, network_latest, network_delta = trend_score(network_values, 75.0, 15.0)
+        network_events = event_count(r"network.*error|packet loss|link down|nic.*error|네트워크.*오류|링크.*오류")
+        network_score = clamp(network_pressure * 0.5 + min(network_events, 5) * 12)
+
+        io_values = numbers(("io_latency_ms", "disk_latency_ms", "latency_ms", "io_wait", "disk"))
+        io_pressure, io_latest, io_delta = trend_score(io_values, 50.0, 20.0)
+        io_events = event_count(r"I/O.*delay|I/O.*latency|timeout|disk queue|io wait|지연|타임아웃")
+        io_score = clamp(io_pressure * 0.55 + min(io_events, 5) * 12)
+
+        temperature_values = numbers(("temperature_c", "temp_c", "temperature", "thermal_c"))
+        temperature_pressure, temperature_latest, temperature_delta = trend_score(temperature_values, 70.0, 8.0)
+        thermal_events = event_count(r"temperature|thermal|overheat|온도|과열")
+        temperature_score = clamp(temperature_pressure + min(thermal_events, 5) * 10)
+
+        error_items = [item for item in audit_items if isinstance(item, dict) and error_like(item)]
+        half = max(1, len(audit_items) // 2)
+        recent_errors = sum(1 for item in audit_items[:half] if isinstance(item, dict) and error_like(item))
+        previous_errors = sum(1 for item in audit_items[half:] if isinstance(item, dict) and error_like(item))
+        error_growth = recent_errors - previous_errors
+        frequency_score = clamp(min(len(error_items), 10) * 5 + max(0, error_growth) * 10)
+
+        components = [
+            component("memory_ecc", "메모리 ECC 오류", 18, memory_score, f"ECC 이벤트 {ecc_events}건 · 메모리 현재 {memory_latest or 0:.1f}% · 변화 {memory_delta:+.1f}", "상승" if memory_delta > 1 else "안정"),
+            component("smart_storage", "저장장치 SMART 지표", 18, smart_score, f"SMART/디스크 이벤트 {smart_events}건 · 디스크 현재 {disk_latest or 0:.1f}% · 변화 {disk_delta:+.1f}", "상승" if disk_delta > 1 else "안정"),
+            component("cpu_mce", "CPU Machine Check Event", 14, cpu_mce_score, f"MCE/WHEA 이벤트 {mce_events}건 · CPU 현재 {cpu_latest or 0:.1f}% · 변화 {cpu_delta:+.1f}", "상승" if cpu_delta > 3 else "안정"),
+            component("network_error_rate", "네트워크 오류율", 12, network_score, f"네트워크 오류 이벤트 {network_events}건 · 최신 지표 {network_latest or 0:.1f} · 변화 {network_delta:+.1f}", "상승" if network_delta > 2 else "안정"),
+            component("io_latency", "I/O 지연 시간", 12, io_score, f"I/O 지연 이벤트 {io_events}건 · 최신 지표 {io_latest or 0:.1f} · 변화 {io_delta:+.1f}", "상승" if io_delta > 2 else "안정"),
+            component("temperature_rise", "온도 상승률", 14, temperature_score, f"온도 이벤트 {thermal_events}건 · 최신 {temperature_latest or 0:.1f}℃ · 변화 {temperature_delta:+.1f}℃", "급상승" if temperature_delta >= 8 else "상승" if temperature_delta > 2 else "안정"),
+            component("error_frequency", "오류 발생 빈도 변화율", 12, frequency_score, f"최근 오류성 이벤트 {recent_errors}건 · 이전 구간 {previous_errors}건 · 변화 {error_growth:+d}건", "증가" if error_growth > 0 else "안정"),
+        ]
+        total_weight = sum(float(item["weight"]) for item in components) or 1.0
+        weighted_score = sum(float(item["score"]) * float(item["weight"]) for item in components) / total_weight
+        max_component = max((int(item["score"]) for item in components), default=0)
+        if max_component >= 80 and weighted_score < 45:
+            weighted_score = 45
+        score = int(round(clamp(weighted_score)))
+        if score >= 80:
+            level = "CRITICAL"
+            label = "위험"
+        elif score >= 60:
+            level = "HIGH"
+            label = "높음"
+        elif score >= 40:
+            level = "ELEVATED"
+            label = "상승"
+        elif score >= 20:
+            level = "GUARDED"
+            label = "관찰"
+        else:
+            level = "LOW"
+            label = "낮음"
+        rising_components = [item["label"] for item in components if item["trend"] in {"상승", "급상승", "증가"}]
+        return {
+            "score": score,
+            "level": level,
+            "label": label,
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "method": "threshold + velocity + trend",
+            "summary": "임계치 초과 여부와 함께 증가 속도, 변화율, 시계열 추세를 반영합니다.",
+            "trend": " / ".join(rising_components[:3]) if rising_components else "안정",
+            "components": components,
+            "signals": {
+                "sample_count": len(series),
+                "audit_event_count": len(audit_items),
+                "error_event_count": len(error_items),
+            },
+        }
+
     def detect_summary_uncached(self) -> dict:
         config = self.context.config
         if not config.slots:
@@ -6991,6 +7142,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
                 },
                 "emergency_access": emergency_summary,
                 "veeam_repository": LockFixWebHandler.detect_veeam_repository_summary(self, fast=isinstance(self, LockFixWebHandler)),
+                "failure_risk": LockFixWebHandler.hardware_failure_risk_score(self),
             }
         slot = next(iter(config.slots.values()))
         emergency_summary = self.emergency_access_summary()
@@ -7026,6 +7178,7 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             "subtitle": "LOCK-FIX에서는 하나의 값만 보지 말고 아래 조합을 기준으로 해야 합니다.",
             "emergency_access": emergency_summary,
             "veeam_repository": LockFixWebHandler.detect_veeam_repository_summary(self, fast=isinstance(self, LockFixWebHandler)),
+            "failure_risk": LockFixWebHandler.hardware_failure_risk_score(self),
             "fingerprint": {
                 "slot_id": slot.slot_id,
                 "value": unique_id,

@@ -6158,6 +6158,183 @@ button {
   color: #26394b;
 }
 
+.detect-failure-risk-card {
+  margin-top: 22px;
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
+  padding: 20px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.04);
+}
+
+.detect-failure-risk-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.detect-failure-risk-head span {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.detect-failure-risk-head h2 {
+  margin: 6px 0 8px;
+  color: #132238;
+  font-size: 22px;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.detect-failure-risk-head p {
+  margin: 0;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.detect-failure-risk-head > strong {
+  min-width: 118px;
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 13px 14px;
+  text-align: center;
+}
+
+.detect-failure-risk-head b {
+  color: #0f172a;
+  font-size: 36px;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.detect-failure-risk-head small {
+  margin-left: 3px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.detect-failure-risk-head em {
+  display: block;
+  margin-top: 4px;
+  font-style: normal;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.detect-failure-risk-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 16px;
+}
+
+.detect-failure-risk-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #ffffff;
+  padding: 0 10px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.detect-failure-risk-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.detect-failure-risk-grid article {
+  min-width: 0;
+  border: 1px solid #e8eef6;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 13px 14px;
+}
+
+.detect-failure-risk-grid div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.detect-failure-risk-grid span {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.detect-failure-risk-grid b {
+  color: #0b2e79;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.detect-failure-risk-grid p {
+  margin: 9px 0 7px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.detect-failure-risk-grid em {
+  color: #64748b;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.detect-failure-risk-low {
+  border-color: #bbf7d0;
+}
+
+.detect-failure-risk-low .detect-failure-risk-head em,
+.detect-failure-risk-low .detect-failure-risk-grid b {
+  color: #15803d;
+}
+
+.detect-failure-risk-guarded {
+  border-color: #fde68a;
+}
+
+.detect-failure-risk-guarded .detect-failure-risk-head em,
+.detect-failure-risk-guarded .detect-failure-risk-grid b {
+  color: #b45309;
+}
+
+.detect-failure-risk-elevated,
+.detect-failure-risk-high {
+  border-color: #fdba74;
+}
+
+.detect-failure-risk-elevated .detect-failure-risk-head em,
+.detect-failure-risk-elevated .detect-failure-risk-grid b,
+.detect-failure-risk-high .detect-failure-risk-head em,
+.detect-failure-risk-high .detect-failure-risk-grid b {
+  color: #c2410c;
+}
+
+.detect-failure-risk-critical {
+  border-color: #fecaca;
+  background: linear-gradient(135deg, #fff7f7 0%, #ffffff 100%);
+}
+
+.detect-failure-risk-critical .detect-failure-risk-head em,
+.detect-failure-risk-critical .detect-failure-risk-grid b {
+  color: #b91c1c;
+}
+
 .detect-volume-unified-card {
   margin-top: 22px;
   border: 1px solid #e8eef6;
