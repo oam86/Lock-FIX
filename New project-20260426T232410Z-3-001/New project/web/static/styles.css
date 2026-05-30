@@ -11795,12 +11795,14 @@ td {
 
 .backup-jobs-table th:nth-child(2),
 .backup-jobs-table td:nth-child(2) {
-  width: 136px;
+  width: 116px;
+  text-align: right;
+  padding-right: 18px;
 }
 
 .backup-jobs-table th:nth-child(3),
 .backup-jobs-table td:nth-child(3) {
-  width: 68px;
+  width: 58px;
   text-align: center;
 }
 
@@ -11815,17 +11817,17 @@ td {
 .backup-jobs-table td:nth-child(5),
 .backup-jobs-table th:nth-child(7),
 .backup-jobs-table td:nth-child(7) {
-  width: 146px;
+  width: 142px;
 }
 
 .backup-jobs-table th:nth-child(8),
 .backup-jobs-table td:nth-child(8) {
-  width: 90px;
+  width: 78px;
 }
 
 .backup-jobs-table th:nth-child(9),
 .backup-jobs-table td:nth-child(9) {
-  width: 360px;
+  width: 410px;
 }
 
 .backup-jobs-table td.backup-job-name,
