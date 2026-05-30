@@ -3668,7 +3668,7 @@ function renderDashboard(data) {
       const description = job.description || "-";
       return `
         <tr>
-          <td title="${escapeHtml(name)}"><strong>${escapeHtml(name)}</strong></td>
+          <td class="backup-job-name" title="${escapeHtml(name)}"><strong>${escapeHtml(name)}</strong></td>
           <td title="${escapeHtml(type)}">${escapeHtml(type)}</td>
           <td title="${escapeHtml(objects)}">${escapeHtml(objects)}</td>
           <td title="${escapeHtml(status)}"><span class="backup-job-badge backup-job-badge-${statusTone}">${escapeHtml(status)}</span></td>
@@ -3676,7 +3676,7 @@ function renderDashboard(data) {
           <td title="${escapeHtml(lastResult)}"><span class="backup-job-badge backup-job-badge-${resultTone}">${escapeHtml(lastResult)}</span></td>
           <td title="${escapeHtml(nextRun)}">${escapeHtml(nextRun)}</td>
           <td title="${escapeHtml(target)}">${escapeHtml(target)}</td>
-          <td title="${escapeHtml(description)}">${escapeHtml(description)}</td>
+          <td class="backup-job-description" title="${escapeHtml(description)}">${escapeHtml(description)}</td>
         </tr>
       `;
     }).join("")

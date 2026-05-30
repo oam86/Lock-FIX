@@ -11759,7 +11759,7 @@ td {
 
 .backup-jobs-table {
   width: 100%;
-  min-width: 1180px;
+  min-width: 1320px;
   table-layout: fixed;
   border-collapse: collapse;
   border-spacing: 0;
@@ -11789,8 +11789,8 @@ td {
 
 .backup-jobs-table th:nth-child(1),
 .backup-jobs-table td:nth-child(1) {
-  width: 214px;
-  padding-left: 14px;
+  width: 260px;
+  padding-left: 16px;
 }
 
 .backup-jobs-table th:nth-child(2),
@@ -11825,7 +11825,28 @@ td {
 
 .backup-jobs-table th:nth-child(9),
 .backup-jobs-table td:nth-child(9) {
-  width: 232px;
+  width: 360px;
+}
+
+.backup-jobs-table td.backup-job-name,
+.backup-jobs-table td.backup-job-description {
+  max-width: none;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.backup-jobs-table td.backup-job-name strong {
+  display: inline;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.backup-jobs-table td.backup-job-description {
+  color: #1f3448;
 }
 
 .backup-job-badge {
