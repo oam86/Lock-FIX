@@ -11773,6 +11773,7 @@ td {
 .backup-jobs-table th,
 .backup-jobs-table td {
   border-bottom: 1px solid #e4edf6;
+  border-right: 1px solid #e4edf6;
   max-width: 0;
   padding: 8px 10px;
   text-align: left;
@@ -11782,11 +11783,18 @@ td {
   text-overflow: ellipsis;
 }
 
+.backup-jobs-table th:last-child,
+.backup-jobs-table td:last-child {
+  border-right: 0;
+}
+
 .backup-jobs-table th {
+  position: relative;
   background: #f3f7fb;
   color: #48617a;
   font-size: 11px;
   font-weight: 800;
+  user-select: none;
 }
 
 .backup-jobs-table th:nth-child(1),
@@ -11851,6 +11859,40 @@ td {
 
 .backup-jobs-table td.backup-job-description {
   color: #1f3448;
+}
+
+.backup-job-col-resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  z-index: 2;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  opacity: 0;
+}
+
+.backup-job-col-resizer::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: 3px;
+  width: 2px;
+  height: calc(100% - 14px);
+  border-radius: 999px;
+  background: #0b63ce;
+  box-shadow: 0 0 0 3px rgba(11, 99, 206, 0.12);
+}
+
+.backup-jobs-table th:hover .backup-job-col-resizer,
+.backup-job-col-resizer:hover,
+.backup-jobs-table-resizing .backup-job-col-resizer {
+  opacity: 1;
+}
+
+.backup-jobs-table-resizing,
+.backup-jobs-table-resizing * {
+  cursor: col-resize !important;
 }
 
 .backup-job-badge {

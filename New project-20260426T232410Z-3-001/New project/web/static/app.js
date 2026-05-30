@@ -74,6 +74,7 @@ const dashboardKpiOrderKey = "lockfix.dashboard.kpiOrder.v1";
 const dashboardKpiSizeKey = "lockfix.dashboard.kpiSize.v4";
 const dashboardPanelOrderKey = "lockfix.dashboard.panelOrder.v3";
 const dashboardPanelSizeKey = "lockfix.dashboard.panelSize.v5";
+const backupJobsColumnSizeKey = "lockfix.dashboard.backupJobsColumnSize.v1";
 const dashboardEventsKey = "lockfix.dashboard.eventsVisible.v1";
 const dashboardAlertsKey = "lockfix.dashboard.alertsVisible.v1";
 const opsEventsVisibleKey = "lockfix.ops.eventsVisible.v2";
@@ -3544,6 +3545,89 @@ function bindDashboardAlertLinks() {
   });
 }
 
+const backupJobColumnDefaults = [260, 116, 58, 112, 142, 112, 142, 78, 410];
+const backupJobColumnMins = [170, 92, 54, 92, 120, 92, 120, 70, 260];
+const backupJobColumnMaxes = [520, 240, 120, 220, 260, 220, 260, 180, 720];
+
+function clampBackupJobColumnWidth(width, index) {
+  const min = backupJobColumnMins[index] || 60;
+  const max = backupJobColumnMaxes[index] || 720;
+  return Math.max(min, Math.min(max, Math.round(Number(width) || min)));
+}
+
+function loadBackupJobColumnWidths() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(backupJobsColumnSizeKey) || "[]");
+    if (!Array.isArray(parsed) || parsed.length !== backupJobColumnDefaults.length) {
+      return backupJobColumnDefaults.slice();
+    }
+    return parsed.map((width, index) => clampBackupJobColumnWidth(width, index));
+  } catch {
+    return backupJobColumnDefaults.slice();
+  }
+}
+
+function saveBackupJobColumnWidths(widths) {
+  try {
+    localStorage.setItem(backupJobsColumnSizeKey, JSON.stringify(widths));
+  } catch {
+    // Ignore storage failures in locked-down browser contexts.
+  }
+}
+
+function backupJobTableMinWidth(widths) {
+  return `${widths.reduce((sum, width) => sum + Number(width || 0), 0)}px`;
+}
+
+function backupJobColgroupHtml(widths) {
+  return `<colgroup>${widths.map((width, index) => `<col data-backup-job-col="${index}" style="width: ${width}px;">`).join("")}</colgroup>`;
+}
+
+function backupJobHeaderCell(label, index) {
+  const resizer = index < backupJobColumnDefaults.length - 1
+    ? `<span class="backup-job-col-resizer" data-backup-job-resizer="${index}" aria-hidden="true"></span>`
+    : "";
+  return `<th>${escapeHtml(label)}${resizer}</th>`;
+}
+
+function enableBackupJobsColumnResize() {
+  const table = document.querySelector(".backup-jobs-table[data-resizable-table='veeam-jobs']");
+  if (!table || table.dataset.columnResizeReady === "true") return;
+  table.dataset.columnResizeReady = "true";
+  let widths = loadBackupJobColumnWidths();
+  table.style.minWidth = backupJobTableMinWidth(widths);
+  table.querySelectorAll("col[data-backup-job-col]").forEach((col) => {
+    const index = Number(col.dataset.backupJobCol || 0);
+    col.style.width = `${widths[index]}px`;
+  });
+
+  table.querySelectorAll(".backup-job-col-resizer").forEach((handle) => {
+    handle.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const index = Number(handle.dataset.backupJobResizer || 0);
+      const startX = event.clientX;
+      const startWidth = widths[index] || backupJobColumnDefaults[index];
+      const onMouseMove = (moveEvent) => {
+        const nextWidth = clampBackupJobColumnWidth(startWidth + moveEvent.clientX - startX, index);
+        widths[index] = nextWidth;
+        const col = table.querySelector(`col[data-backup-job-col="${index}"]`);
+        if (col) col.style.width = `${nextWidth}px`;
+        table.style.minWidth = backupJobTableMinWidth(widths);
+        table.classList.add("backup-jobs-table-resizing");
+      };
+      const onMouseUp = () => {
+        saveBackupJobColumnWidths(widths);
+        table.classList.remove("backup-jobs-table-resizing");
+        window.removeEventListener("mousemove", onMouseMove);
+        window.removeEventListener("mouseup", onMouseUp);
+      };
+      window.addEventListener("mousemove", onMouseMove);
+      window.addEventListener("mouseup", onMouseUp);
+    });
+  });
+}
+
 function markLiveRequest(state) {
   state.status = "pending";
   state.lastRequestAt = emergencyReconnectTimestamp();
@@ -3646,6 +3730,7 @@ function renderDashboard(data) {
   const backup = data.backup || {};
   const backupJobs = Array.isArray(backup.jobs) ? backup.jobs.slice(0, 6) : [];
   const jobColumns = copy.backupJobColumns || {};
+  const backupJobColumnWidths = loadBackupJobColumnWidths();
   const backupJobTone = (value) => {
     const text = String(value || "").toLowerCase();
     if (/(success|complete|normal|stopped)/.test(text)) return "success";
@@ -3762,18 +3847,19 @@ function renderDashboard(data) {
         </header>
         <div class="panel-body">
           <div class="backup-jobs-table-wrap">
-            <table class="backup-jobs-table">
+            <table class="backup-jobs-table" data-resizable-table="veeam-jobs" style="min-width: ${backupJobTableMinWidth(backupJobColumnWidths)}">
+              ${backupJobColgroupHtml(backupJobColumnWidths)}
               <thead>
                 <tr>
-                  <th>${escapeHtml(jobColumns.name || "Name")}</th>
-                  <th>${escapeHtml(jobColumns.type || "Type")}</th>
-                  <th>${escapeHtml(jobColumns.objects || "Objects")}</th>
-                  <th>${escapeHtml(jobColumns.status || "Status")}</th>
-                  <th>${escapeHtml(jobColumns.lastRun || "Last Run")}</th>
-                  <th>${escapeHtml(jobColumns.lastResult || "Last Result")}</th>
-                  <th>${escapeHtml(jobColumns.nextRun || "Next Run")}</th>
-                  <th>${escapeHtml(jobColumns.target || "Target")}</th>
-                  <th>${escapeHtml(jobColumns.description || "Description")}</th>
+                  ${backupJobHeaderCell(jobColumns.name || "Name", 0)}
+                  ${backupJobHeaderCell(jobColumns.type || "Type", 1)}
+                  ${backupJobHeaderCell(jobColumns.objects || "Objects", 2)}
+                  ${backupJobHeaderCell(jobColumns.status || "Status", 3)}
+                  ${backupJobHeaderCell(jobColumns.lastRun || "Last Run", 4)}
+                  ${backupJobHeaderCell(jobColumns.lastResult || "Last Result", 5)}
+                  ${backupJobHeaderCell(jobColumns.nextRun || "Next Run", 6)}
+                  ${backupJobHeaderCell(jobColumns.target || "Target", 7)}
+                  ${backupJobHeaderCell(jobColumns.description || "Description", 8)}
                 </tr>
               </thead>
               <tbody>${backupJobRows}</tbody>
@@ -3868,6 +3954,7 @@ function renderDashboard(data) {
   `;
   enableDashboardKpiDrag(document.querySelector("#dashboardKpiBoard"));
   enableDashboardPanelDrag(document.querySelector("#dashboardContentBoard"));
+  enableBackupJobsColumnResize();
   bindDashboardAlertLinks();
 }
 
