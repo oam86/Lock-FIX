@@ -4192,6 +4192,14 @@ function renderDetectFallback(message = "탐지 내역을 불러오는 중입니
             <strong>확인 중</strong>
           </article>
         </div>
+        <article class="detect-temperature-score-card detect-temperature-score-low" id="detectTemperatureRiskCard" data-detect-temperature-risk-card="true" aria-label="Temperature-only hardware failure risk score">
+          <div>
+            <span>THERMAL TREND SCORE</span>
+            <h3>부품 온도 위험 점수</h3>
+            <p>온도 데이터가 수집되면 현재 온도와 상승률을 함께 점수화합니다.</p>
+          </div>
+          <strong><b>0</b><small>/100</small><em>확인 중</em></strong>
+        </article>
       </section>
     </div>
   `;
