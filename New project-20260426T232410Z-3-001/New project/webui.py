@@ -6011,6 +6011,12 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
             raw_name = pick(entry, "name", "jobName", "displayName", "job")
             return clean(raw_id, "").lower(), clean(raw_name, "").lower()
 
+        def is_configuration_backup_job(entry: dict) -> bool:
+            name = clean(pick(entry, "name", "jobName", "displayName", "job"), "")
+            description = clean(pick(entry, "description"), "")
+            haystack = f"{name} {description}".lower()
+            return "backup configuration job" in haystack or "configuration backup" in haystack
+
         def job_object_count(entry: dict) -> str:
             value = pick(entry, "objects", "object_count", "objectCount", "vm_count", "vmCount", "objectsCount")
             if isinstance(value, list):
@@ -6056,6 +6062,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         def add_job_row(entry: dict, fallback_description: str = "Veeam REST Jobs inventory.") -> None:
             if len(rows) >= 8:
                 return
+            if is_configuration_backup_job(entry):
+                return
             name = clean(pick(entry, "name", "jobName", "displayName", "job") or veeam_settings.get("job_name"))
             key = name.lower()
             if key in seen:
@@ -6099,6 +6107,8 @@ class LockFixWebHandler(BaseHTTPRequestHandler):
         if not rows:
             for entry in raw_logs:
                 if not isinstance(entry, dict):
+                    continue
+                if is_configuration_backup_job(entry):
                     continue
                 actions = [clean(item, "") for item in entry.get("actions", []) if clean(item, "")]
                 name = clean(entry.get("name") or entry.get("job") or veeam_settings.get("job_name"))

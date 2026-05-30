@@ -3813,7 +3813,10 @@ class LockFixTests(unittest.TestCase):
         self.assertIn('class="backup-job-description"', app_source)
         self.assertIn('title="${escapeHtml(description)}"', app_source)
         self.assertIn(".backup-panel {\n  min-height: 320px;", css_source)
-        self.assertIn("20260530-veeam-jobs-left-align", html_source)
+        self.assertIn("20260530-veeam-jobs-borderless", html_source)
+        self.assertIn(".backup-jobs-table-wrap {\n  width: 100%;", css_source)
+        self.assertIn("border: 0;", css_source)
+        self.assertIn("border-right: 1px solid #e4edf6;", css_source)
         self.assertIn("enableDashboardPanelDrag", app_source)
         self.assertIn("enableBackupJobsColumnResize();", app_source)
         self.assertIn("function clampDashboardPixels", app_source)
@@ -4028,12 +4031,13 @@ class LockFixTests(unittest.TestCase):
             steering_state,
         )
 
-        self.assertEqual(["Backup Configuration Job", "Agent_backup"], [row["name"] for row in rows])
+        self.assertEqual(["Agent_backup"], [row["name"] for row in rows])
+        self.assertNotIn("Backup Configuration Job", {row["name"] for row in rows})
         self.assertNotIn("Backup Copy Job 1", {row["name"] for row in rows})
-        self.assertEqual(["Stopped", "Stopped"], [row["status"] for row in rows])
-        self.assertEqual(["Success", "Success"], [row["last_result"] for row in rows])
-        self.assertEqual("Backup Copy", rows[1]["type"])
-        self.assertEqual("Created by VBR", rows[1]["description"])
+        self.assertEqual(["Stopped"], [row["status"] for row in rows])
+        self.assertEqual(["Success"], [row["last_result"] for row in rows])
+        self.assertEqual("Backup Copy", rows[0]["type"])
+        self.assertEqual("Created by VBR", rows[0]["description"])
 
     def test_dashboard_veeam_jobs_ignores_stale_waiting_session_rows(self) -> None:
         rows = webui.LockFixWebHandler.dashboard_veeam_jobs(
@@ -4048,7 +4052,8 @@ class LockFixTests(unittest.TestCase):
             {},
         )
 
-        self.assertEqual(["Backup Configuration Job", "Agent_backup"], [row["name"] for row in rows])
+        self.assertEqual(["Agent_backup"], [row["name"] for row in rows])
+        self.assertNotIn("Backup Configuration Job", {row["name"] for row in rows})
         self.assertNotIn("Backup Copy Job 1", {row["name"] for row in rows})
 
     def test_airgap_procedure_steps_show_live_motion_state(self) -> None:

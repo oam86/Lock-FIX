@@ -11754,9 +11754,9 @@ td {
   min-width: 0;
   margin-top: 10px;
   overflow-x: auto;
-  border: 1px solid #dbe7f2;
-  border-radius: 12px;
-  background: #fff;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .backup-jobs-table {
